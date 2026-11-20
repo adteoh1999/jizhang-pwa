@@ -28,10 +28,27 @@ export function balanceParts(minor) {
   return { int: (minor < 0 ? '\u2212' : '') + i, dec: `.${f}` };
 }
 
-/** 依整数部分字元数（含逗号、不含「RM 」与符号）决定大数字缩级：≤6 → ''，7–9 → is-long，≥10 → is-xlong。 */
+/** 依整数部分字元数（含 U+2212 与逗号，不含「RM」）决定大数字缩级：≤5 → ''，6–9 → is-long，≥10 → is-xlong。 */
 export function balanceSizeClass(minor) {
-  const n = formatRM(minor, { sign: 'none' }).slice(3).split('.')[0].length;
-  return n >= 10 ? 'is-xlong' : n >= 7 ? 'is-long' : '';
+  const n = balanceParts(minor).int.length;
+  return n >= 10 ? 'is-xlong' : n >= 6 ? 'is-long' : '';
+}
+
+/** 卡片里收入 / 支出金额：字串 ≥13 字元（RM 999,999.99 起）缩一级字。 */
+export function flowSizeClass(minor) {
+  return formatRM(minor, { sign: 'none' }).length >= 13 ? 'is-small' : '';
+}
+
+/** 比例线文案（输入 spendMeter 的结果）。 */
+export function meterText(m) {
+  if (m.state === 'none') return '本月还没有收入';
+  if (m.state === 'over') return '支出已超过收入';
+  return `已花掉收入的 ${m.pct}%`;
+}
+
+/** 抽屉标题右侧：全部记录数。 */
+export function countText(n) {
+  return `共 ${n} 笔`;
 }
 
 /** 列图示的 data-icon：有效分类 → iconKey；已删除 / 未分类 → null（维持灰色）。 */
@@ -137,11 +154,12 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     if (sig === rec.sig) return;
     rec.sig = sig;
     const name = cat ? cat.name : '未分类';
+    const iconAttr = rowIconAttr(cat); // null → 灰色（已删除 / 未分类）
     const amount = tx.kind === 'income'
       ? formatRM(tx.amount_minor, { sign: 'always' })
       : formatRM(-tx.amount_minor);
     rec.content.replaceChildren(
-      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': rowIconAttr(cat) }, icon(cat ? cat.icon : 'other', 22)),
+      h('span', { class: `home-row-icon${iconAttr === null ? ' is-muted' : ''}`, 'data-icon': iconAttr }, icon(cat ? cat.icon : 'other', 22)),
       h('span', { class: 'home-row-text' },
         h('span', { class: 'home-row-name' }, name),
         tx.note ? h('span', { class: 'home-row-note' }, tx.note) : null),
@@ -169,21 +187,24 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     const bp = balanceParts(s.balance);
     balInt.textContent = bp.int;
     balDec.textContent = bp.dec;
-    balanceEl.className = `home-balance ${balanceSizeClass(s.balance)}`.trim();
+    const sizeCls = balanceSizeClass(s.balance);
+    balanceEl.className = `home-balance ${sizeCls}`.trim();
+    summary.className = `home-card ${sizeCls}`.trim(); // 长数字时光晕再让开（CSS）
     balSr.textContent = formatRM(s.balance);
     incomeEl.textContent = formatRM(s.income, { sign: 'none' });
+    incomeEl.className = `home-flow-v ${flowSizeClass(s.income)}`.trim();
     expenseEl.textContent = formatRM(s.expense, { sign: 'none' });
+    expenseEl.className = `home-flow-v ${flowSizeClass(s.expense)}`.trim();
     const m = spendMeter(s.income, s.expense);
-    const meterText = m.state === 'none' ? '本月还没有收入'
-      : m.state === 'over' ? '支出已超过收入' : `已花掉收入的 ${m.pct}%`;
+    const text = meterText(m);
     meterBar.hidden = m.state === 'none';
-    meterBar.setAttribute('aria-label', meterText);
+    meterBar.setAttribute('aria-label', text);
     meterFill.style.width = `${m.pct}%`;
-    meterNote.textContent = meterText;
+    meterNote.textContent = text;
     // 线条显示时由它（role=img）读出，文字不重复读；线条隐藏时由文字读出
     if (m.state === 'none') meterNote.removeAttribute('aria-hidden');
     else meterNote.setAttribute('aria-hidden', 'true');
-    countEl.textContent = `共 ${all.length} 笔`;
+    countEl.textContent = countText(all.length);
 
     const scrollY = window.scrollY;
     const hadFocus = list.contains(document.activeElement) ? document.activeElement : null;

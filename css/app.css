@@ -307,9 +307,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 首页：大标题左、当月右 */
 .large-title-row {
   display: flex;
+  flex-wrap: wrap;               /* 大字级放不下时月份换到下一行，不挤压大标题 */
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  column-gap: 12px;
 }
 .large-title-aside {
   flex: none;
@@ -986,8 +987,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   pointer-events: none;
   top: -96px;
   right: -110px;
-  /* 卡片变窄（cqw，内容宽 312px 为基准）或字级放大（rem > 17px）时，光晕再往右移，不压到结余数字 */
-  right: calc(-110px - max(0px, 312px - 100cqw) * 0.7 - max(0px, 1rem - 17px) * 6);
+  /* 卡片变窄（cqw，内容宽 312px 为基准）、字级放大（rem > 17px）或数字变长（--glow-dx/dy）时，
+     光晕再往右上移，不压到结余数字 */
+  top: calc(-96px - var(--glow-dy, 0px));
+  right: calc(-110px - var(--glow-dx, 0px) - max(0px, 312px - 100cqw) - max(0px, 1rem - 17px) * 6);
   width: 300px;
   height: 220px;
   background:
@@ -999,6 +1002,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
     radial-gradient(18% 20% at 58% 46%, var(--halo-mint), transparent);
   opacity: var(--halo-opacity);
 }
+.home-card.is-long { --glow-dx: 40px; --glow-dy: 24px; }
+.home-card.is-xlong { --glow-dx: 70px; --glow-dy: 40px; }
 .home-card > * { position: relative; z-index: 1; }
 .home-card-label { font: var(--font-subhead); color: var(--ink-2); }
 .home-balance {
@@ -1026,12 +1031,12 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 1.1), 24px); }
 
 .home-flow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;               /* 两栏放不下（金额不断行）时，支出换到下一行 */
   gap: 12px;
   margin-top: 20px;
 }
-.home-flow-item { display: grid; align-content: start; gap: 2px; min-width: 0; }
+.home-flow-item { flex: 1 1 calc(50% - 6px); display: grid; align-content: start; gap: 2px; }
 .home-flow-k {
   display: flex;
   align-items: center;
@@ -1044,7 +1049,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font: var(--font-body);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;           /* 「RM」与数字不断开 */
 }
+.home-flow-v.is-small { font-size: 0.8824rem; }   /* 缩一级（subhead 字级） */
 
 /* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、同色 */
 .home-meter { display: grid; gap: 7px; margin-top: 16px; }
