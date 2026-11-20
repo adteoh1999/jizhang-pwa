@@ -8,6 +8,7 @@ import { onDepthChange } from './ui/nav.js';
 import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
+import { mountSettings } from './ui/settings.js';
 
 const TABS = [
   { id: 'home', label: '首页', icon: 'house', title: '记账' },
@@ -69,6 +70,7 @@ function mountShell(root, store) {
   root.replaceChildren(shell);
   mountHome(screens.get('home').querySelector('.screen-content'), store);
   mountStats(screens.get('stats').querySelector('.screen-content'), store);
+  mountSettings(screens.get('settings').querySelector('.screen-content'), store);
 
   const tabbar = mountTabBar(root, {
     tabs: TABS,

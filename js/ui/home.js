@@ -7,6 +7,7 @@
 import { h } from './dom.js';
 import { icon } from './icons.js';
 import { openEntrySheet } from './entry-sheet.js';
+import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
 import { messageDialog } from './dialogs.js';
 import { depth } from './nav.js';
@@ -36,6 +37,8 @@ export function mountHome(root, store) {
   const rows = new Map();      // id → record { id, tx, el, content, del, sig, offset }
   let order = [];              // 目前画出来的列 id（由上到下）
   let openScrollY = 0;         // 列滑开时的 scrollY；只有真的捲离这个位置才关闭
+  // 记一笔里的「＋ 新增」：叠一层分类管理子画面，新增后回到记一笔并选中新分类
+  const onAddCategory = ({ kind, select }) => openCategoriesPage(store, { kind, from: 'entry', onPicked: select });
 
   // ---------- 静态骨架 ----------
   const sumTitle = h('h2', { class: 'home-summary-title' }, '本月');
@@ -54,7 +57,7 @@ export function mountHome(root, store) {
 
   const addBtn = h('button', {
     type: 'button', class: 'home-add pressable',
-    on: { click: () => { closeOpenRow(); openEntrySheet(store, {}); } }, // 同步呼叫
+    on: { click: () => { closeOpenRow(); openEntrySheet(store, { onAddCategory }); } }, // 同步呼叫
   }, '＋ 记一笔');
 
   const list = h('div', { class: 'home-list' });
@@ -231,7 +234,7 @@ export function mountHome(root, store) {
     if (now < rec.suppressClickUntil) return;                // 刚拖动过
     if (closingGesture || now < swallowClickUntil) return;   // 这一下是用来关闭别列的
     if (openRow) { closeOpenRow(); return; } // 有列滑开时，点一下只是关闭它
-    openEntrySheet(store, { transaction: rec.tx }); // 同步呼叫
+    openEntrySheet(store, { transaction: rec.tx, onAddCategory }); // 同步呼叫
   }
 
   function deleteRow(rec) {

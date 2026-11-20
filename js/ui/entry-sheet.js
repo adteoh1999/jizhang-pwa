@@ -48,7 +48,8 @@ function messageFor(field, { amountText, date }, categoryMissing) {
 
 /**
  * openEntrySheet(store, { transaction?, onAddCategory? }) → { close }
- * onAddCategory({ kind })：有给才显示「＋ 新增」（Task 12 接上分类管理）。
+ * onAddCategory({ kind, select })：有给才显示「＋ 新增」。kind 是目前的类型；
+ * select(category) 由呼叫者在新增分类成功后呼叫 → 切到该分类的类型并选中它（网格由 store.subscribe 重画）。
  */
 export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
   const tx = transaction || null;
@@ -156,7 +157,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     if (onAddCategory) {
       tiles.push(h('button', {
         type: 'button', class: 'cat-tile cat-tile-add', 'aria-label': '新增分类',
-        on: { click: () => onAddCategory({ kind: state.kind }) },
+        on: { click: () => onAddCategory({ kind: state.kind, select: selectCategory }) },
       },
       h('span', { class: 'cat-tile-icon' }, h('span', { class: 'cat-tile-plus', 'aria-hidden': 'true' }, '＋')),
       h('span', { class: 'cat-tile-name' }, '新增')));
@@ -191,6 +192,19 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     syncSegments();
     clearError(catField, catError);
     renderGrid();
+  }
+
+  // 外部（分类管理子画面）新增分类后选中它；分类不存在或已删除就不做事
+  function selectCategory(cat) {
+    const c = cat && store.categoryById(cat.id);
+    if (!c || c.deleted) return;
+    if (c.kind !== state.kind) setKind(c.kind);
+    state.categoryId = c.id;
+    state.byKind[state.kind] = c.id;
+    clearError(catField, catError);
+    renderGrid();
+    const t = grid.querySelector(`[data-cat="${CSS.escape(c.id)}"]`);
+    if (t) t.focus({ preventScroll: false });
   }
 
   // ---------- 日期、备注 ----------

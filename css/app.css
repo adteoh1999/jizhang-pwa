@@ -1055,3 +1055,181 @@ h1, h2, p { margin: 0; }
   font: var(--font-body);
   color: var(--secondary-label);
 }
+
+/* =====================================================================
+   16. Settings 设置页 — js/ui/settings.js
+   - [hig-patterns / settings.md] App 内设定只放常用项目；分组 + 简短说明。
+   - [hig-components-layout / lists-and-tables.md] inset grouped：组标题 footnote 次要色、
+     12pt 圆角卡片、内缩分隔线；推入子画面的列尾有 chevron，动作列用蓝字、不加 chevron。
+   ===================================================================== */
+.settings-section { margin-top: 24px; }
+.settings-section:first-child { margin-top: 4px; }
+.settings-header {
+  padding: 0 16px 6px;
+  font: var(--font-footnote);
+  color: var(--secondary-label);
+}
+.settings-footer {
+  padding: 6px 16px 0;
+  font: var(--font-footnote);
+  color: var(--secondary-label);
+}
+
+/* 共用：inset grouped 卡片与列（设置页、分类子画面） */
+.inset-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-card);
+  background: var(--bg-grouped-secondary);
+  overflow: hidden;
+  isolation: isolate;
+}
+.inset-row {
+  position: relative;
+  width: 100%;
+  min-height: var(--hit);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  text-align: left;
+  font: var(--font-body);
+  color: var(--label);
+  background: var(--bg-grouped-secondary);
+}
+.inset-row + .inset-row::before { /* 内缩分隔线 */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+button.inset-row:active { background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
+.inset-row:focus-visible { outline-offset: -2px; }
+.inset-row.is-action { color: var(--accent); }
+.inset-row-label { flex: 1; min-width: 0; }
+.inset-row-detail { flex: none; color: var(--secondary-label); font-variant-numeric: tabular-nums; }
+.inset-row-chevron { flex: none; display: flex; color: var(--tertiary-label); }
+
+/* =====================================================================
+   17. Categories page 分类管理子画面 — js/ui/categories-page.js
+   - [hig-components-layout] 导航推入：从右边滑入，左上返回键（chevron + 上一页标题），标题置中。
+   - [hig-patterns / feedback] 删除前用 action sheet 确认（破坏性按钮红字）。
+   - 列：36pt 图示圆圈（沿用 .home-row-icon）+ 名称 + chevron；分隔线内缩到文字起点。
+   ===================================================================== */
+.nav-page {
+  position: fixed;
+  inset: 0;
+  z-index: 100;               /* 与其他浮层同层，后开的在上面（DOM 顺序） */
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-grouped);
+  box-shadow: -2px 0 20px rgba(0, 0, 0, 0.12);
+  transform: translateX(100%);
+  transition: transform 0.35s var(--ease-out);
+}
+.nav-page.is-visible { transform: translateX(0); }
+.nav-page-bar {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: calc(var(--navbar-h) + var(--safe-top));
+  padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
+  background: var(--bar-material);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: inset 0 -0.5px 0 var(--separator);
+}
+.nav-back {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
+  min-width: var(--hit);
+  padding: 0 12px 0 6px;
+  color: var(--accent);
+  font: var(--font-body);
+}
+.nav-back-chevron { display: flex; }
+.nav-back:active { opacity: 0.5; }
+.nav-page-title { font: var(--font-headline); text-align: center; padding: 0 4px; }
+.nav-page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px calc(var(--margin) + var(--safe-right)) calc(var(--safe-bottom) + 24px) calc(var(--margin) + var(--safe-left));
+}
+.nav-page-body .segmented { margin-bottom: 18px; }
+
+.cat-row { position: relative; overflow: hidden; }
+.cat-row-main {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 8px 16px;
+  text-align: left;
+  background: var(--bg-grouped-secondary);
+}
+.cat-row-main:active { background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
+.cat-row-main:focus-visible { outline-offset: -2px; }
+.cat-row + .cat-row .cat-row-main::before { /* 内缩分隔线：从文字起点开始 */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 64px;
+  right: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+.cat-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--font-body);
+}
+.cat-row-chevron { flex: none; display: flex; color: var(--tertiary-label); }
+.cat-row-add .cat-row-main { color: var(--accent); }
+.cat-row-plus {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 列尾「删除」：平常看不见也点不到；键盘 Tab / VoiceOver 聚焦时显示在列右侧 */
+.cat-row-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 80px;
+  background: var(--red);
+  color: #FFFFFF;
+  font: var(--font-body);
+  opacity: 0;
+  pointer-events: none;
+}
+.cat-row-delete:focus { opacity: 1; pointer-events: auto; z-index: 1; }
+.cat-row-delete:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -4px; }
+
+/* 新增 / 编辑分类 sheet：名称列 + 图示网格（只有图示，没有文字） */
+.cat-name-input { flex: 1; min-width: 0; padding: 11px 0; }
+.cat-name-input::placeholder { color: var(--tertiary-label); }
+.icon-grid .cat-tile { min-height: 52px; justify-content: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-page { transform: none; opacity: 0; transition: opacity 0.2s ease; }
+  .nav-page.is-visible { transform: none; opacity: 1; }
+}
