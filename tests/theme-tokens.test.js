@@ -1,32 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { css, blockAfter, light, mediaDark, attrDark } from './helpers/css-tokens.js';
 
 const root = new URL('../', import.meta.url);
-const css = readFileSync(new URL('css/app.css', root), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-
-// 取 `selector {` 之后配对的大括号内容
-function blockAfter(src, marker, from = 0) {
-  const i = src.indexOf(marker, from);
-  assert.ok(i >= 0, `missing ${marker}`);
-  let depth = 0;
-  const start = src.indexOf('{', i);
-  for (let k = start; k < src.length; k++) {
-    if (src[k] === '{') depth++;
-    else if (src[k] === '}' && --depth === 0) return src.slice(start + 1, k);
-  }
-  throw new Error('unbalanced');
-}
-function namesAndValues(body) {
-  const out = {};
-  for (const m of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) out[m[1]] = m[2].trim();
-  return out;
-}
-
-const light = namesAndValues(blockAfter(css, ':root {'));
-const mediaBlock = blockAfter(css, '@media (prefers-color-scheme: dark)');
-const mediaDark = namesAndValues(blockAfter(mediaBlock, ':root:not([data-theme="light"])'));
-const attrDark = namesAndValues(blockAfter(css, ':root[data-theme="dark"]'));
 
 test('dark tokens are defined identically in both dark blocks', () => {
   assert.ok(Object.keys(attrDark).length > 20);

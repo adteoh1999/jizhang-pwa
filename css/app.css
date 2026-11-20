@@ -8,7 +8,7 @@
        Large Title 的 emphasized weight 为 Bold。
    - [apple-skills:hig accessibility.md / buttons.md] iOS 最小点击区 44x44 pt。
    - [apple-skills:hig color.md「System colors」表，iOS 26 快照]
-       Blue  light rgb(0,136,255)  dark rgb(0,145,255)
+       Blue  light rgb(0,136,255)  dark rgb(0,145,255)（仅作历史参考：强调色现已改为 ink，不再使用 systemBlue）
        Green light rgb(52,199,89)  dark rgb(48,209,88)
        Red   light rgb(255,56,60)  dark rgb(255,66,69)
    - [apple-skills:hig color.md] 语义色名称（label / secondaryLabel / tertiaryLabel /
@@ -249,7 +249,7 @@ button:disabled { cursor: default; }
   :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #FFFFFF; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
   :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #1A1D23; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
 }
-@media ((prefers-contrast: more) or (prefers-reduced-transparency: reduce)) and (prefers-color-scheme: dark) {
+@media (prefers-contrast: more) and (prefers-color-scheme: dark), (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #1A1D23; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
 }
 
@@ -328,6 +328,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   position: fixed;
   left: calc(max(16px, var(--safe-left)));
   right: calc(max(16px, var(--safe-right)));
+  max-width: 520px;   /* iPad / 桌面不拉满 */
+  margin-inline: auto;
   bottom: calc(var(--tabbar-gap) + var(--safe-bottom));
   z-index: 50;
   display: grid;
@@ -400,7 +402,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .install-hint-icon { color: var(--ink); display: flex; flex: none; }
 .install-hint-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nowrap { white-space: nowrap; }
-.install-hint .nowrap { display: inline-block; white-space: normal; } /* 整段优先不拆；过宽时（大字级 / 窄屏）才在段内换行，避免横向捲动 */
+.install-hint .nowrap { display: inline-block; white-space: normal; } /* 整段优先不拆；过宽时（大字级 / 窄屏）才在段内换行，避免横向滚动 */
 /* 有安装提示时，空的导航列缩小，免得提示和大标题之间空一大块 */
 .shell:has(.install-hint) .nav-bar:empty { height: 12px; }
 .install-hint-close {
@@ -519,7 +521,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   min-height: 0;
   border-radius: 14px;
   overflow-x: hidden;
-  overflow-y: auto; /* 选项太多时只在这一组里捲动 */
+  overflow-y: auto; /* 选项太多时只在这一组里滚动 */
   overscroll-behavior: contain;
   background: var(--sheet-material);
   -webkit-backdrop-filter: saturate(180%) blur(30px);
@@ -597,9 +599,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 
 /* ---------- 10b. 资料库已更新（不可关闭的阻挡画面） ---------- */
-.overlay-blocking { z-index: 300; opacity: 1; }
 /* 阻挡画面：天空底（不透明，盖住后面不可操作的内容）+ 黑色胶囊按钮 */
-.overlay-blocking { background: var(--sky-mid); }
+.overlay-blocking { z-index: 300; opacity: 1; background: var(--sky-mid); }
 .overlay-blocking .alert-buttons { box-shadow: none; padding: 0 16px 16px; }
 .overlay-blocking .alert-button { border-radius: 999px; background: var(--btn-bg); color: var(--btn-fg); }
 .overlay-blocking .alert-button:active:not(:disabled) { background: var(--btn-bg); opacity: 0.7; }
@@ -921,7 +922,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .field-error {
   padding: 6px 16px 0;
   font: var(--font-footnote);
-  color: var(--red);
+  color: var(--red-text);
 }
 .is-shaking { animation: entry-shake 0.4s ease; }
 @keyframes entry-shake {
@@ -1401,7 +1402,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    16. Settings 设置页 — js/ui/settings.js
    - [hig-patterns / settings.md] App 内设定只放常用项目；分组 + 简短说明。
    - [hig-components-layout / lists-and-tables.md] inset grouped：组标题 footnote 次要色、
-     12pt 圆角卡片、内缩分隔线；推入子画面的列尾有 chevron，动作列用蓝字、不加 chevron。
+     12pt 圆角卡片、内缩分隔线；推入子画面的列尾有 chevron，动作列用 ink 字、不加 chevron。
    ===================================================================== */
 .settings-section { margin-top: 24px; }
 .settings-section:first-child { margin-top: 4px; }
@@ -1646,5 +1647,5 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 
 /* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
 @media (prefers-contrast: more) {
-  .entry-card, .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--separator); }
+  .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-3); }
 }

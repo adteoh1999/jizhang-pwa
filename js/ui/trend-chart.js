@@ -138,6 +138,8 @@ export function mountTrendChart(container, { onChangeText } = {}) {
       g = null;
       return;
     }
+    tipW = 0; // 字级（Dynamic Type）可能已变 → 重量标签尺寸
+    tipH = 0;
     lastDay = st.lastDay;
     totalEl.textContent = `累计 ${formatRM(st.total, { sign: 'none' })}`;
     if (!boxW) boxW = box.clientWidth; // 显示中才有值；隐藏时等 ResizeObserver

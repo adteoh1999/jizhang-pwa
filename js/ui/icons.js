@@ -70,12 +70,12 @@ export function iconKey(name) {
   return CATEGORY_ICON_CHOICES.includes(name) ? name : 'other';
 }
 
-/** 返回 SVGElement；未知名称退回 'other'，不会抛错。 */
 /** 列图示的 data-icon：有效分类 → iconKey；已删除 / 未分类 → null（维持灰色）。 */
 export function rowIconAttr(cat) {
   return cat && !cat.deleted ? iconKey(cat.icon) : null;
 }
 
+/** 返回 SVGElement；未知名称退回 'other'，不会抛错。 */
 export function icon(name, size = 24) {
   const paths = Object.prototype.hasOwnProperty.call(ICON_DATA, name) ? ICON_DATA[name] : ICON_DATA.other;
   const svg = document.createElementNS(SVG_NS, 'svg');
