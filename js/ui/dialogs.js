@@ -7,6 +7,19 @@ let seq = 0;
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** 焦点留在 panel 里（Tab / Shift+Tab 循环）。sheet.js 也用。 */
+export function trapFocus(overlay, panel) {
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const items = [...panel.querySelectorAll(FOCUSABLE)].filter((el) => !el.closest('[inert]'));
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
+
 // 建立遮罩 + 面板，入栈；回传 { overlay, close }。onClosed 在关闭时（任何途径）呼叫一次。
 function present({ kind, panel, onClosed, onBackdrop }) {
   const opener = document.activeElement;
@@ -14,19 +27,11 @@ function present({ kind, panel, onClosed, onBackdrop }) {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay && onBackdrop) onBackdrop();
   });
-  // 焦点留在对话框里
-  overlay.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab') return;
-    const items = [...panel.querySelectorAll(FOCUSABLE)];
-    if (items.length === 0) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  });
+  trapFocus(overlay, panel);
 
   let closed = false;
   const handle = pushLayer({
+    element: overlay, // 上面再开一层时自动 inert
     onClose: () => {
       closed = true;
       overlay.classList.remove('is-visible');

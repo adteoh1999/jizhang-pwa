@@ -91,3 +91,44 @@ test('onClose 抛错不会破坏堆叠', () => {
   c.close();
   assert.equal(depth(), 0);
 });
+
+test('element：只有最上层的元素可操作，其他层的元素 inert；上层关闭后下层恢复', () => {
+  const a = { inert: false };
+  const b = { inert: false };
+  const ha = pushLayer({ element: a });
+  assert.equal(a.inert, false);
+  const hb = pushLayer({ element: b });
+  assert.equal(a.inert, true);
+  assert.equal(b.inert, false);
+  pushLayer({}); // 没有元素的层也算最上层
+  assert.equal(b.inert, true);
+  popLayer();
+  assert.equal(b.inert, false);
+  hb.close();
+  assert.equal(b.inert, true, '已关闭的层（退场动画中）不可操作');
+  assert.equal(a.inert, false);
+  ha.close();
+  assert.equal(a.inert, true);
+});
+
+test('关闭上层时，下层元素在 onClose（焦点还原）之前就已解除 inert', () => {
+  const a = { inert: false };
+  pushLayer({ element: a });
+  let seen = null;
+  const hb = pushLayer({ element: { inert: false }, onClose: () => { seen = a.inert; } });
+  hb.close();
+  assert.equal(seen, false);
+});
+
+test('onDismiss：popLayer 交给 onDismiss 决定（不直接关闭）；close() 仍直接关闭', () => {
+  let asked = 0;
+  let closed = 0;
+  const h = pushLayer({ onDismiss: () => { asked += 1; }, onClose: () => { closed += 1; } });
+  popLayer();
+  assert.equal(asked, 1);
+  assert.equal(closed, 0);
+  assert.equal(depth(), 1);
+  h.close();
+  assert.equal(closed, 1);
+  assert.equal(depth(), 0);
+});
