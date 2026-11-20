@@ -40,16 +40,18 @@ export class ValidationError extends Error {
   }
 }
 
+const newId = (id, uuid) => (typeof id === 'string' && id !== '' ? id : uuid());
+
 export function buildTransaction(input, existing, { now, uuid }) {
   if (!KINDS.includes(input.kind)) throw new ValidationError('kind');
   const a = input.amountMinor;
   if (!Number.isInteger(a) || a < 1 || a > MAX_MINOR) throw new ValidationError('amount');
   if (!isValidDateString(input.occurredOn)) throw new ValidationError('date');
-  if (typeof input.categoryId !== 'string' || input.categoryId === '') throw new ValidationError('category');
+  if (typeof input.categoryId !== 'string' || input.categoryId.trim() === '') throw new ValidationError('category');
   const note = input.note === undefined || input.note === null ? '' : String(input.note).trim();
   if (note.length > NOTE_MAX) throw new ValidationError('note');
   return {
-    id: existing ? existing.id : (input.id || uuid()),
+    id: existing ? existing.id : newId(input.id, uuid),
     kind: input.kind,
     amount_minor: a,
     category_id: input.categoryId,
@@ -68,13 +70,17 @@ export function buildCategory(input, existing, { now, uuid }) {
   const name = typeof input.name === 'string' ? input.name.trim() : '';
   if (name.length < 1 || name.length > CATEGORY_NAME_MAX) throw new ValidationError('name');
   const icon = typeof input.icon === 'string' && input.icon.length >= 1 && input.icon.length <= 30
-    ? input.icon : (kind === 'income' ? 'other_income' : 'other');
+    ? input.icon
+    : (existing ? existing.icon : (kind === 'income' ? 'other_income' : 'other'));
+  let sort = input.sort;
+  if (sort === undefined && existing) sort = existing.sort;
+  if (!Number.isInteger(sort) || sort < 0) throw new TypeError('sort must be a non-negative integer');
   return {
-    id: existing ? existing.id : (input.id || uuid()),
+    id: existing ? existing.id : newId(input.id, uuid),
     kind,
     name,
     icon,
-    sort: input.sort,
+    sort,
     updated_at: nextUpdatedAt(existing && existing.updated_at, now),
     deleted: existing ? existing.deleted : false,
     dirty: 1,

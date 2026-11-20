@@ -91,6 +91,7 @@ test('buildTransaction validation', () => {
   assert.equal(f({ occurredOn: '2026-02-30' }), 'date');
   assert.equal(f({ categoryId: '' }), 'category');
   assert.equal(f({ categoryId: undefined }), 'category');
+  assert.equal(f({ categoryId: '   ' }), 'category');
   assert.equal(f({ note: 'a'.repeat(NOTE_MAX + 1) }), 'note');
   assert.equal(f({ note: 'a'.repeat(NOTE_MAX) }), null);
   assert.equal(f({ note: ' ' + 'a'.repeat(NOTE_MAX) + ' ' }), null);
@@ -135,4 +136,26 @@ test('markDeleted / markRestored return new objects', () => {
   assert.equal(r.deleted, false);
   assert.equal(r.dirty, 1);
   assert.equal(r.updated_at, '2026-11-20T10:00:00.002Z');
+});
+
+test('fix round 1: sort / icon / id guards', () => {
+  const ex = { id: 'c1', kind: 'expense', name: 'n', icon: 'star', sort: 3, updated_at: DEFAULT_EPOCH, deleted: true, dirty: 0 };
+  const e = buildCategory({ name: 'm' }, ex, deps);
+  assert.equal(e.sort, 3);
+  assert.equal(e.icon, 'star');
+  assert.equal(e.deleted, true);
+  assert.throws(() => buildCategory({ kind: 'expense', name: 'a', icon: 'x' }, undefined, deps), TypeError);
+  assert.throws(() => buildCategory({ kind: 'expense', name: 'a', icon: 'x', sort: -1 }, undefined, deps), TypeError);
+  assert.throws(() => buildCategory({ kind: 'expense', name: 'a', icon: 'x', sort: 1.5 }, undefined, deps), TypeError);
+  const before = n;
+  assert.match(buildTransaction({ ...base, id: 123 }, undefined, deps).id, /^u\d+$/);
+  assert.ok(n > before);
+  assert.match(buildCategory({ id: 123, kind: 'expense', name: 'a', icon: 'x', sort: 0 }, undefined, deps).id, /^u\d+$/);
+});
+
+test('fix round 1: kind switch and future prev', () => {
+  const ex = { id: 'e1', created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-11-20T09:00:00.000Z' };
+  const t = buildTransaction({ ...base, kind: 'income', categoryId: 'salary' }, ex, deps);
+  assert.equal(t.kind, 'income');
+  assert.equal(nextUpdatedAt('2026-11-21T09:00:00.000Z', now), '2026-11-21T09:00:00.001Z');
 });
