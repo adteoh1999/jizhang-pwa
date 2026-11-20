@@ -1234,8 +1234,9 @@ button.inset-row:active { background: color-mix(in srgb, var(--fill) 50%, var(--
   .nav-page.is-visible { transform: none; opacity: 1; }
 }
 
-/* 设置页「有新版本 · 更新」 */
+/* 设置页「有新版本 · 更新」：行高保持 44pt，点击区用 ::after 扩大 */
 button.update-action {
   appearance: none; border: 0; background: none; font: inherit;
-  color: var(--accent); cursor: pointer; min-height: 44px; padding: 0 0 0 12px; margin: 0;
+  color: var(--accent); cursor: pointer; padding: 0; margin: 0; position: relative;
 }
+button.update-action::after { content: ""; position: absolute; inset: -12px -8px; }

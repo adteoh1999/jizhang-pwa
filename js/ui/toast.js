@@ -4,28 +4,31 @@ import { h } from './dom.js';
 import { depth, onDepthChange } from './nav.js';
 
 let current = null; // { el, timer }
-const idleListeners = new Set();
+const idleQueue = [];
 
-/** 目前是否有 toast 在显示。 */
-export function isShowing() { return current !== null; }
-
-/** 等到没有 toast 时呼叫一次 fn（现在就空闲则立刻呼叫）。 */
+/** 等到没有 toast 时呼叫一次 fn（现在就空闲则立刻呼叫）。被别的 toast 取代时不算「空闲」，只在 toast 自然结束 / 被按下 / close() 后才轮到。 */
 export function whenToastIdle(fn) {
-  if (!current) fn(); else idleListeners.add(fn);
+  if (!current) fn(); else idleQueue.push(fn);
+}
+
+// 非同步（微任务）逐个放行；每次放行前重新确认没有 toast，有就留在队列里继续等。
+function flushIdle() {
+  queueMicrotask(() => {
+    while (idleQueue.length && !current) idleQueue.shift()();
+  });
 }
 
 // 有浮层时 toast 被遮罩盖住，也不可操作
 onDepthChange((d) => { if (current) current.el.inert = d > 0; });
 
-function dismiss(t) {
+/** replaced=true：正被新 toast 取代，不通知等待者。 */
+function dismiss(t, replaced = false) {
   if (!t || t.gone) return;
   t.gone = true;
   clearTimeout(t.timer);
   if (current === t) {
     current = null;
-    const fns = [...idleListeners];
-    idleListeners.clear();
-    fns.forEach((f) => f());
+    if (!replaced) flushIdle();
   }
   t.el.classList.remove('is-visible');
   const remove = () => t.el.remove();
@@ -34,7 +37,7 @@ function dismiss(t) {
 }
 
 export function showToast(message, { actionLabel, onAction, duration = 4000 } = {}) {
-  dismiss(current);
+  dismiss(current, true);
   const t = { gone: false, timer: 0, el: null };
   const action = actionLabel
     ? h('button', {

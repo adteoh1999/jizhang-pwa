@@ -4,8 +4,6 @@ let waitingWorker = null;
 let available = false;
 const listeners = new Set();
 
-export const isUpdateAvailable = () => available;
-
 /** 订阅「有新版本」；已经有的话立刻呼叫。回传取消订阅函数。 */
 export function onUpdateAvailable(fn) {
   listeners.add(fn);
@@ -16,7 +14,8 @@ export function onUpdateAvailable(fn) {
 /** 由 SW 注册逻辑呼叫。 */
 export function markUpdateAvailable(registration, worker) {
   reg = registration;
-  waitingWorker = worker;
+  waitingWorker = worker; // 永远记最新的
+  if (available) return; // 只在 false→true 时通知一次
   available = true;
   [...listeners].forEach((f) => f());
 }

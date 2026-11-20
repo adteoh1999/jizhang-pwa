@@ -119,7 +119,8 @@ async function registerServiceWorker() {
       location.reload();
     });
 
-    // 已有 toast（例如「已删除 · 撤销」）时不抢掉它，等它消失后再显示
+    // 已有 toast（例如「已删除 · 撤销」）时不抢掉它，等它消失后再显示。
+    // 更新 toast 之后被别的 toast 取代是故意的：设置页「版本」行是常驻入口。onUpdateAvailable 只会通知一次，所以最多排队一次。
     onUpdateAvailable(() => whenToastIdle(() => showToast('有新版本', {
       actionLabel: '更新', duration: Infinity, onAction: applyUpdate,
     })));
