@@ -1,5 +1,5 @@
 // 进入点：开 DB → 建 store → init → 挂载 Tab Bar 与三个分页 → 安装提示。
-// Service Worker 在 Task 13 才注册。
+// 最后注册 Service Worker（离线 + 更新提示）。
 import { openDatabase } from './db.js';
 import { createStore } from './store.js';
 import { h } from './ui/dom.js';
@@ -9,6 +9,7 @@ import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
+import { showToast } from './ui/toast.js';
 
 const TABS = [
   { id: 'home', label: '首页', icon: 'house', title: '记账' },
@@ -101,6 +102,36 @@ function mountShell(root, store) {
   maybeShowInstallHint(hintSlot, store).catch((e) => console.error(e));
 }
 
+/** 注册 Service Worker；本机网址默认不注册（方便开发），加 ?sw=1 才注册。失败只 warn，不影响 App。 */
+export async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (isDevHost() && new URLSearchParams(location.search).get('sw') !== '1') return;
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js', { scope: './' });
+    const offerUpdate = (worker) => showToast('有新版本', {
+      actionLabel: '更新', duration: Infinity,
+      onAction: () => worker.postMessage({ type: 'SKIP_WAITING' }),
+    });
+    if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      if (!w) return;
+      w.addEventListener('statechange', () => {
+        if (w.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(w);
+      });
+    });
+    const hadController = !!navigator.serviceWorker.controller; // 首次安装 claim 不需要重载
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloaded || !hadController) return;
+      reloaded = true;
+      location.reload();
+    });
+  } catch (err) {
+    console.warn('Service Worker 注册失败:', err);
+  }
+}
+
 async function boot() {
   const root = document.getElementById('app');
   window.addEventListener('jizhang:db-versionchange', showDbClosedNotice);
@@ -120,4 +151,4 @@ async function boot() {
   }
 }
 
-boot();
+boot().then(() => registerServiceWorker());
