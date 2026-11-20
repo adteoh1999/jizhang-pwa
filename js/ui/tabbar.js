@@ -21,6 +21,8 @@ export function mountTabBar(root, { tabs, onSelect, selected = tabs[0].id }) {
       return btn;
     })]);
 
+  bar.style.setProperty('--n', String(tabs.length));
+
   function setSelected(id) {
     bar.style.setProperty('--i', String(pillIndex(tabs, id)));
     for (const [tid, btn] of buttons) {
