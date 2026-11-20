@@ -98,7 +98,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     const selected = catId === state.categoryId;
     return h('button', {
       type: 'button', class: `cat-tile${deleted ? ' is-deleted' : ''}`,
-      'aria-pressed': selected ? 'true' : 'false', 'data-cat': catId,
+      'aria-pressed': selected ? 'true' : 'false', 'data-cat': catId, 'data-icon': deleted ? null : iconName,
       'aria-label': deleted ? `${name}（已删除）` : name,
       on: {
         click: () => {

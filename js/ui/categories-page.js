@@ -260,6 +260,7 @@ export function openCategoriesPage(store, {
     const sig = `${c.name}\u0001${c.icon}`;
     if (sig === rec.sig) return;
     rec.sig = sig;
+    rec.iconEl.dataset.icon = c.icon;
     rec.iconEl.replaceChildren(icon(c.icon, 20));
     rec.nameEl.textContent = c.name;
     rec.del.setAttribute('aria-label', `删除 ${c.name}`);

@@ -74,11 +74,11 @@ export function mountStats(root, store) {
       const cat = store.categoryById(r.category_id);
       const name = cat ? cat.name : '未分类';
       const pct = formatPercent(r.ratio);
-      const bar = h('span', { class: 'stats-bar-fill' });
+      const bar = h('span', { class: 'stats-bar-fill', 'data-icon': cat && !cat.deleted ? cat.icon : null });
       bar.style.width = `max(6px, ${(r.ratio * 100).toFixed(2)}%)`;
       return h('li', { class: 'stats-row' },
         h('div', { class: 'stats-row-main' },
-          h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}` },
+          h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? cat.icon : null },
             icon(cat ? cat.icon : 'other', 20)),
           h('span', { class: 'stats-row-name' }, name),
           h('span', { class: 'stats-row-amount' }, formatRM(r.total, { sign: 'none' }))),

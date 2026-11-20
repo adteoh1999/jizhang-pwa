@@ -1310,3 +1310,70 @@ button.update-action {
   color: var(--accent); cursor: pointer; padding: 0; margin: 0; position: relative;
 }
 button.update-action::after { content: ""; position: absolute; inset: -12px -8px; }
+
+/* ===== 分类颜色（Task 2）：[data-icon] 设定 --cat-bg / --cat-fg，任何元件都可套用 ===== */
+[data-icon="food"] { --cat-bg: #FFE4CF; --cat-fg: #C85A08; }
+[data-icon="transport"] { --cat-bg: #D8E8FF; --cat-fg: #1D63BF; }
+[data-icon="shopping"] { --cat-bg: #FFDCE8; --cat-fg: #B92E62; }
+[data-icon="bills"] { --cat-bg: #D3F0EA; --cat-fg: #137767; }
+[data-icon="fun"] { --cat-bg: #E8DFFF; --cat-fg: #6040C4; }
+[data-icon="other"] { --cat-bg: #E6E8EC; --cat-fg: #4A5160; }
+[data-icon="salary"] { --cat-bg: #D8F2DC; --cat-fg: #1F7D36; }
+[data-icon="bonus"] { --cat-bg: #FFF0BF; --cat-fg: #9A6B00; }
+[data-icon="side"] { --cat-bg: #DDE1FF; --cat-fg: #3E4CBF; }
+[data-icon="other_income"] { --cat-bg: #DCEBE6; --cat-fg: #2D6B57; }
+[data-icon="pet"] { --cat-bg: #FFE0D6; --cat-fg: #B83F24; }
+[data-icon="health"] { --cat-bg: #FFDAD8; --cat-fg: #C0262D; }
+[data-icon="home"] { --cat-bg: #EFE6D2; --cat-fg: #7A5B12; }
+[data-icon="gift"] { --cat-bg: #F9D9F2; --cat-fg: #A4289A; }
+[data-icon="travel"] { --cat-bg: #D0EDF8; --cat-fg: #0E6F94; }
+[data-icon="education"] { --cat-bg: #E3F0C4; --cat-fg: #52700E; }
+[data-icon="coffee"] { --cat-bg: #EBDCCF; --cat-fg: #7A4A2A; }
+[data-icon="phone"] { --cat-bg: #D6EEF2; --cat-fg: #17707F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-icon="food"] { --cat-bg: rgba(255, 140, 50, 0.18); --cat-fg: #FFA35C; }
+  :root:not([data-theme="light"]) [data-icon="transport"] { --cat-bg: rgba(70, 150, 255, 0.18); --cat-fg: #7DB4FF; }
+  :root:not([data-theme="light"]) [data-icon="shopping"] { --cat-bg: rgba(255, 90, 150, 0.18); --cat-fg: #FF8DB6; }
+  :root:not([data-theme="light"]) [data-icon="bills"] { --cat-bg: rgba(40, 200, 170, 0.18); --cat-fg: #5FD9C0; }
+  :root:not([data-theme="light"]) [data-icon="fun"] { --cat-bg: rgba(150, 110, 255, 0.2); --cat-fg: #B49BFF; }
+  :root:not([data-theme="light"]) [data-icon="other"] { --cat-bg: rgba(128, 133, 144, 0.19); --cat-fg: #A5A8B0; }
+  :root:not([data-theme="light"]) [data-icon="salary"] { --cat-bg: rgba(60, 200, 100, 0.18); --cat-fg: #6EDB8C; }
+  :root:not([data-theme="light"]) [data-icon="bonus"] { --cat-bg: rgba(255, 200, 40, 0.18); --cat-fg: #FFD25C; }
+  :root:not([data-theme="light"]) [data-icon="side"] { --cat-bg: rgba(110, 125, 255, 0.2); --cat-fg: #9FA9FF; }
+  :root:not([data-theme="light"]) [data-icon="other_income"] { --cat-bg: rgba(108, 151, 137, 0.19); --cat-fg: #96B5AB; }
+  :root:not([data-theme="light"]) [data-icon="pet"] { --cat-bg: rgba(205, 121, 102, 0.19); --cat-fg: #DC9F92; }
+  :root:not([data-theme="light"]) [data-icon="health"] { --cat-bg: rgba(211, 103, 108, 0.19); --cat-fg: #E09396; }
+  :root:not([data-theme="light"]) [data-icon="home"] { --cat-bg: rgba(162, 140, 89, 0.19); --cat-fg: #BDAD89; }
+  :root:not([data-theme="light"]) [data-icon="gift"] { --cat-bg: rgba(191, 105, 184, 0.19); --cat-fg: #D294CD; }
+  :root:not([data-theme="light"]) [data-icon="travel"] { --cat-bg: rgba(86, 154, 180, 0.19); --cat-fg: #87B7CA; }
+  :root:not([data-theme="light"]) [data-icon="education"] { --cat-bg: rgba(134, 155, 86, 0.19); --cat-fg: #A9B887; }
+  :root:not([data-theme="light"]) [data-icon="coffee"] { --cat-bg: rgba(162, 128, 106, 0.19); --cat-fg: #BDA595; }
+  :root:not([data-theme="light"]) [data-icon="phone"] { --cat-bg: rgba(93, 155, 165, 0.19); --cat-fg: #8BB8BF; }
+}
+:root[data-theme="dark"] [data-icon="food"] { --cat-bg: rgba(255, 140, 50, 0.18); --cat-fg: #FFA35C; }
+:root[data-theme="dark"] [data-icon="transport"] { --cat-bg: rgba(70, 150, 255, 0.18); --cat-fg: #7DB4FF; }
+:root[data-theme="dark"] [data-icon="shopping"] { --cat-bg: rgba(255, 90, 150, 0.18); --cat-fg: #FF8DB6; }
+:root[data-theme="dark"] [data-icon="bills"] { --cat-bg: rgba(40, 200, 170, 0.18); --cat-fg: #5FD9C0; }
+:root[data-theme="dark"] [data-icon="fun"] { --cat-bg: rgba(150, 110, 255, 0.2); --cat-fg: #B49BFF; }
+:root[data-theme="dark"] [data-icon="other"] { --cat-bg: rgba(128, 133, 144, 0.19); --cat-fg: #A5A8B0; }
+:root[data-theme="dark"] [data-icon="salary"] { --cat-bg: rgba(60, 200, 100, 0.18); --cat-fg: #6EDB8C; }
+:root[data-theme="dark"] [data-icon="bonus"] { --cat-bg: rgba(255, 200, 40, 0.18); --cat-fg: #FFD25C; }
+:root[data-theme="dark"] [data-icon="side"] { --cat-bg: rgba(110, 125, 255, 0.2); --cat-fg: #9FA9FF; }
+:root[data-theme="dark"] [data-icon="other_income"] { --cat-bg: rgba(108, 151, 137, 0.19); --cat-fg: #96B5AB; }
+:root[data-theme="dark"] [data-icon="pet"] { --cat-bg: rgba(205, 121, 102, 0.19); --cat-fg: #DC9F92; }
+:root[data-theme="dark"] [data-icon="health"] { --cat-bg: rgba(211, 103, 108, 0.19); --cat-fg: #E09396; }
+:root[data-theme="dark"] [data-icon="home"] { --cat-bg: rgba(162, 140, 89, 0.19); --cat-fg: #BDAD89; }
+:root[data-theme="dark"] [data-icon="gift"] { --cat-bg: rgba(191, 105, 184, 0.19); --cat-fg: #D294CD; }
+:root[data-theme="dark"] [data-icon="travel"] { --cat-bg: rgba(86, 154, 180, 0.19); --cat-fg: #87B7CA; }
+:root[data-theme="dark"] [data-icon="education"] { --cat-bg: rgba(134, 155, 86, 0.19); --cat-fg: #A9B887; }
+:root[data-theme="dark"] [data-icon="coffee"] { --cat-bg: rgba(162, 128, 106, 0.19); --cat-fg: #BDA595; }
+:root[data-theme="dark"] [data-icon="phone"] { --cat-bg: rgba(93, 155, 165, 0.19); --cat-fg: #8BB8BF; }
+
+.home-row-icon[data-icon] { color: var(--cat-fg); background: var(--cat-bg); }
+.cat-tile[data-icon] .cat-tile-icon { color: var(--cat-fg); background: var(--cat-bg); }
+.cat-tile[data-icon][aria-pressed="true"] .cat-tile-icon {
+  color: var(--cat-fg);
+  background: var(--cat-bg);
+  box-shadow: 0 0 0 2px var(--cell-bg), 0 0 0 4px var(--cat-fg);
+}
+.stats-bar-fill[data-icon] { background: var(--cat-fg); }

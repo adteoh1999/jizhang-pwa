@@ -109,7 +109,7 @@ export function mountHome(root, store) {
       ? formatRM(tx.amount_minor, { sign: 'always' })
       : formatRM(-tx.amount_minor);
     rec.content.replaceChildren(
-      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}` }, icon(cat ? cat.icon : 'other', 20)),
+      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? cat.icon : null }, icon(cat ? cat.icon : 'other', 20)),
       h('span', { class: 'home-row-text' },
         h('span', { class: 'home-row-name' }, name),
         tx.note ? h('span', { class: 'home-row-note' }, tx.note) : null),
