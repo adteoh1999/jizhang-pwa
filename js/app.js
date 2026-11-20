@@ -53,7 +53,7 @@ export function showDbClosedNotice() {
 function mountShell(root, store) {
   const hintSlot = h('div', { class: 'hint-slot' });
   const screens = new Map();
-  const scrollPos = new Map(); // 每个分页各自记住捲动位置（只在记忆体）
+  const scrollPos = new Map(); // 每个分页各自记住滚动位置（只在记忆体）
   let active = TABS[0].id;
 
   const main = h('main', { class: 'screens' }, TABS.map((t) => {
@@ -83,7 +83,7 @@ function mountShell(root, store) {
     selected: active,
     onSelect(id) {
       if (id === active) {
-        // 再按一次目前的分页：捲回顶端（iOS 惯例）
+        // 再按一次目前的分页：滚回顶端（iOS 惯例）
         window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
         return;
       }

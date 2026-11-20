@@ -65,7 +65,7 @@ export function mountHome(root, store, { monthEl = null } = {}) {
   const CLICK_WINDOW = 500;
   const rows = new Map();      // id → record { id, tx, el, content, del, sig, offset }
   let order = [];              // 目前画出来的列 id（由上到下）
-  let openScrollY = 0;         // 列滑开时的 scrollY；只有真的捲离这个位置才关闭
+  let openScrollY = 0;         // 列滑开时的 scrollY；只有真的滚离这个位置才关闭
   // 记一笔里的「＋ 新增」：叠一层分类管理子画面，新增后回到记一笔并选中新分类
   const onAddCategory = ({ kind, select, refocus }) => openCategoriesPage(store, {
     kind, from: 'entry', onPicked: select, restoreFocus: refocus,
@@ -252,7 +252,7 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     }
     moreBtn.hidden = all.length <= shown;
 
-    // 保持捲动位置与焦点（重排列节点会让焦点掉到 body）
+    // 保持滚动位置与焦点（重排列节点会让焦点掉到 body）
     if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
     if (hadFocus && document.contains(hadFocus)) {
       if (document.activeElement !== hadFocus) hadFocus.focus({ preventScroll: true });
@@ -326,7 +326,7 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     });
   }
 
-  // ---------- 左滑手势（pointer events，垂直捲动优先） ----------
+  // ---------- 左滑手势（pointer events，垂直滚动优先） ----------
   // 拖动状态必须成对：每次 dragging += 1 都只能由 finish() 减回来一次。
   // 拖动中的列登记在 activeDrags；新的主要指标按下、或指标在列外放开时，由文件层的后备逻辑收尾，
   // 避免失去 capture 又收不到 pointerup 时 dragging 永远不归零（列表与摘要就不会再更新）。
@@ -373,7 +373,7 @@ export function mountHome(root, store, { monthEl = null } = {}) {
       const dy = e.clientY - g.y0;
       if (g.state === 'pending') {
         if (Math.hypot(dx, dy) < LOCK_DIST) return;
-        if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 放弃，让页面捲动
+        if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 放弃，让页面滚动
         if (dx > 0 && g.base === 0) { g = null; return; }      // 关着的列往右滑：不处理
         g.state = 'drag';
         rec.dragging = true;
@@ -420,7 +420,7 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     }
   }, true);
 
-  // 点其他地方 / 捲动 → 关闭滑开的列
+  // 点其他地方 / 滚动 → 关闭滑开的列
   document.addEventListener('pointerdown', (e) => {
     closingGesture = false;
     swallowClickUntil = 0;
@@ -437,7 +437,7 @@ export function mountHome(root, store, { monthEl = null } = {}) {
   document.addEventListener('pointerup', endGesture, true);
   document.addEventListener('pointercancel', endGesture, true);
   window.addEventListener('scroll', () => {
-    // 键盘聚焦删除按钮时浏览器会把它捲进画面；重新渲染时还原 scrollY 也会发 scroll 事件。
+    // 键盘聚焦删除按钮时浏览器会把它滚进画面；重新渲染时还原 scrollY 也会发 scroll 事件。
     // 这两种都不能把列关掉 → 焦点在删除按钮上时不关；其余只在 scrollY 真的离开打开时的位置才关。
     if (!openRow || openRow.dragging || document.activeElement === openRow.del) return;
     if (Math.abs(window.scrollY - openScrollY) > 4) closeOpenRow();

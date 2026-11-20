@@ -270,7 +270,7 @@ h1, h2, p { margin: 0; }
   padding-top: var(--safe-top);
   padding-bottom: var(--shell-pad-bottom);
 }
-/* 有 toast 时多留出 toast 的高度，最后一行可以捲到 toast 之上 */
+/* 有 toast 时多留出 toast 的高度，最后一行可以滚到 toast 之上 */
 body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12px + var(--hit) + 16px); }
 /* 首页是 flex column：抽屉 flex 撑满剩下的高度（不量测 DOM） */
 .screens { flex: 1 0 auto; display: flex; flex-direction: column; }
@@ -1133,7 +1133,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   isolation: isolate;
 }
 
-/* 一列：红色删除按钮在下层（右侧），内容在上层可左右滑动。列与子元素不加阴影 / 渐层（捲动效能） */
+/* 一列：红色删除按钮在下层（右侧），内容在上层可左右滑动。列与子元素不加阴影 / 渐层（滚动效能） */
 .home-row {
   position: relative;
   overflow: hidden;
@@ -1149,7 +1149,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   padding: 9px calc(20px + var(--safe-right)) 9px calc(20px + var(--safe-left));
   text-align: left;
   background: var(--drawer);
-  touch-action: pan-y;           /* 垂直捲动交给浏览器，水平给左滑 */
+  touch-action: pan-y;           /* 垂直滚动交给浏览器，水平给左滑 */
   -webkit-touch-callout: none;
 }
 .home-row-content:active { background: var(--press-bg); }
@@ -1301,7 +1301,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   width: 100%;
   height: auto;
   overflow: visible;
-  touch-action: pan-y;           /* 上下滑交给页面捲动，水平拖动给图表 */
+  touch-action: pan-y;           /* 上下滑交给页面滚动，水平拖动给图表 */
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -1647,5 +1647,5 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 
 /* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
 @media (prefers-contrast: more) {
-  .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-3); }
+  .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-2); }
 }

@@ -174,14 +174,14 @@ export function mountTrendChart(container, { onChangeText } = {}) {
     e.preventDefault();
   });
 
-  // ---------- 拖动：方向锁定（偏垂直 → 放弃，让页面捲动），touch-action: pan-y ----------
+  // ---------- 拖动：方向锁定（偏垂直 → 放弃，让页面滚动），touch-action: pan-y ----------
   const dayAt = (e) => snapDay(e.clientX - g.left, g.width, days, lastDay);
   svg.addEventListener('pointerdown', (e) => {
     if (!e.isPrimary || !lastDay || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const r = box.getBoundingClientRect(); // 手势开始时量一次；拖动中不再读版面
     boxW = r.width;
     g = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, state: 'pending', left: r.left, width: r.width };
-    if (e.pointerType === 'mouse') { // 滑鼠不会捲动页面：直接开始
+    if (e.pointerType === 'mouse') { // 滑鼠不会滚动页面：直接开始
       g.state = 'drag';
       try { svg.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
       place(dayAt(e));
@@ -193,7 +193,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
       const dx = e.clientX - g.x0;
       const dy = e.clientY - g.y0;
       if (Math.hypot(dx, dy) < LOCK_DIST) return;
-      if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 交给页面捲动
+      if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 交给页面滚动
       g.state = 'drag';
       try { svg.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
     }

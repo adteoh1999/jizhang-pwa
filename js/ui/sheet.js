@@ -69,7 +69,7 @@ export function openSheet({
     vv.addEventListener('scroll', onViewport);
   }
 
-  // 下拉关闭：只在把手 / 标题列上（不含按钮），输入框与可捲动的内容不受影响
+  // 下拉关闭：只在把手 / 标题列上（不含按钮），输入框与可滚动的内容不受影响
   let drag = null;
   const setOffset = (y) => { panel.style.transform = y > 0 ? `translateY(${y}px)` : ''; };
   header.addEventListener('pointerdown', (e) => {

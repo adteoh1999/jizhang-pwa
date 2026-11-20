@@ -23,7 +23,9 @@ function parse(v) {
   m = v.match(/^rgba?\(([^)]+)\)$/);
   assert.ok(m, `unparseable colour ${v}`);
   const p = m[1].split(',').map((x) => parseFloat(x));
-  return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 };
+  const a = p.length > 3 ? p[3] : 1;
+  assert.ok(a >= 0 && a <= 1 && !/%/.test(m[1]), `alpha out of range in ${v}`);
+  return { rgb: p.slice(0, 3), a };
 }
 const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
 const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
