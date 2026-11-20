@@ -973,3 +973,75 @@ h1, h2, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   .home-row-content.is-animating, .home-row-delete.is-animating { transition: none; }
 }
+
+/* =====================================================================
+   15. Stats 统计页 — js/ui/stats-view.js
+   - [hig-components-content / dataviz] 占比用单一 --accent 色横向条（不靠颜色区分类别，
+     每列都有名称 + 金额 + 百分比文字，条本身 aria-hidden）。
+   - 摘要卡、分段控件、图示圆圈沿用首页 / 记账页的 class。
+   ===================================================================== */
+.stats-month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.stats-month-title { font: var(--font-headline); text-align: center; flex: 1; }
+.stats-month-btn {
+  width: var(--hit);
+  height: var(--hit);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+.stats-month-btn:disabled { opacity: 0.3; pointer-events: none; }
+.stats-summary { margin-bottom: 12px; padding-top: 6px; }
+.stats-group {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0 16px;
+  border-radius: var(--radius-card);
+  background: var(--bg-grouped-secondary);
+}
+.stats-row { position: relative; padding: 10px 0 12px; }
+.stats-row + .stats-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 48px;
+  right: -16px;
+  height: 0.5px;
+  background: var(--separator);
+}
+.stats-row-main { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+.stats-row-name {
+  flex: 1;
+  min-width: 0;
+  font: var(--font-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-row-amount, .stats-row-pct {
+  flex: none;
+  font: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stats-row-pct { min-width: 3.2em; text-align: right; color: var(--secondary-label); }
+.stats-bar {
+  display: block;
+  height: 6px;
+  margin: 8px 0 0 48px;
+  border-radius: 3px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.stats-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.stats-empty {
+  margin: 40px 0;
+  text-align: center;
+  font: var(--font-body);
+  color: var(--secondary-label);
+}
