@@ -139,6 +139,7 @@ async function registerServiceWorker() {
 
 async function boot() {
   const root = document.getElementById('app');
+  document.body.prepend(h('div', { class: 'sky', 'aria-hidden': 'true' }));
   window.addEventListener('jizhang:db-versionchange', showDbClosedNotice);
   try {
     // 开发用：只在本机网址上，?simulateDbError=1 模拟开库失败

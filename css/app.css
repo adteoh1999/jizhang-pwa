@@ -24,63 +24,115 @@
    - 卡片圆角：HIG 未给数值，保留 brief 的 12px。
    ===================================================================== */
 
-/* ---------- 1. 设计 token：颜色（浅色） ---------- */
+/* ---------- 1. 设计 token：颜色（浅色，雾蓝主题） ----------
+   每个 token 必须同时出现在 :root、@media dark 的 :root:not([data-theme="light"])、:root[data-theme="dark"]。 */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
-  --label: #000000;
-  --secondary-label: rgba(60, 60, 67, 0.6);
-  --tertiary-label: rgba(60, 60, 67, 0.3);
-  --separator: rgba(60, 60, 67, 0.29);
-  --bg-grouped: #F2F2F7;            /* systemGroupedBackground */
-  --bg-grouped-secondary: #FFFFFF;  /* secondarySystemGroupedBackground */
-  --fill: rgba(120, 120, 128, 0.2); /* systemFill */
-  --accent: rgb(0, 136, 255);       /* systemBlue */
-  --accent-tint: rgba(0, 136, 255, 0.14);
-  --accent-sel: rgba(0, 136, 255, 0.3);
+  --sky-top: #D5E0EA;
+  --sky-mid: #E6ECF1;
+  --sky-low: #F1F3F5;
+  --sky-hi: rgba(255, 255, 255, 0.55);
+  --sky-tint: rgba(190, 210, 232, 0.6);
+  --cloud: rgba(255, 255, 255, 0.9);
+  --cloud-soft: rgba(255, 255, 255, 0.6);
+  --ink: #0A0A0B;
+  --ink-2: rgba(10, 12, 18, 0.65);
+  --ink-3: rgba(10, 12, 18, 0.32);
+  --glass: rgba(255, 255, 255, 0.52);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-shade: rgba(40, 60, 90, 0.10);
+  --drawer: #FFFFFF;
+  --hairline: rgba(10, 12, 18, 0.08);
+  --btn-bg: #0A0A0B;
+  --btn-fg: #FFFFFF;
+  --income: #157A35;
+  --red: rgb(255, 56, 60);          /* systemRed */
+  --track: rgba(10, 12, 18, 0.10);
+  --halo-opacity: 0.95;
+  --tab-glass: rgba(255, 255, 255, 0.72);
+  --tab-off: rgba(10, 12, 18, 0.6);
+
+  --fill: rgba(120, 120, 128, 0.2);
+  --ink-tint: rgba(10, 12, 18, 0.08);
+  --ink-sel: rgba(10, 12, 18, 0.16);
   --press-bg: #F1F1F3;
-  --green: rgb(52, 199, 89);
-  --red: rgb(255, 56, 60);
-
-  /* 材质（毛玻璃）与遮罩 */
-  --bar-material: rgba(249, 249, 249, 0.78);
+  --separator: rgba(10, 12, 18, 0.14);
+  --bar-material: rgba(255, 255, 255, 0.72);
   --alert-material: rgba(242, 242, 242, 0.86);
   --sheet-material: rgba(242, 242, 242, 0.86);
   --sheet-cancel-bg: #FFFFFF;
   --dim: rgba(0, 0, 0, 0.2);
-  --toast-bg: rgba(28, 28, 30, 0.92);
+  --toast-bg: rgba(10, 10, 11, 0.92);
   --toast-label: #FFFFFF;
-  --toast-accent: rgb(0, 145, 255);
-  --tab-inactive: rgba(60, 60, 67, 0.6);
+  --toast-accent: #FFFFFF;
+  --sheet-bg: #F1F3F5;
+  --cell-bg: #FFFFFF;
+  --seg-track: rgba(118, 118, 128, 0.12);
+  --seg-thumb: #FFFFFF;
+  --grabber: rgba(60, 60, 67, 0.3);
+
+  /* 旧名别名：未改到的旧样式自动跟上新 token */
+  --label: var(--ink);
+  --secondary-label: var(--ink-2);
+  --tertiary-label: var(--ink-3);
+  --accent: var(--ink);
+  --accent-tint: var(--ink-tint);
+  --accent-sel: var(--ink-sel);
+  --green: var(--income);
+  --bg-grouped: var(--sky-low);
+  --bg-grouped-secondary: var(--drawer);
+  --tab-inactive: var(--tab-off);
 }
 
-/* ---------- 1b. 设计 token：颜色（深色） ---------- */
+/* ---------- 1b. 设计 token：颜色（深色，两块内容必须一致） ---------- */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --label: #FFFFFF;
-    --secondary-label: rgba(235, 235, 245, 0.6);
-    --tertiary-label: rgba(235, 235, 245, 0.3);
-    --separator: rgba(84, 84, 88, 0.6);
-    --bg-grouped: #000000;
-    --bg-grouped-secondary: #1C1C1E;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --sky-top: #1A2330; --sky-mid: #121820; --sky-low: #0C1015;
+    --sky-hi: rgba(120, 150, 190, 0.18); --sky-tint: rgba(60, 80, 110, 0.35);
+    --cloud: rgba(150, 175, 210, 0.13); --cloud-soft: rgba(150, 175, 210, 0.08);
+    --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
+    --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
+    --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
+    --btn-bg: #F4F6F8; --btn-fg: #0A0A0B;
+    --income: #4CD07A; --red: rgb(255, 66, 69);
+    --track: rgba(255, 255, 255, 0.14); --halo-opacity: 0.7;
+    --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
-    --accent: rgb(0, 145, 255);
-    --accent-tint: rgba(0, 145, 255, 0.14);
-    --accent-sel: rgba(0, 145, 255, 0.3);
-    --press-bg: #242426;
-    --green: rgb(48, 209, 88);
-    --red: rgb(255, 66, 69);
-
-    --bar-material: rgba(22, 22, 23, 0.78);
-    --alert-material: rgba(44, 44, 46, 0.86);
-    --sheet-material: rgba(44, 44, 46, 0.86);
-    --sheet-cancel-bg: #2C2C2E;
-    --dim: rgba(0, 0, 0, 0.48);
-    --toast-bg: rgba(58, 58, 60, 0.95);
-    --toast-label: #FFFFFF;
-    --toast-accent: rgb(0, 145, 255);
-    --tab-inactive: rgba(235, 235, 245, 0.6);
+    --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
+    --press-bg: #242830; --separator: rgba(255, 255, 255, 0.16);
+    --bar-material: rgba(30, 34, 42, 0.72);
+    --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
+    --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
+    --toast-bg: rgba(244, 246, 248, 0.94); --toast-label: #0A0A0B; --toast-accent: #0A0A0B;
+    --sheet-bg: #121820; --cell-bg: #1A1D23;
+    --seg-track: rgba(118, 118, 128, 0.24); --seg-thumb: #636366;
+    --grabber: rgba(235, 235, 245, 0.3);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --sky-top: #1A2330; --sky-mid: #121820; --sky-low: #0C1015;
+  --sky-hi: rgba(120, 150, 190, 0.18); --sky-tint: rgba(60, 80, 110, 0.35);
+  --cloud: rgba(150, 175, 210, 0.13); --cloud-soft: rgba(150, 175, 210, 0.08);
+  --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
+  --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
+  --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
+  --btn-bg: #F4F6F8; --btn-fg: #0A0A0B;
+  --income: #4CD07A; --red: rgb(255, 66, 69);
+  --track: rgba(255, 255, 255, 0.14); --halo-opacity: 0.7;
+  --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
+  --fill: rgba(120, 120, 128, 0.36);
+  --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
+  --press-bg: #242830; --separator: rgba(255, 255, 255, 0.16);
+  --bar-material: rgba(30, 34, 42, 0.72);
+  --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
+  --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
+  --toast-bg: rgba(244, 246, 248, 0.94); --toast-label: #0A0A0B; --toast-accent: #0A0A0B;
+  --sheet-bg: #121820; --cell-bg: #1A1D23;
+  --seg-track: rgba(118, 118, 128, 0.24); --seg-thumb: #636366;
+  --grabber: rgba(235, 235, 245, 0.3);
 }
 
 /* ---------- 2. 设计 token：字级、间距、尺寸 ----------
@@ -127,7 +179,7 @@ html {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   overscroll-behavior-y: none;
-  background: var(--bg-grouped);
+  background: var(--sky-low);
 }
 html.has-layer { overflow: hidden; }
 
@@ -136,8 +188,8 @@ body {
   font: -apple-system-body;
   font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   line-height: 1.294;
-  color: var(--label);
-  background: var(--bg-grouped);
+  color: var(--ink);
+  background: var(--sky-low);   /* 底色；.sky 盖在其上 */
   overscroll-behavior-y: none;
   -webkit-user-select: none;
   user-select: none;
@@ -160,7 +212,40 @@ button {
   cursor: pointer;
 }
 button:disabled { cursor: default; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 天空背景层：固定、不参与布局与命中，body 第一个子元素 */
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  contain: strict;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 9% at 22% 7%, var(--cloud), transparent),
+    radial-gradient(40% 7% at 38% 10%, var(--cloud-soft), transparent),
+    radial-gradient(60% 10% at 88% 24%, var(--cloud), transparent),
+    radial-gradient(45% 8% at 70% 27%, var(--cloud-soft), transparent),
+    radial-gradient(70% 12% at 10% 40%, var(--cloud-soft), transparent),
+    radial-gradient(50% 8% at 92% 52%, var(--cloud-soft), transparent),
+    radial-gradient(120% 60% at 15% 0%, var(--sky-hi), transparent 60%),
+    radial-gradient(90% 50% at 100% 18%, var(--sky-tint), transparent 70%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 42%, var(--sky-low) 100%);
+}
+@media (prefers-contrast: more) {
+  .sky { background: var(--sky-mid); }
+  :root { --glass: #FFFFFF; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .sky { background: var(--sky-mid); }
+  :root { --glass: #FFFFFF; }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]), :root[data-theme="dark"] { --glass: #1A1D23; }
+}
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]), :root[data-theme="dark"] { --glass: #1A1D23; }
+}
 
 h1, h2, p { margin: 0; }
 
@@ -472,7 +557,7 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
   padding: 0 24px;
   border-radius: var(--radius-card);
   background: var(--accent);
-  color: #FFFFFF;
+  color: var(--btn-fg);
   font: var(--font-headline);
 }
 
@@ -495,22 +580,6 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
      #1C1C1E / #2C2C2E（UIKit 公开值，凭既有知识，skill 无法查证）。
    - 分段控件：tertiarySystemFill 底、选中块浅色白 / 深色 #636366（UIKit 外观，凭既有知识）。
    ===================================================================== */
-:root {
-  --sheet-bg: #F2F2F7;
-  --cell-bg: #FFFFFF;
-  --seg-track: rgba(118, 118, 128, 0.12);
-  --seg-thumb: #FFFFFF;
-  --grabber: rgba(60, 60, 67, 0.3);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --sheet-bg: #1C1C1E;
-    --cell-bg: #2C2C2E;
-    --seg-track: rgba(118, 118, 128, 0.24);
-    --seg-thumb: #636366;
-    --grabber: rgba(235, 235, 245, 0.3);
-  }
-}
 
 .overlay-modal {
   display: flex;
@@ -704,14 +773,14 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
 }
 .cat-tile[aria-pressed="true"] .cat-tile-icon {
   background: var(--accent);
-  color: #FFFFFF;
+  color: var(--btn-fg);
   box-shadow: 0 0 0 2px var(--cell-bg), 0 0 0 4px var(--accent); /* --accent 外框 */
 }
 .cat-tile[aria-pressed="true"] .cat-tile-name { font-weight: 600; }
 .cat-tile:active .cat-tile-icon { filter: brightness(0.92); }
 .cat-tile:focus-visible { outline-offset: 0; }
 .cat-tile.is-deleted .cat-tile-icon { color: var(--secondary-label); background: var(--fill); }
-.cat-tile.is-deleted[aria-pressed="true"] .cat-tile-icon { color: #FFFFFF; background: var(--secondary-label); }
+.cat-tile.is-deleted[aria-pressed="true"] .cat-tile-icon { color: var(--btn-fg); background: var(--secondary-label); }
 .cat-tile-badge {
   margin-top: -4px;
   padding: 0 5px;
@@ -850,7 +919,7 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
   margin: 16px 0 8px;
   border-radius: var(--radius-card);
   background: var(--accent);
-  color: #FFFFFF;
+  color: var(--btn-fg);
   font: var(--font-headline);
 }
 
@@ -1134,7 +1203,7 @@ button.inset-row:active { background: var(--press-bg); }
   z-index: 100;               /* 与其他浮层同层，后开的在上面（DOM 顺序） */
   display: flex;
   flex-direction: column;
-  background: var(--bg-grouped);
+  background: var(--sky-low);
   box-shadow: -2px 0 20px rgba(0, 0, 0, 0.12);
   transform: translateX(100%);
   transition: transform 0.35s var(--ease-out);
