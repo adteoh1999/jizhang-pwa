@@ -46,6 +46,8 @@
   --hairline: rgba(10, 12, 18, 0.08);
   --btn-bg: #0A0A0B;
   --btn-fg: #FFFFFF;
+  --on-red: #FFFFFF;                /* 红底上的字（滑动删除等），各主题都是白 */
+  --red-text: #D70015;              /* 红字专用（底色为抽屉 / ink-tint 时 ≥4.5:1） */
   --income: #157A35;
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
@@ -97,7 +99,7 @@
     --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
     --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
     --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
-    --btn-bg: #F4F6F8; --btn-fg: #0A0A0B;
+    --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #4CD07A; --red: rgb(255, 66, 69);
     --track: rgba(255, 255, 255, 0.14); --halo-opacity: 0.7;
     --glass-sheen: rgba(255, 255, 255, 0.18);
@@ -124,7 +126,7 @@
   --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
   --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
   --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
-  --btn-bg: #F4F6F8; --btn-fg: #0A0A0B;
+  --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #4CD07A; --red: rgb(255, 66, 69);
   --track: rgba(255, 255, 255, 0.14); --halo-opacity: 0.7;
   --glass-sheen: rgba(255, 255, 255, 0.18);
@@ -244,11 +246,11 @@ button:disabled { cursor: default; }
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .sky { background: var(--sky-mid); }
   .home-card::before { display: none; }   /* 拿掉光晕 */
-  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; }
-  :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; }
+  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #FFFFFF; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
+  :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #1A1D23; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
 }
 @media ((prefers-contrast: more) or (prefers-reduced-transparency: reduce)) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; }
+  :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #1A1D23; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
 }
 
 h1, h2, p { margin: 0; }
@@ -387,13 +389,18 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   margin: 8px calc(var(--margin) + var(--safe-right)) 0 calc(var(--margin) + var(--safe-left));
   padding: 10px 4px 10px 14px;
   border-radius: var(--radius-card);
-  background: var(--bg-grouped-secondary);
+  /* 玻璃样式但不模糊（backdrop-filter 只留四处） */
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow: 0 1px 0 var(--glass-shade);
   font: var(--font-subhead);
   color: var(--label);
+  min-width: 0;
 }
-.install-hint-icon { color: var(--accent); display: flex; flex: none; }
-.install-hint-text { flex: 1; }
+.install-hint-icon { color: var(--ink); display: flex; flex: none; }
+.install-hint-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .nowrap { white-space: nowrap; }
+.install-hint .nowrap { display: inline-block; white-space: normal; } /* 整段优先不拆；过宽时（大字级 / 窄屏）才在段内换行，避免横向捲动 */
 /* 有安装提示时，空的导航列缩小，免得提示和大标题之间空一大块 */
 .shell:has(.install-hint) .nav-bar:empty { height: 12px; }
 .install-hint-close {
@@ -467,7 +474,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font-size: 16px;
   text-align: left;
 }
-.alert-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.alert-input:focus { outline: 2px solid var(--ink); outline-offset: -1px; }
 
 .alert-buttons {
   display: flex;
@@ -479,12 +486,12 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   min-height: var(--hit);
   padding: 0 8px;
   font: var(--font-body);
-  color: var(--accent);
+  color: var(--ink);
 }
 .alert-buttons:not(.is-stacked) .alert-button + .alert-button { box-shadow: inset 0.5px 0 0 var(--separator); }
 .alert-buttons.is-stacked .alert-button + .alert-button { box-shadow: inset 0 0.5px 0 var(--separator); }
 .alert-button.is-bold { font-weight: 600; }
-.alert-button.is-destructive { color: var(--red); }
+.alert-button.is-destructive { color: var(--red-text); }
 .alert-button:disabled { color: var(--tertiary-label); }
 .alert-button:active:not(:disabled) { background: var(--fill); }
 
@@ -533,11 +540,11 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   padding: 8px 16px;
   font: var(--font-body);
   font-size: 1.1765rem; /* action sheet 按钮约 20pt */
-  color: var(--accent);
+  color: var(--ink);
   text-align: center;
 }
 .sheet-group > * + * { box-shadow: inset 0 0.5px 0 var(--separator); }
-.sheet-button.is-destructive { color: var(--red); }
+.sheet-button.is-destructive { color: var(--red-text); }
 .sheet-group .sheet-button:active { background: var(--fill); }
 .sheet-cancel {
   flex: none;
@@ -591,6 +598,11 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 /* ---------- 10b. 资料库已更新（不可关闭的阻挡画面） ---------- */
 .overlay-blocking { z-index: 300; opacity: 1; }
+/* 阻挡画面：天空底（不透明，盖住后面不可操作的内容）+ 黑色胶囊按钮 */
+.overlay-blocking { background: var(--sky-mid); }
+.overlay-blocking .alert-buttons { box-shadow: none; padding: 0 16px 16px; }
+.overlay-blocking .alert-button { border-radius: 999px; background: var(--btn-bg); color: var(--btn-fg); }
+.overlay-blocking .alert-button:active:not(:disabled) { background: var(--btn-bg); opacity: 0.7; }
 
 /* ---------- 11. 开库失败画面 ---------- */
 .fatal {
@@ -611,9 +623,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   min-height: 50px;
   min-width: 200px;
   padding: 0 24px;
-  border-radius: var(--radius-card);
-  background: var(--accent);
+  background: var(--btn-bg);
   color: var(--btn-fg);
+  border-radius: 999px;
   font: var(--font-headline);
 }
 
@@ -707,7 +719,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* =====================================================================
    14. Entry sheet（记一笔 / 编辑）— js/ui/entry-sheet.js
    - [hig-components-controls] 分段控件：2 个互斥、等宽、名词标签；文本框用对应键盘
-     （inputmode=decimal）、给提示文字、适时验证。输入框字级 ≥16px（金额 34px）。
+     （inputmode=decimal）、给提示文字、适时验证。输入框字级 ≥16px（金额约 2.6rem，上限 64px）。
    ===================================================================== */
 .entry { display: flex; flex-direction: column; gap: 20px; padding-top: 4px; }
 
@@ -777,7 +789,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   color: var(--ink);
   caret-color: var(--ink);
   font-family: var(--font-family);
-  font-size: calc(1rem * 2.6);
+  font-size: min(calc(1rem * 2.6), 64px);
   font-weight: 300;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
@@ -836,7 +848,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font: var(--font-caption);
   color: var(--ink-2);
 }
-/* 选中：圆标外一圈 2px ink 外框，中间留 2px 抽屉色间隙（彩色圆标上才看得清） */
+/* 选中：圆标外一圈 2px ink 外框，中间留 2px 抽屉色间隙（彩色圆标上才看得清）。
+   注意：间隙色假设图格放在 --drawer 上（记一笔面板的分类格就是）；换底色要同步改。 */
 .cat-tile[aria-pressed="true"] .cat-tile-icon { box-shadow: 0 0 0 2px var(--drawer), 0 0 0 4px var(--ink); }
 .cat-tile[aria-pressed="true"] .cat-tile-name { color: var(--ink); font-weight: 600; }
 .cat-tile:active .cat-tile-icon { filter: brightness(0.92); }
@@ -897,8 +910,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   width: 100%;
   min-height: var(--hit);
   border-radius: var(--radius-card);
-  background: var(--ink-tint);
-  color: var(--red);
+  background: transparent;           /* 红字放在 ink-tint 上对比不足：改透明底 + 发丝边 + 深一档的红字 */
+  border: 1px solid var(--separator);
+  color: var(--red-text);
   font: var(--font-body);
 }
 .entry-delete:active { filter: brightness(0.92); }
@@ -1183,7 +1197,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   bottom: 0;
   width: 80px;
   background: var(--red);
-  color: #FFFFFF;
+  color: var(--on-red);
   font: var(--font-body);
   opacity: 0;                  /* 未滑开时透明（避免边缘透出红色）；仍可被键盘 / VoiceOver 聚焦 */
 }
@@ -1191,7 +1205,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .home-row-delete:focus { opacity: 1; }
 /* 没滑开时不接受点按（键盘 / VoiceOver 仍可到达；聚焦时列会滑开） */
 .home-row:not(.is-revealed) .home-row-delete { pointer-events: none; }
-.home-row-delete:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -4px; }
+.home-row-delete:focus-visible { outline: 2px solid var(--on-red); outline-offset: -4px; }
 .home-row-content.is-animating { transition: transform 0.3s var(--ease-out); }
 .home-row-delete.is-animating { transition: width 0.3s var(--ease-out); }
 
@@ -1432,11 +1446,11 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   left: 16px;
   right: 0;
   height: 0.5px;
-  background: var(--separator);
+  background: var(--hairline);
 }
 button.inset-row:active { background: var(--press-bg); }
 .inset-row:focus-visible { outline-offset: -2px; }
-.inset-row.is-action { color: var(--accent); }
+.inset-row.is-action { color: var(--ink); }
 .inset-row-label { flex: 1; min-width: 0; }
 .inset-row-detail { flex: none; color: var(--secondary-label); font-variant-numeric: tabular-nums; }
 .inset-row-chevron { flex: none; display: flex; color: var(--tertiary-label); }
@@ -1543,13 +1557,13 @@ button.inset-row:active { background: var(--press-bg); }
   bottom: 0;
   width: 80px;
   background: var(--red);
-  color: #FFFFFF;
+  color: var(--on-red);
   font: var(--font-body);
   opacity: 0;
   pointer-events: none;
 }
 .cat-row-delete:focus { opacity: 1; pointer-events: auto; z-index: 1; }
-.cat-row-delete:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -4px; }
+.cat-row-delete:focus-visible { outline: 2px solid var(--on-red); outline-offset: -4px; }
 
 /* 新增 / 编辑分类 sheet：名称列 + 图示网格（只有图示，没有文字） */
 .cat-name-input { flex: 1; min-width: 0; padding: 11px 0; }
@@ -1629,3 +1643,8 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .home-row-icon[data-icon] { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
 .cat-tile[data-icon] .cat-tile-icon { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
 .stats-bar-fill[data-icon] { background: var(--cat-fg, var(--secondary-label)); }
+
+/* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
+@media (prefers-contrast: more) {
+  .entry-card, .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--separator); }
+}
