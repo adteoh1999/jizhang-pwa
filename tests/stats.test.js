@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeMonth, byCategory, groupByDate } from '../js/stats.js';
+import { summarizeMonth, byCategory, groupByDate, spendMeter } from '../js/stats.js';
 
 const T = (id, kind, amt, cat, day, created = '2026-11-01T00:00:00.000Z') => ({
   id, kind, amount_minor: amt, category_id: cat, occurred_on: day, note: '',
@@ -49,4 +49,13 @@ test('groupByDate created_at 字串顺序与时间顺序不一致时以时间为
   const c = T('c', 'expense', 1, 'food', '2026-11-20', '2026-11-20T18:30:00+08:00'); // 10:30Z
   const d = T('d', 'expense', 1, 'food', '2026-11-20', '2026-11-20T12:00:00.000Z');
   assert.deepEqual(groupByDate([c, d])[0].items.map((x) => x.id), ['d', 'c']);
+});
+
+test('spendMeter', () => {
+  assert.deepEqual(spendMeter(0, 0), { state: 'none', pct: 0 });
+  assert.deepEqual(spendMeter(0, 500), { state: 'none', pct: 0 });
+  assert.deepEqual(spendMeter(380000, 256550), { state: 'ratio', pct: 68 });
+  assert.deepEqual(spendMeter(1000, 1000), { state: 'ratio', pct: 100 });
+  assert.deepEqual(spendMeter(1000, 1001), { state: 'over', pct: 100 });
+  assert.deepEqual(spendMeter(100000, 1), { state: 'ratio', pct: 0 });
 });

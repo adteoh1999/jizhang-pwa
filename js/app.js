@@ -13,7 +13,7 @@ import { showToast, whenToastIdle } from './ui/toast.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 
 const TABS = [
-  { id: 'home', label: '首页', icon: 'tab-home', title: '记账' },
+  { id: 'home', label: '首页', icon: 'tab-home', title: '记账', aside: true }, // aside：大标题右侧的当月
   { id: 'stats', label: '统计', icon: 'tab-stats', title: '统计' },
   { id: 'settings', label: '设置', icon: 'tab-settings', title: '设置' },
 ];
@@ -62,7 +62,10 @@ function mountShell(root, store) {
       class: 'screen', hidden: t.id !== active,
     },
     h('header', { class: 'nav-bar' }),
-    h('h1', { class: 'large-title' }, t.title),
+    t.aside
+      ? h('div', { class: 'large-title-row' },
+        h('h1', { class: 'large-title' }, t.title), h('span', { class: 'large-title-aside' }))
+      : h('h1', { class: 'large-title' }, t.title),
     h('div', { class: 'screen-content' }));
     screens.set(t.id, s);
     return s;
@@ -70,7 +73,8 @@ function mountShell(root, store) {
 
   const shell = h('div', { class: 'shell' }, hintSlot, main);
   root.replaceChildren(shell);
-  mountHome(screens.get('home').querySelector('.screen-content'), store);
+  const home = screens.get('home');
+  mountHome(home.querySelector('.screen-content'), store, { monthEl: home.querySelector('.large-title-aside') });
   mountStats(screens.get('stats').querySelector('.screen-content'), store);
   mountSettings(screens.get('settings').querySelector('.screen-content'), store);
 

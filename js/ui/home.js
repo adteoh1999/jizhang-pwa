@@ -1,4 +1,4 @@
-// 首页：本月摘要卡、「＋ 记一笔」、按日期分组的账单列表（左滑删除 + 撤销）。
+// 首页：本月结余卡（光晕 + 比例线）、黑色「记一笔」、账单抽屉（按日期分组，左滑删除 + 撤销）。
 // 注意：entry-sheet.js 必须静态导入，openEntrySheet 必须在点击事件里同步呼叫（不能先 await），
 // iOS 才会在金额框 focus() 时弹出键盘。
 //
@@ -11,9 +11,9 @@ import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
 import { messageDialog } from './dialogs.js';
 import { depth } from './nav.js';
-import { summarizeMonth, groupByDate } from '../stats.js';
+import { summarizeMonth, groupByDate, spendMeter } from '../stats.js';
 import { formatRM } from '../money.js';
-import { todayLocal, monthOf, formatDayHeader } from '../dates.js';
+import { todayLocal, monthOf, formatDayHeader, formatMonthTitle } from '../dates.js';
 
 const PAGE = 200;            // 一次显示的笔数
 const ACTION_W = 80;         // 「删除」按钮宽度
@@ -22,9 +22,26 @@ const FULL_RATIO = 0.6;      // 滑过列宽 60% → 直接删除
 const LOCK_DIST = 10;        // 判断方向前要移动的距离
 const LOST_GRACE = 150;      // 失去 pointer capture 后等多久才当作手势中断（ms）
 
+/** 结余数字拆成整数与「.角」；负数在整数前加 U+2212（「RM」另外显示）。 */
+export function balanceParts(minor) {
+  const [i, f] = formatRM(minor, { sign: 'none' }).slice(3).split('.');
+  return { int: (minor < 0 ? '\u2212' : '') + i, dec: `.${f}` };
+}
+
+/** 依整数部分字元数（含逗号、不含「RM 」与符号）决定大数字缩级：≤6 → ''，7–9 → is-long，≥10 → is-xlong。 */
+export function balanceSizeClass(minor) {
+  const n = formatRM(minor, { sign: 'none' }).slice(3).split('.')[0].length;
+  return n >= 10 ? 'is-xlong' : n >= 7 ? 'is-long' : '';
+}
+
+/** 列图示的 data-icon：有效分类 → iconKey；已删除 / 未分类 → null（维持灰色）。 */
+export function rowIconAttr(cat) {
+  return cat && !cat.deleted ? iconKey(cat.icon) : null;
+}
+
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function mountHome(root, store) {
+export function mountHome(root, store, { monthEl = null } = {}) {
   let today = todayLocal();
   let shown = PAGE;
   let openRow = null;          // 目前滑开的列 record
@@ -43,32 +60,47 @@ export function mountHome(root, store) {
   });
 
   // ---------- 静态骨架 ----------
-  const sumTitle = h('h2', { class: 'home-summary-title' }, '本月');
-  const sumMonth = h('span', { class: 'home-summary-month' });
-  const incomeEl = h('span', { class: 'home-summary-value is-income' });
-  const expenseEl = h('span', { class: 'home-summary-value' });
-  const balanceEl = h('span', { class: 'home-summary-value' });
-  const summaryRow = (label, valueEl) => h('div', { class: 'home-summary-row' },
-    h('span', { class: 'home-summary-label' }, label), valueEl);
-  const summary = h('section', { class: 'home-summary', 'aria-labelledby': 'home-summary-title' },
-    h('div', { class: 'home-summary-head' }, sumTitle, sumMonth),
-    summaryRow('收入', incomeEl),
-    summaryRow('支出', expenseEl),
-    summaryRow('结余', balanceEl));
-  sumTitle.id = 'home-summary-title';
+  // 结余卡：光晕是 .home-card::before（静态渐层，被卡片裁切）
+  // 视觉上拆成三段（aria-hidden），读屏读完整金额（.sr-only）
+  const balSr = h('span', { class: 'sr-only' });
+  const balInt = h('span', { class: 'home-balance-int', 'aria-hidden': 'true' });
+  const balDec = h('span', { class: 'home-balance-dec', 'aria-hidden': 'true' });
+  const balanceEl = h('p', { class: 'home-balance' },
+    balSr, h('span', { class: 'home-balance-cur', 'aria-hidden': 'true' }, 'RM'), balInt, balDec);
+  const incomeEl = h('span', { class: 'home-flow-v' });
+  const expenseEl = h('span', { class: 'home-flow-v' });
+  const flowCol = (name, label, valueEl) => h('div', { class: 'home-flow-item' },
+    h('span', { class: 'home-flow-k' }, icon(name, 12), label), valueEl);
+  const meterFill = h('i', { class: 'home-meter-fill' });
+  const meterBar = h('div', { class: 'home-meter-bar', role: 'img' }, meterFill);
+  const meterNote = h('span', { class: 'home-meter-note' });
+  const summary = h('section', { class: 'home-card', 'aria-labelledby': 'home-card-label' },
+    h('h2', { class: 'home-card-label', id: 'home-card-label' }, '本月结余'),
+    balanceEl,
+    h('div', { class: 'home-flow' },
+      flowCol('arrow-up', '收入', incomeEl),
+      flowCol('arrow-down', '支出', expenseEl)),
+    h('div', { class: 'home-meter' }, meterBar, meterNote));
 
   const addBtn = h('button', {
     type: 'button', class: 'home-add pressable',
     on: { click: () => { closeOpenRow(); openEntrySheet(store, { onAddCategory }); } }, // 同步呼叫
-  }, '＋ 记一笔');
+  }, icon('plus', 20), '记一笔');
 
+  const countEl = h('span', { class: 'home-drawer-count' });
   const list = h('div', { class: 'home-list' });
   const moreBtn = h('button', {
     type: 'button', class: 'home-more', hidden: true,
     on: { click: () => { shown += PAGE; requestRender(); } },
   }, '显示更多');
 
-  root.replaceChildren(summary, addBtn, list, moreBtn);
+  // 账单抽屉：白底上圆角，阴影挂在 .home-drawer::before；最少撑到画面底部（CSS flex）
+  const drawer = h('section', { class: 'home-drawer', 'aria-labelledby': 'home-drawer-title' },
+    h('div', { class: 'home-drawer-head' },
+      h('h2', { class: 'home-drawer-title', id: 'home-drawer-title' }, '账单'), countEl),
+    list, moreBtn);
+
+  root.replaceChildren(summary, addBtn, drawer);
 
   // ---------- 列 ----------
   function rowSig(tx, cat) {
@@ -109,7 +141,7 @@ export function mountHome(root, store) {
       ? formatRM(tx.amount_minor, { sign: 'always' })
       : formatRM(-tx.amount_minor);
     rec.content.replaceChildren(
-      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? iconKey(cat.icon) : null }, icon(cat ? cat.icon : 'other', 20)),
+      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': rowIconAttr(cat) }, icon(cat ? cat.icon : 'other', 22)),
       h('span', { class: 'home-row-text' },
         h('span', { class: 'home-row-name' }, name),
         tx.note ? h('span', { class: 'home-row-note' }, tx.note) : null),
@@ -133,10 +165,25 @@ export function mountHome(root, store) {
     const all = store.transactions();
     const month = monthOf(today);
     const s = summarizeMonth(all, month);
-    sumMonth.textContent = `${Number(month.slice(5))} 月`;
+    if (monthEl) monthEl.textContent = formatMonthTitle(month);
+    const bp = balanceParts(s.balance);
+    balInt.textContent = bp.int;
+    balDec.textContent = bp.dec;
+    balanceEl.className = `home-balance ${balanceSizeClass(s.balance)}`.trim();
+    balSr.textContent = formatRM(s.balance);
     incomeEl.textContent = formatRM(s.income, { sign: 'none' });
     expenseEl.textContent = formatRM(s.expense, { sign: 'none' });
-    balanceEl.textContent = formatRM(s.balance);
+    const m = spendMeter(s.income, s.expense);
+    const meterText = m.state === 'none' ? '本月还没有收入'
+      : m.state === 'over' ? '支出已超过收入' : `已花掉收入的 ${m.pct}%`;
+    meterBar.hidden = m.state === 'none';
+    meterBar.setAttribute('aria-label', meterText);
+    meterFill.style.width = `${m.pct}%`;
+    meterNote.textContent = meterText;
+    // 线条显示时由它（role=img）读出，文字不重复读；线条隐藏时由文字读出
+    if (m.state === 'none') meterNote.removeAttribute('aria-hidden');
+    else meterNote.setAttribute('aria-hidden', 'true');
+    countEl.textContent = `共 ${all.length} 笔`;
 
     const scrollY = window.scrollY;
     const hadFocus = list.contains(document.activeElement) ? document.activeElement : null;
@@ -174,7 +221,7 @@ export function mountHome(root, store) {
         frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today) },
           h('h2', { class: 'home-day-header' },
             h('span', null, formatDayHeader(g.date, today)),
-            h('span', { class: 'home-day-net' }, formatRM(g.net))),
+            h('span', { class: 'home-day-net' }, formatRM(g.net, { sign: 'always' }))),
           h('ul', { class: 'home-group', role: 'list' }, lis)));
       }
       for (const id of [...rows.keys()]) {

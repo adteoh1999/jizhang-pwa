@@ -13,6 +13,13 @@ export function summarizeMonth(txs, month) {
   return { income, expense, balance: income - expense };
 }
 
+/** 首页比例线：收入为 0 → none；支出超过收入 → over（满格）；否则 ratio（四舍五入整数百分比）。单位 sen。 */
+export function spendMeter(income, expense) {
+  if (!(income > 0)) return { state: 'none', pct: 0 };
+  if (expense > income) return { state: 'over', pct: 100 };
+  return { state: 'ratio', pct: Math.round((expense / income) * 100) };
+}
+
 export function byCategory(txs, month, kind) {
   const totals = new Map();
   let sum = 0;
