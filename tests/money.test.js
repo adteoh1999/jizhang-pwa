@@ -15,7 +15,8 @@ test('parseAmount 接受的写法', () => {
 });
 test('parseAmount 拒绝的写法', () => {
   for (const s of ['', '0', '0.00', '-3', '1.234', 'abc', '1..2', '100000000', '1,2,3.4.5',
-                   '12,50', '1,2', '1e3', ',5', '1,23', '.', ' ', '+5'])
+                   '12,50', '1,2', '1e3', ',5', '1,23', '.', ' ', '+5',
+                   '0,500', '0,123', '00,500', '000,001'])
     assert.equal(parseAmount(s), null, s);
   assert.equal(parseAmount(null), null);
   assert.equal(parseAmount(5), null);

@@ -1,7 +1,7 @@
 // RM 金额：一律以整数「仙」(minor) 存取；解析用纯字串处理，不用 parseFloat。
 export const MAX_MINOR = 9999999999;
 
-const INT_OK = /^(\d+|\d{1,3}(,\d{3})+)$/;
+const INT_OK = /^(\d+|[1-9]\d{0,2}(,\d{3})+)$/;
 
 export function parseAmount(input) {
   if (typeof input !== 'string') return null;
