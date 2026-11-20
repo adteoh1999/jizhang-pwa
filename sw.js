@@ -29,6 +29,7 @@ const ASSETS = [
   './js/ui/stats-view.js',
   './js/ui/tabbar.js',
   './js/ui/toast.js',
+  './js/update.js',
   './js/uuid.js',
   './js/version.js',
   './icons/icon-180.png',

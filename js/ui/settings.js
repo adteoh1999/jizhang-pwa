@@ -8,6 +8,7 @@ import { showToast } from './toast.js';
 import { openCategoriesPage } from './categories-page.js';
 import { todayLocal } from '../dates.js';
 import { APP_VERSION } from '../version.js';
+import { onUpdateAvailable, applyUpdate } from '../update.js';
 
 /** 导出档名：jizhang-YYYYMMDD.csv（当地日期）。 */
 export function exportFileName(now = new Date()) {
@@ -135,6 +136,13 @@ export function mountSettings(root, store) {
   const versionRow = h('div', { class: 'inset-row' },
     h('span', { class: 'inset-row-label' }, '版本'),
     h('span', { class: 'inset-row-detail' }, APP_VERSION));
+  // 有新版本等待时，详情改成可点的「有新版本 · 更新」
+  onUpdateAvailable(() => {
+    const btn = h('button', {
+      type: 'button', class: 'inset-row-detail update-action pressable', on: { click: applyUpdate },
+    }, '有新版本 · 更新');
+    versionRow.querySelector('.inset-row-detail').replaceWith(btn);
+  });
 
   root.replaceChildren(
     section('分类', [

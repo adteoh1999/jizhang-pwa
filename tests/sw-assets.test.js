@@ -19,6 +19,7 @@ const toRel = (u) => (u === './' ? 'index.html' : u.replace(/^\.\//, ''));
 function walk(dir) {
   const out = [];
   for (const name of readdirSync(join(root, dir))) {
+    if (name.startsWith('.')) continue; // .DS_Store 等
     const p = `${dir}/${name}`;
     if (statSync(join(root, p)).isDirectory()) out.push(...walk(p));
     else out.push(p);
@@ -28,6 +29,11 @@ function walk(dir) {
 
 test('ASSETS 里每个路径都存在于磁盘', () => {
   for (const u of parseAssets()) assert.ok(existsSync(join(root, toRel(u))), `不存在：${u}`);
+});
+
+test('ASSETS 没有重复项', () => {
+  const a = parseAssets();
+  assert.equal(new Set(a).size, a.length);
 });
 
 test('壳档案都列在 ASSETS 里', () => {

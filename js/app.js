@@ -9,7 +9,8 @@ import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
-import { showToast } from './ui/toast.js';
+import { showToast, whenToastIdle } from './ui/toast.js';
+import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 
 const TABS = [
   { id: 'home', label: '首页', icon: 'house', title: '记账' },
@@ -103,30 +104,33 @@ function mountShell(root, store) {
 }
 
 /** 注册 Service Worker；本机网址默认不注册（方便开发），加 ?sw=1 才注册。失败只 warn，不影响 App。 */
-export async function registerServiceWorker() {
+async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   if (isDevHost() && new URLSearchParams(location.search).get('sw') !== '1') return;
   try {
-    const reg = await navigator.serviceWorker.register('sw.js', { scope: './' });
-    const offerUpdate = (worker) => showToast('有新版本', {
-      actionLabel: '更新', duration: Infinity,
-      onAction: () => worker.postMessage({ type: 'SKIP_WAITING' }),
-    });
-    if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      if (!w) return;
-      w.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(w);
-      });
-    });
-    const hadController = !!navigator.serviceWorker.controller; // 首次安装 claim 不需要重载
+    const sw = navigator.serviceWorker;
+    let lastController = sw.controller; // 首次安装的 claim（之前没有 controller）不重载
     let reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (reloaded || !hadController) return;
+    sw.addEventListener('controllerchange', () => {
+      const hadController = lastController !== null;
+      lastController = sw.controller;
+      if (!hadController || reloaded) return;
       reloaded = true;
       location.reload();
     });
+
+    // 已有 toast（例如「已删除 · 撤销」）时不抢掉它，等它消失后再显示
+    onUpdateAvailable(() => whenToastIdle(() => showToast('有新版本', {
+      actionLabel: '更新', duration: Infinity, onAction: applyUpdate,
+    })));
+
+    const reg = await sw.register('sw.js', { scope: './' });
+    const watch = (w) => w.addEventListener('statechange', () => {
+      if (w.state === 'installed' && sw.controller) markUpdateAvailable(reg, w);
+    });
+    if (reg.waiting && sw.controller) markUpdateAvailable(reg, reg.waiting);
+    if (reg.installing) watch(reg.installing);
+    reg.addEventListener('updatefound', () => { if (reg.installing) watch(reg.installing); });
   } catch (err) {
     console.warn('Service Worker 注册失败:', err);
   }

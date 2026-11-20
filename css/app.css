@@ -1233,3 +1233,9 @@ button.inset-row:active { background: color-mix(in srgb, var(--fill) 50%, var(--
   .nav-page { transform: none; opacity: 0; transition: opacity 0.2s ease; }
   .nav-page.is-visible { transform: none; opacity: 1; }
 }
+
+/* 设置页「有新版本 · 更新」 */
+button.update-action {
+  appearance: none; border: 0; background: none; font: inherit;
+  color: var(--accent); cursor: pointer; min-height: 44px; padding: 0 0 0 12px; margin: 0;
+}

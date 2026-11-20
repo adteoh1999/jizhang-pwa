@@ -4,6 +4,15 @@ import { h } from './dom.js';
 import { depth, onDepthChange } from './nav.js';
 
 let current = null; // { el, timer }
+const idleListeners = new Set();
+
+/** 目前是否有 toast 在显示。 */
+export function isShowing() { return current !== null; }
+
+/** 等到没有 toast 时呼叫一次 fn（现在就空闲则立刻呼叫）。 */
+export function whenToastIdle(fn) {
+  if (!current) fn(); else idleListeners.add(fn);
+}
 
 // 有浮层时 toast 被遮罩盖住，也不可操作
 onDepthChange((d) => { if (current) current.el.inert = d > 0; });
@@ -12,7 +21,12 @@ function dismiss(t) {
   if (!t || t.gone) return;
   t.gone = true;
   clearTimeout(t.timer);
-  if (current === t) current = null;
+  if (current === t) {
+    current = null;
+    const fns = [...idleListeners];
+    idleListeners.clear();
+    fns.forEach((f) => f());
+  }
   t.el.classList.remove('is-visible');
   const remove = () => t.el.remove();
   t.el.addEventListener('transitionend', remove, { once: true });
