@@ -28,6 +28,7 @@ function dismiss(t, replaced = false) {
   clearTimeout(t.timer);
   if (current === t) {
     current = null;
+    document.body.classList.remove('has-toast');
     if (!replaced) flushIdle();
   }
   t.el.classList.remove('is-visible');
@@ -55,6 +56,7 @@ export function showToast(message, { actionLabel, onAction, duration = 4000 } = 
   t.el.inert = depth() > 0;
   document.body.append(t.el);
   current = t;
+  document.body.classList.add('has-toast');
   // 下一帧加 class 才有进场动画
   requestAnimationFrame(() => requestAnimationFrame(() => { if (!t.gone) t.el.classList.add('is-visible'); }));
   if (Number.isFinite(duration)) t.timer = setTimeout(() => dismiss(t), duration);

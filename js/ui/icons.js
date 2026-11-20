@@ -61,7 +61,7 @@ export const ICON_LABELS = Object.freeze({
 
 /** 返回 SVGElement；未知名称退回 'other'，不会抛错。 */
 export function icon(name, size = 24) {
-  const paths = Object.hasOwn(ICON_DATA, name) ? ICON_DATA[name] : ICON_DATA.other;
+  const paths = Object.prototype.hasOwnProperty.call(ICON_DATA, name) ? ICON_DATA[name] : ICON_DATA.other;
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('width', String(size));

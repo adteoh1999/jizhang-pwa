@@ -38,7 +38,7 @@ function present({ kind, panel, onClosed, onBackdrop }) {
       const remove = () => overlay.remove();
       overlay.addEventListener('transitionend', (e) => { if (e.target === overlay) remove(); });
       setTimeout(remove, 400); // 后备
-      if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus();
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus({ preventScroll: true });
       onClosed();
     },
   });

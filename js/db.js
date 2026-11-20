@@ -21,6 +21,8 @@ export function openDatabase(name = 'jizhang') {
         db.close();
         globalThis.window?.dispatchEvent(new CustomEvent('jizhang:db-versionchange'));
       };
+      // 连线被系统意外关闭（储存空间清理等）：同一条阻挡画面路径
+      db.onclose = () => globalThis.window?.dispatchEvent(new CustomEvent('jizhang:db-versionchange'));
       resolve(makeAdapter(db));
     };
   });

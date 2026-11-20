@@ -56,10 +56,20 @@ export function mountSettings(root, store) {
     } catch { /* 部分浏览器对 files 会 throw → 当作不支援 */ }
     if (!canShare) { download(file); return; }
     sharing = true;
-    navigator.share(data).catch((e) => {
-      if (e && e.name === 'AbortError') return; // 使用者在分享选单按取消，不算错误
+    const startedAt = Date.now();
+    const clear = () => { sharing = false; document.removeEventListener('visibilitychange', onVisible); };
+    // 选单被系统吃掉而 promise 一直不结束时，回到前景就放开
+    const onVisible = () => { if (document.visibilityState === 'visible' && Date.now() - startedAt > 1000) clear(); };
+    document.addEventListener('visibilitychange', onVisible);
+    try {
+      navigator.share(data).catch((e) => {
+        if (e && e.name === 'AbortError') return; // 使用者在分享选单按取消，不算错误
+        download(file);
+      }).finally(clear);
+    } catch {
+      clear(); // 同步 throw → 改用下载
       download(file);
-    }).finally(() => { sharing = false; });
+    }
   }
 
   // ---------- 导入 ----------
@@ -152,7 +162,7 @@ export function mountSettings(root, store) {
       buttonRow('导出 CSV', onExport, { action: true }),
       buttonRow('导入 CSV', () => fileInput.click(), { action: true }),
     ]),
-    section('关于', [versionRow], '资料只存在这台设备。'),
+    section('关于', [versionRow], '数据只存在这台设备。'),
     fileInput,
   );
 }

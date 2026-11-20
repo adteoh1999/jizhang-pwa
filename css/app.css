@@ -36,6 +36,9 @@
   --bg-grouped-secondary: #FFFFFF;  /* secondarySystemGroupedBackground */
   --fill: rgba(120, 120, 128, 0.2); /* systemFill */
   --accent: rgb(0, 136, 255);       /* systemBlue */
+  --accent-tint: rgba(0, 136, 255, 0.14);   /* color-mix 的旧版 iOS 后备 */
+  --accent-sel: rgba(0, 136, 255, 0.3);
+  --press-bg: #F1F1F3;
   --green: rgb(52, 199, 89);
   --red: rgb(255, 56, 60);
 
@@ -62,6 +65,9 @@
     --bg-grouped-secondary: #1C1C1E;
     --fill: rgba(120, 120, 128, 0.36);
     --accent: rgb(0, 145, 255);
+    --accent-tint: rgba(0, 145, 255, 0.14);
+    --accent-sel: rgba(0, 145, 255, 0.3);
+    --press-bg: #242426;
     --green: rgb(48, 209, 88);
     --red: rgb(255, 66, 69);
 
@@ -170,6 +176,8 @@ h1, h2, p { margin: 0; }
   /* 内容不要被 Tab Bar 盖住 */
   padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px);
 }
+/* 有 toast 时多留出 toast 的高度，最后一行可以捲到 toast 之上 */
+body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px + 12px + var(--hit) + 16px); }
 
 .screen {
   padding-left: calc(var(--margin) + var(--safe-left));
@@ -643,6 +651,7 @@ h1, h2, p { margin: 0; }
   letter-spacing: 0.01em;
 }
 .entry-amount-input::placeholder { color: var(--tertiary-label); }
+.entry-amount-input::selection { background: var(--accent-sel); color: var(--label); }
 .entry-amount-input::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--label); }
 .entry-amount.has-error .entry-amount-row { box-shadow: inset 0 0 0 1px var(--red); }
 
@@ -683,6 +692,7 @@ h1, h2, p { margin: 0; }
   justify-content: center;
   border-radius: 50%;
   color: var(--accent);
+  background: var(--accent-tint);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -893,7 +903,7 @@ h1, h2, p { margin: 0; }
   touch-action: pan-y;           /* 垂直捲动交给浏览器，水平给左滑 */
   -webkit-touch-callout: none;
 }
-.home-row-content:active { background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
+.home-row-content:active { background: var(--press-bg); background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
 .home-row-content:focus-visible { outline-offset: -2px; }
 .home-row + .home-row .home-row-content::before { /* 内缩分隔线，随内容移动 */
   content: "";
@@ -913,6 +923,7 @@ h1, h2, p { margin: 0; }
   justify-content: center;
   border-radius: 50%;
   color: var(--accent);
+  background: var(--accent-tint);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .home-row-icon.is-muted { color: var(--secondary-label); background: var(--fill); }
@@ -1107,7 +1118,7 @@ h1, h2, p { margin: 0; }
   height: 0.5px;
   background: var(--separator);
 }
-button.inset-row:active { background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
+button.inset-row:active { background: var(--press-bg); background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
 .inset-row:focus-visible { outline-offset: -2px; }
 .inset-row.is-action { color: var(--accent); }
 .inset-row-label { flex: 1; min-width: 0; }
@@ -1179,7 +1190,7 @@ button.inset-row:active { background: color-mix(in srgb, var(--fill) 50%, var(--
   text-align: left;
   background: var(--bg-grouped-secondary);
 }
-.cat-row-main:active { background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
+.cat-row-main:active { background: var(--press-bg); background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
 .cat-row-main:focus-visible { outline-offset: -2px; }
 .cat-row + .cat-row .cat-row-main::before { /* 内缩分隔线：从文字起点开始 */
   content: "";
