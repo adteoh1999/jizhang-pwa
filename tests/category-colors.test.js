@@ -90,8 +90,10 @@ test('icon containers are wired to data-icon', () => {
 
 test('there is a dark @media block with the icon rules, and the attr rules sit outside any @media', () => {
   assert.equal(mediaWithIcons.length, 1);
-  const attrIdx = css.indexOf(':root[data-theme="dark"] [data-icon=');
-  assert.ok(attrIdx >= 0);
+  const attrIdxs = [];
+  for (let at = css.indexOf(':root[data-theme="dark"] [data-icon='); at >= 0;
+    at = css.indexOf(':root[data-theme="dark"] [data-icon=', at + 1)) attrIdxs.push(at);
+  assert.ok(attrIdxs.length >= 18);
   const re = /@media[^{]*\{/g;
   let m;
   while ((m = re.exec(css))) {
@@ -101,7 +103,7 @@ test('there is a dark @media block with the icon rules, and the attr rules sit o
       if (css[k] === '{') depth++;
       else if (css[k] === '}' && --depth === 0) break;
     }
-    assert.ok(!(attrIdx > start && attrIdx < k), 'attr dark rules must not be inside @media');
+    for (const attrIdx of attrIdxs) assert.ok(!(attrIdx > start && attrIdx < k), 'attr dark rules must not be inside @media');
   }
 });
 

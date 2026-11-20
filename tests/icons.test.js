@@ -103,3 +103,7 @@ test('iconKey keeps coloured names and resolves unknown names to other', () => {
   for (const n of CATEGORY_ICON_CHOICES) assert.equal(iconKey(n), n);
   for (const n of ['unknown', 'house', '', undefined, null, 'constructor']) assert.equal(iconKey(n), 'other');
 });
+
+test('iconKey maps non-category glyph names to other colours', () => {
+  assert.equal(iconKey('house'), 'other');
+});
