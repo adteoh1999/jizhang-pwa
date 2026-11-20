@@ -710,8 +710,8 @@ h1, h2, p { margin: 0; }
   border-radius: 4px;
   background: var(--fill);
   color: var(--secondary-label);
-  font-size: 10px;
-  line-height: 14px;
+  font-size: 11px;
+  line-height: 15px;
 }
 .cat-tile-add .cat-tile-icon { color: var(--secondary-label); background: var(--fill); }
 .cat-tile-plus { font-size: 22px; line-height: 1; }

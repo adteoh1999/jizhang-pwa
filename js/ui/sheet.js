@@ -9,6 +9,9 @@ let seq = 0;
 
 const DISMISS_RATIO = 0.3; // 拉超过 sheet 高度 30% 就关闭
 const DISMISS_VELOCITY = 0.5; // 或放手时速度 > 0.5 px/ms
+const VELOCITY_WINDOW = 100; // 速度只看放手前 100ms 内的移动
+const VELOCITY_STALE = 50; // 最后一次移动到放手超过 50ms → 视为停住
+const VELOCITY_MIN_DRAG = 10; // 用速度判断关闭时，至少要下拉 10px
 
 function headerButton(action, side) {
   if (!action) return h('span', { class: `modal-sheet-${side}` });
@@ -79,20 +82,26 @@ export function openSheet({
     if (!drag || e.pointerId !== drag.id) return;
     drag.dy = e.clientY - drag.y0;
     drag.samples.push({ t: e.timeStamp, y: e.clientY });
-    if (drag.samples.length > 6) drag.samples.shift();
+    while (drag.samples.length > 2 && e.timeStamp - drag.samples[0].t > VELOCITY_WINDOW) drag.samples.shift();
     // 只能往下拉（照手指移动），往上不动
     setOffset(drag.dy > 0 ? drag.dy : 0);
   });
   const endDrag = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
-    const { dy, samples } = drag;
+    const { samples } = drag;
+    const dy = e.clientY - drag.y0;
     drag = null;
     panel.classList.remove('is-dragging');
-    const a = samples[0];
-    const b = samples[samples.length - 1];
-    const v = b.t > a.t ? (b.y - a.y) / (b.t - a.t) : 0;
+    // 速度：只看放手前 VELOCITY_WINDOW 内的移动；最后一次移动离放手超过 VELOCITY_STALE（停住再放手）就当 0
+    const end = { t: e.timeStamp, y: e.clientY };
+    const recent = [...samples.filter((p) => end.t - p.t <= VELOCITY_WINDOW), end];
+    const last = samples[samples.length - 1];
+    const fresh = end.t - last.t <= VELOCITY_STALE;
+    const a = recent[0];
+    const b = recent.length > 2 ? recent[recent.length - 2] : end; // 最后一次移动（放手点通常不再移动）
+    const v = fresh && b.t > a.t ? (b.y - a.y) / (b.t - a.t) : 0;
     const shouldDismiss = e.type === 'pointerup' && dy > 0
-      && (dy > panel.offsetHeight * DISMISS_RATIO || v > DISMISS_VELOCITY);
+      && (dy > panel.offsetHeight * DISMISS_RATIO || (dy >= VELOCITY_MIN_DRAG && v > DISMISS_VELOCITY));
     if (shouldDismiss) requestDismiss();
     if (!closed) setOffset(0); // 弹回（transition）
   };

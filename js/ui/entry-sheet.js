@@ -35,13 +35,14 @@ function checkFields({ amountText, date }) {
   return null;
 }
 
-// store 抛出的 ValidationError.field → 中文讯息（绝不直接显示 e.message）
-function messageFor(field, { amountText, date }) {
+// store 抛出的 ValidationError.field → 中文讯息（绝不直接显示 e.message）；未知栏位 → null
+function messageFor(field, { amountText, date }, categoryMissing) {
   switch (field) {
     case 'amount': return amountText.trim() === '' ? '请输入金额' : '金额格式不对';
     case 'date': return date === '' ? '请选择日期' : '日期太远了';
     case 'note': return `备注最多 ${NOTE_MAX} 字`;
-    default: return '请选择分类'; // category / kind
+    case 'category': return categoryMissing ? '请选择其他分类' : '请选择分类';
+    default: return null;
   }
 }
 
@@ -61,7 +62,12 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     date: tx ? tx.occurred_on : todayLocal(),
     note: tx ? tx.note : '',
   };
-  const state = { kind: initial.kind, categoryId: initial.categoryId };
+  // byKind：每个类型各自记住选中的分类，切换类型再切回来时还原（不悄悄换掉使用者没碰过的分类）
+  const state = {
+    kind: initial.kind,
+    categoryId: initial.categoryId,
+    byKind: { [initial.kind]: initial.categoryId },
+  };
   let saving = false;
 
   // ---------- 金额 ----------
@@ -71,7 +77,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     placeholder: '0.00', 'aria-label': '金额（RM）',
   });
   amountInput.value = initial.amountText;
-  const amountError = h('p', { class: 'field-error', id: `${uid}-amount-err`, hidden: true });
+  const amountError = h('p', { class: 'field-error', id: `${uid}-amount-err`, role: 'alert', hidden: true });
   const amountField = h('div', { class: 'entry-amount' },
     h('label', { class: 'entry-amount-row', for: `${uid}-amount` },
       h('span', { class: 'entry-amount-prefix', 'aria-hidden': 'true' }, 'RM'),
@@ -98,7 +104,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
 
   // ---------- 分类网格 ----------
   const grid = h('div', { class: 'cat-grid', role: 'group', 'aria-labelledby': `${uid}-cat-label` });
-  const catError = h('p', { class: 'field-error', id: `${uid}-cat-err`, hidden: true });
+  const catError = h('p', { class: 'field-error', id: `${uid}-cat-err`, role: 'alert', hidden: true });
   const catField = h('div', { class: 'entry-section' },
     h('h3', { class: 'entry-section-label', id: `${uid}-cat-label` }, '分类'),
     h('div', { class: 'entry-card cat-card' }, grid),
@@ -110,7 +116,14 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       type: 'button', class: `cat-tile${deleted ? ' is-deleted' : ''}`,
       'aria-pressed': selected ? 'true' : 'false', 'data-cat': catId,
       'aria-label': deleted ? `${name}（已删除）` : name,
-      on: { click: () => { state.categoryId = catId; clearError(catField, catError); renderGrid(); } },
+      on: {
+        click: () => {
+          state.categoryId = catId;
+          state.byKind[state.kind] = catId;
+          clearError(catField, catError);
+          renderGrid();
+        },
+      },
     },
     h('span', { class: 'cat-tile-icon' }, icon(iconName, 22)),
     h('span', { class: 'cat-tile-name' }, name),
@@ -119,21 +132,30 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
 
   function renderGrid() {
     const cats = store.categories(state.kind);
+    const active = new Set(cats.map((c) => c.id));
     const tiles = [];
-    // 选中的分类已被删除（或根本查不到）：放在最前面并保持选中，绝不悄悄换掉
+    // 不在活动列表里的分类（已删除 / 查不到）放在最前面：
+    // - 原本这笔的分类：只要在原本的类型下就一直显示（选中与否），使用者可以再点回来；
+    // - 目前选中的分类（例如 sheet 开着时被删）：保持显示与选中，绝不悄悄换掉。
+    const extras = [];
+    if (state.kind === initial.kind && initial.categoryId && !active.has(initial.categoryId)) {
+      extras.push(initial.categoryId);
+    }
     const sel = state.categoryId;
-    if (sel && !cats.some((c) => c.id === sel)) {
+    if (sel && !active.has(sel) && !extras.includes(sel)) {
       const c = store.categoryById(sel);
-      if (c ? c.kind === state.kind : state.kind === initial.kind) {
-        tiles.push(tile({
-          catId: sel, name: c ? c.name : '未分类', iconName: c ? c.icon : 'other', deleted: !!c,
-        }));
-      }
+      if (c && c.kind === state.kind) extras.push(sel);
+    }
+    for (const xid of extras) {
+      const c = store.categoryById(xid);
+      tiles.push(tile({
+        catId: xid, name: c ? c.name : '未分类', iconName: c ? c.icon : 'other', deleted: !!c,
+      }));
     }
     for (const c of cats) tiles.push(tile({ catId: c.id, name: c.name, iconName: c.icon }));
     if (onAddCategory) {
       tiles.push(h('button', {
-        type: 'button', class: 'cat-tile cat-tile-add',
+        type: 'button', class: 'cat-tile cat-tile-add', 'aria-label': '新增分类',
         on: { click: () => onAddCategory({ kind: state.kind }) },
       },
       h('span', { class: 'cat-tile-icon' }, h('span', { class: 'cat-tile-plus', 'aria-hidden': 'true' }, '＋')),
@@ -159,8 +181,13 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
   function setKind(kind) {
     if (state.kind === kind) return;
     state.kind = kind;
-    const c = state.categoryId ? store.categoryById(state.categoryId) : null;
-    if (!c || c.kind !== kind) state.categoryId = (store.categories(kind)[0] || {}).id || null;
+    // 还原这个类型上次的选择；仍有效（活动分类，或原本这笔的分类）才用，否则选该类型第一个
+    const cats = store.categories(kind);
+    const remembered = state.byKind[kind];
+    const valid = remembered && (cats.some((c) => c.id === remembered)
+      || (kind === initial.kind && remembered === initial.categoryId));
+    state.categoryId = valid ? remembered : ((cats[0] || {}).id || null);
+    state.byKind[kind] = state.categoryId;
     syncSegments();
     clearError(catField, catError);
     renderGrid();
@@ -174,8 +201,8 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     placeholder: '备注（选填）', autocomplete: 'off', enterkeyhint: 'done', 'aria-label': '备注',
   });
   noteInput.value = initial.note;
-  const dateError = h('p', { class: 'field-error', id: `${uid}-date-err`, hidden: true });
-  const noteError = h('p', { class: 'field-error', id: `${uid}-note-err`, hidden: true });
+  const dateError = h('p', { class: 'field-error', id: `${uid}-date-err`, role: 'alert', hidden: true });
+  const noteError = h('p', { class: 'field-error', id: `${uid}-note-err`, role: 'alert', hidden: true });
   const dateRow = h('label', { class: 'entry-row', for: `${uid}-date` },
     h('span', { class: 'entry-row-label' }, '日期'), dateInput);
   const noteRow = h('div', { class: 'entry-row' }, noteInput);
@@ -197,7 +224,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     amount: { box: amountField, err: amountError, input: amountInput },
     date: { box: detailField, err: dateError, input: dateInput },
     note: { box: detailField, err: noteError, input: noteInput },
-    category: { box: catField, err: catError, input: null },
+    category: { box: catField, err: catError, input: null, describe: grid },
   };
 
   function clearError(box, err) {
@@ -206,7 +233,9 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     err.textContent = '';
     box.classList.remove('has-error');
     for (const f of Object.values(fields)) {
-      if (f.err === err && f.input) { f.input.removeAttribute('aria-invalid'); f.input.removeAttribute('aria-describedby'); }
+      if (f.err !== err) continue;
+      if (f.input) f.input.removeAttribute('aria-invalid');
+      (f.input || f.describe).removeAttribute('aria-describedby');
     }
   }
   function clearAllErrors() {
@@ -214,15 +243,13 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
   }
 
   function showError(field, message) {
-    const f = fields[field] || fields.category;
+    const f = fields[field];
     f.err.textContent = message;
-    f.err.hidden = false;
+    f.err.hidden = false; // role=alert：VoiceOver 会读出
     f.box.classList.add('has-error');
     const target = f.input || grid.querySelector('[aria-pressed="true"]') || grid.querySelector('button');
-    if (f.input) {
-      f.input.setAttribute('aria-invalid', 'true');
-      f.input.setAttribute('aria-describedby', f.err.id);
-    }
+    if (f.input) f.input.setAttribute('aria-invalid', 'true');
+    (f.input || f.describe).setAttribute('aria-describedby', f.err.id);
     // 抖一下（reduced motion 时 CSS 不做动画）
     const shake = field === 'date' ? dateRow : field === 'note' ? noteRow : field === 'amount' ? amountField.firstChild : grid;
     shake.classList.remove('is-shaking');
@@ -286,7 +313,9 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       });
       sheet.close();
     } catch (e) {
-      if (e instanceof ValidationError) showError(e.field, messageFor(e.field, c));
+      const missing = !!c.categoryId && !store.categoryById(c.categoryId);
+      const msg = e instanceof ValidationError ? messageFor(e.field, c, missing) : null;
+      if (msg) showError(e.field, msg);
       else {
         console.error(e);
         messageDialog({ title: '储存失败', message: '请稍后再试一次。' });
@@ -323,7 +352,12 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     // sheet 关闭后才显示（浮层下的 toast 会被设为 inert）
     showToast('已删除', {
       actionLabel: '撤销',
-      onAction: () => { store.restoreTransaction(id).catch((e) => console.error(e)); },
+      onAction: () => {
+        store.restoreTransaction(id).catch((e) => {
+          console.error(e);
+          messageDialog({ title: '撤销失败', message: '这笔纪录没能还原，请稍后再试。' });
+        });
+      },
     });
   }
 

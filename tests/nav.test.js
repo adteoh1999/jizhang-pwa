@@ -2,8 +2,12 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { pushLayer, popLayer, depth, onDepthChange } from '../js/ui/nav.js';
 
-// nav.js 是模块级单例：每个测试后清空堆叠
-afterEach(() => { while (depth() > 0) popLayer(); });
+// nav.js 是模块级单例：每个测试后清空堆叠。
+// 有 onDismiss 的层 popLayer 不会关闭，所以设上限，避免无限循环（剩下的层由测试自己 close）
+afterEach(() => {
+  for (let i = 0; i < 100 && depth() > 0; i += 1) popLayer();
+  assert.equal(depth(), 0, '测试结束时仍有浮层未关闭');
+});
 
 test('Node 环境（没有 document）可以载入 nav.js', () => {
   assert.equal(typeof document, 'undefined');
@@ -124,11 +128,14 @@ test('onDismiss：popLayer 交给 onDismiss 决定（不直接关闭）；close(
   let asked = 0;
   let closed = 0;
   const h = pushLayer({ onDismiss: () => { asked += 1; }, onClose: () => { closed += 1; } });
-  popLayer();
-  assert.equal(asked, 1);
-  assert.equal(closed, 0);
-  assert.equal(depth(), 1);
-  h.close();
+  try {
+    popLayer();
+    assert.equal(asked, 1);
+    assert.equal(closed, 0);
+    assert.equal(depth(), 1);
+  } finally {
+    h.close();
+  }
   assert.equal(closed, 1);
   assert.equal(depth(), 0);
 });
