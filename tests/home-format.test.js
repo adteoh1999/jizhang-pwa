@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  balanceSizeClass, balanceParts, rowIconAttr, meterText, countText, flowSizeClass,
+  balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
 } from '../js/ui/home.js';
+import { rowIconAttr } from '../js/ui/icons.js';
 
 test('balanceSizeClass：整数部分字元数（含 U+2212 与逗号）≤5 / 6–9 / ≥10', () => {
   assert.equal(balanceSizeClass(123450), '');               // 1,234

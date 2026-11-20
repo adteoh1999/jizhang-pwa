@@ -55,6 +55,24 @@ export function snapDay(px, boxWidth, days, lastDay) {
   return Math.min(Math.max(1, d), lastDay);
 }
 
+/**
+ * 走势图状态（单一来源：hasRecords = 这个月这一类有没有记录，由 byCategory 判断）。
+ * values：cumulativeByDay 的结果。回传 { mode: 'empty'|'dot'|'line', lastDay, total, ys }。
+ * - 没有记录 → empty（图卡显示空状态文字）。
+ * - 有记录但到今天累计仍是 0（只有未来日期的记录）→ 贴底的平线，不是空状态。
+ * ys：每一天（1..lastDay）在 viewBox 里的 y；total 为 0 时一律贴底（不除以 0）。
+ */
+export function trendState(values, hasRecords) {
+  let lastDay = 0;
+  for (let i = 0; i < values.length; i++) if (values[i] !== null) lastDay = i + 1;
+  const total = lastDay ? values[lastDay - 1] : 0;
+  const base = CHART.H - CHART.PB;
+  const ys = values.slice(0, lastDay)
+    .map((v) => (total > 0 ? CHART.PT + (1 - v / total) * (base - CHART.PT) : base));
+  const mode = !hasRecords || !lastDay ? 'empty' : lastDay === 1 ? 'dot' : 'line';
+  return { mode, lastDay, total, ys };
+}
+
 /** 标签 / aria-valuetext：「11月18日 累计 RM 528.00」。 */
 export function trendLabel(month, day, minor) {
   return `${Number(month.slice(5, 7))}月${day}日 累计 ${formatRM(minor, { sign: 'none' })}`;

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monotonePath, snapDay, trendLabel, CHART } from '../js/chart.js';
+import { monotonePath, snapDay, trendLabel, trendState, CHART } from '../js/chart.js';
+import { cumulativeByDay } from '../js/stats.js';
 
 // 解析 `M x y C c1x c1y c2x c2y x y …` → 每段 { y0, c1y, c2y, y1 }
 function segments(d) {
@@ -53,4 +54,30 @@ test('trendLabel copy', () => {
   assert.equal(trendLabel('2026-11', 18, 52800), '11月18日 累计 RM 528.00');
   assert.equal(trendLabel('2026-02', 1, 0), '2月1日 累计 RM 0.00');
   assert.equal(trendLabel('2026-12', 31, 123456789), '12月31日 累计 RM 1,234,567.89');
+});
+
+const tx = (occurred_on, kind, amount_minor) => ({
+  id: `${occurred_on}-${amount_minor}`, occurred_on, kind, amount_minor, category_id: 'food',
+  deleted: false, created_at: '2026-11-01T00:00:00.000Z',
+});
+
+test('trendState: only future-dated records this month → flat line, not empty', () => {
+  const values = cumulativeByDay([tx('2026-11-25', 'expense', 5000)], '2026-11', 'expense', '2026-11-21');
+  const st = trendState(values, true);
+  assert.equal(st.mode, 'line');
+  assert.equal(st.lastDay, 21);
+  assert.equal(st.total, 0);
+  assert.equal(st.ys.length, 21);
+  assert.ok(st.ys.every((y) => y === CHART.H - CHART.PB)); // 平线贴底，没有 NaN
+});
+
+test('trendState: no records → empty; one day → dot; normal → line scaled to total', () => {
+  assert.equal(trendState(cumulativeByDay([], '2026-11', 'expense', '2026-11-21'), false).mode, 'empty');
+  const one = trendState(cumulativeByDay([tx('2026-12-01', 'expense', 500)], '2026-12', 'expense', '2026-12-01'), true);
+  assert.equal(one.mode, 'dot'); assert.equal(one.lastDay, 1); assert.equal(one.ys[0], CHART.PT);
+  const st = trendState(cumulativeByDay([tx('2026-10-02', 'expense', 100), tx('2026-10-31', 'expense', 300)],
+    '2026-10', 'expense', '2026-11-21'), true);
+  assert.equal(st.mode, 'line'); assert.equal(st.lastDay, 31); assert.equal(st.total, 400);
+  assert.equal(st.ys[0], CHART.H - CHART.PB); assert.equal(st.ys[30], CHART.PT);
+  assert.ok(st.ys.every((y) => Number.isFinite(y)));
 });

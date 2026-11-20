@@ -5,7 +5,7 @@
 // 无障碍删除路径：每一列的红色「删除」按钮一直在 DOM 里（排在列内容之后），
 // 键盘 Tab / VoiceOver 都能直接到达并启动，不必左滑；键盘焦点落在它上面时，该列自动滑开露出按钮。
 import { h } from './dom.js';
-import { icon, iconKey } from './icons.js';
+import { icon, rowIconAttr } from './icons.js';
 import { openEntrySheet } from './entry-sheet.js';
 import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
@@ -49,11 +49,6 @@ export function meterText(m) {
 /** 抽屉标题右侧：全部记录数。 */
 export function countText(n) {
   return `共 ${n} 笔`;
-}
-
-/** 列图示的 data-icon：有效分类 → iconKey；已删除 / 未分类 → null（维持灰色）。 */
-export function rowIconAttr(cat) {
-  return cat && !cat.deleted ? iconKey(cat.icon) : null;
 }
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;

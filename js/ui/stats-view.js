@@ -1,9 +1,8 @@
 // 统计页：月份切换器、摘要玻璃卡、黑色胶囊支出/收入切换、累计走势图、分类占比抽屉（分类色比例条）。
 // 选中的月份与类型只存在记忆体（切换分页时保留）。
 import { h } from './dom.js';
-import { icon } from './icons.js';
+import { icon, rowIconAttr } from './icons.js';
 import { kindSegmented } from './components.js';
-import { rowIconAttr } from './home.js';
 import { mountTrendChart } from './trend-chart.js';
 import { summarizeMonth, byCategory, formatPercent, cumulativeByDay } from '../stats.js';
 import { formatRM } from '../money.js';
@@ -45,9 +44,10 @@ export function mountStats(root, store) {
 
   const chartSlot = h('div', { class: 'stats-chart' });
   const list = h('ul', { class: 'stats-group', role: 'list' });
+  const drawerTotal = h('span', { class: 'home-drawer-count' }); // 整个月该类合计（可能含今天之后的记录）
   const drawer = h('section', { class: 'stats-drawer', 'aria-labelledby': 'stats-drawer-title' },
     h('div', { class: 'home-drawer-head' },
-      h('h2', { class: 'home-drawer-title', id: 'stats-drawer-title' }, '分类')),
+      h('h2', { class: 'home-drawer-title', id: 'stats-drawer-title' }, '分类'), drawerTotal),
     list);
   root.replaceChildren(switcher, summary, seg.element, chartSlot, drawer);
   const chart = mountTrendChart(chartSlot);
@@ -72,11 +72,14 @@ export function mountStats(root, store) {
     balanceEl.textContent = formatRM(s.balance);
 
     seg.set(kind);
-    chart.update({ values: cumulativeByDay(all, month, kind, today), month, kind });
 
-    // 没有资料：空状态文字只在走势图卡里显示，分类抽屉整个隐藏（不重复）
+    // 单一来源：这个月这一类有没有记录 = byCategory 有没有列。
+    // 没有 → 空状态文字只在走势图卡里显示，分类抽屉整个隐藏（不重复）；
+    // 有（即使只有今天之后的日期）→ 走势图照画（到今天为 0 时是贴底的平线）。
     const rows = byCategory(all, month, kind);
+    chart.update({ values: cumulativeByDay(all, month, kind, today), month, kind, hasRecords: rows.length > 0 });
     drawer.hidden = rows.length === 0;
+    drawerTotal.textContent = `共 ${formatRM(rows.reduce((sum, r) => sum + r.total, 0), { sign: 'none' })}`;
     list.replaceChildren(...rows.map((r) => {
       const cat = store.categoryById(r.category_id);
       const name = cat ? cat.name : '未分类';

@@ -747,6 +747,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   transition: color 0.2s ease;
 }
 .segment[aria-checked="true"] { color: var(--btn-fg); }
+.segment::after { content: ""; position: absolute; inset: -4px 0; } /* 36pt 按钮的点击区扩到 44pt */
 .segment:focus-visible { outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .segment { transition: none; }
@@ -1289,6 +1290,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   overflow: visible;
   touch-action: pan-y;           /* 上下滑交给页面捲动，水平拖动给图表 */
   -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   cursor: crosshair;
 }
 .trend-svg:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 8px; }
