@@ -951,6 +951,8 @@ h1, h2, p { margin: 0; }
 }
 .home-row.is-revealed .home-row-delete,
 .home-row-delete:focus { opacity: 1; }
+/* 没滑开时不接受点按（键盘 / VoiceOver 仍可到达；聚焦时列会滑开） */
+.home-row:not(.is-revealed) .home-row-delete { pointer-events: none; }
 .home-row-delete:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -4px; }
 .home-row-content.is-animating { transition: transform 0.3s var(--ease-out); }
 .home-row-delete.is-animating { transition: width 0.3s var(--ease-out); }

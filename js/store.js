@@ -71,7 +71,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     deleteTransaction(id) {
       return enqueue(async () => {
         const t = txs.get(id);
-        if (!t) throw new Error('找不到这笔纪录');
+        if (!t) throw new Error('找不到这笔记录');
         if (t.deleted) return;
         await commit({ transactions: [markDeleted(t, now())] });
       });
@@ -79,7 +79,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     restoreTransaction(id) {
       return enqueue(async () => {
         const t = txs.get(id);
-        if (!t) throw new Error('找不到这笔纪录');
+        if (!t) throw new Error('找不到这笔记录');
         if (!t.deleted) return;
         await commit({ transactions: [markRestored(t, now())] });
       });

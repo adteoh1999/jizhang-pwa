@@ -332,7 +332,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     let choice;
     try {
       choice = await actionSheet({
-        title: '删除这笔纪录？',
+        title: '删除这笔记录？',
         actions: [{ label: '删除', style: 'destructive' }, { label: '取消', style: 'cancel' }],
       });
     } finally {
@@ -355,7 +355,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       onAction: () => {
         store.restoreTransaction(id).catch((e) => {
           console.error(e);
-          messageDialog({ title: '撤销失败', message: '这笔纪录没能还原，请稍后再试。' });
+          messageDialog({ title: '撤销失败', message: '这笔记录没能还原，请稍后再试。' });
         });
       },
     });

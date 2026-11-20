@@ -19,6 +19,7 @@ const ACTION_W = 80;         // 「删除」按钮宽度
 const OPEN_MIN = 40;         // 放开时滑超过这个距离 → 停在打开
 const FULL_RATIO = 0.6;      // 滑过列宽 60% → 直接删除
 const LOCK_DIST = 10;        // 判断方向前要移动的距离
+const LOST_GRACE = 150;      // 失去 pointer capture 后等多久才当作手势中断（ms）
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -34,6 +35,7 @@ export function mountHome(root, store) {
   const CLICK_WINDOW = 500;
   const rows = new Map();      // id → record { id, tx, el, content, del, sig, offset }
   let order = [];              // 目前画出来的列 id（由上到下）
+  let openScrollY = 0;         // 列滑开时的 scrollY；只有真的捲离这个位置才关闭
 
   // ---------- 静态骨架 ----------
   const sumTitle = h('h2', { class: 'home-summary-title' }, '本月');
@@ -58,7 +60,7 @@ export function mountHome(root, store) {
   const list = h('div', { class: 'home-list' });
   const moreBtn = h('button', {
     type: 'button', class: 'home-more', hidden: true,
-    on: { click: () => { shown += PAGE; render(); } },
+    on: { click: () => { shown += PAGE; requestRender(); } },
   }, '显示更多');
 
   root.replaceChildren(summary, addBtn, list, moreBtn);
@@ -83,6 +85,7 @@ export function mountHome(root, store) {
     }, '删除');
     rec.el = h('li', { class: 'home-row', 'data-id': tx.id }, rec.content, rec.del);
     rec.el.addEventListener('focusout', (e) => {
+      if (rendering) return; // 重排列节点时 Chrome 也会发 focusout（relatedTarget=null），不算焦点离开
       if (openRow === rec && !rec.el.contains(e.relatedTarget)) closeRow(rec);
     });
     rec.content.addEventListener('click', () => onRowClick(rec));
@@ -110,7 +113,16 @@ export function mountHome(root, store) {
   }
 
   // ---------- 渲染 ----------
+  let dragging = 0;            // 正在拖动的列数；拖动中不重排 DOM（会让 pointer capture 失效）
+  let renderPending = false;
+  let rendering = false;       // render() 正在搬动 DOM
+  function requestRender() {
+    if (dragging > 0) { renderPending = true; return; }
+    render();
+  }
+
   function render() {
+    renderPending = false;
     today = todayLocal();
     const all = store.transactions();
     const month = monthOf(today);
@@ -138,32 +150,37 @@ export function mountHome(root, store) {
     const seen = new Set();
     order = [];
     const frag = [];
-    let budget = shown;
-    for (const g of groups) {
-      if (budget <= 0) break;
-      const items = g.items.slice(0, budget);
-      budget -= items.length;
-      const lis = items.map((tx) => {
-        let rec = rows.get(tx.id);
-        if (!rec) { rec = buildRow(tx); rows.set(tx.id, rec); }
-        fillRow(rec, tx);
-        seen.add(tx.id);
-        order.push(tx.id);
-        return rec.el;
-      });
-      frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today) },
-        h('h2', { class: 'home-day-header' },
-          h('span', null, formatDayHeader(g.date, today)),
-          h('span', { class: 'home-day-net' }, formatRM(g.net))),
-        h('ul', { class: 'home-group', role: 'list' }, lis)));
-    }
-    for (const id of [...rows.keys()]) {
-      if (!seen.has(id)) {
-        if (openRow && openRow.id === id) openRow = null;
-        rows.delete(id);
+    rendering = true; // 从这里开始列节点会被搬到新的 <ul>（append 时就离开旧位置）
+    try {
+      let budget = shown;
+      for (const g of groups) {
+        if (budget <= 0) break;
+        const items = g.items.slice(0, budget);
+        budget -= items.length;
+        const lis = items.map((tx) => {
+          let rec = rows.get(tx.id);
+          if (!rec) { rec = buildRow(tx); rows.set(tx.id, rec); }
+          fillRow(rec, tx);
+          seen.add(tx.id);
+          order.push(tx.id);
+          return rec.el;
+        });
+        frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today) },
+          h('h2', { class: 'home-day-header' },
+            h('span', null, formatDayHeader(g.date, today)),
+            h('span', { class: 'home-day-net' }, formatRM(g.net))),
+          h('ul', { class: 'home-group', role: 'list' }, lis)));
       }
+      for (const id of [...rows.keys()]) {
+        if (!seen.has(id)) {
+          if (openRow && openRow.id === id) openRow = null;
+          rows.delete(id);
+        }
+      }
+      list.replaceChildren(...frag);
+    } finally {
+      rendering = false;
     }
-    list.replaceChildren(...frag);
     moreBtn.hidden = all.length <= shown;
 
     // 保持捲动位置与焦点（重排列节点会让焦点掉到 body）
@@ -190,6 +207,7 @@ export function mountHome(root, store) {
   function openRowTo(rec) {
     if (openRow && openRow !== rec) closeRow(openRow);
     openRow = rec;
+    openScrollY = window.scrollY;
     setOffset(rec, -ACTION_W, true);
   }
 
@@ -198,8 +216,13 @@ export function mountHome(root, store) {
     setOffset(rec, 0, true);
   }
 
+  // 从外部关闭（点别处、Esc、按「＋ 记一笔」）：焦点若在这列的删除按钮上，先移回列内容，
+  // 免得焦点留在看不见的删除按钮上、按 Enter 就在看不到的情况下删掉。
   function closeOpenRow() {
-    if (openRow) closeRow(openRow);
+    if (!openRow) return;
+    const rec = openRow;
+    if (document.activeElement === rec.del) rec.content.focus({ preventScroll: true });
+    closeRow(rec);
   }
 
   function onRowClick(rec) {
@@ -220,7 +243,7 @@ export function mountHome(root, store) {
         onAction: () => {
           store.restoreTransaction(id).catch((e) => {
             console.error(e);
-            messageDialog({ title: '撤销失败', message: '这笔纪录没能还原，请稍后再试。' });
+            messageDialog({ title: '撤销失败', message: '这笔记录没能还原，请稍后再试。' });
           });
         },
       });
@@ -244,13 +267,16 @@ export function mountHome(root, store) {
 
     c.addEventListener('pointermove', (e) => {
       if (!g || e.pointerId !== g.pid) return;
+      clearTimeout(g.lostTimer); // 还收得到 move → 手势仍在进行
       const dx = e.clientX - g.x0;
       const dy = e.clientY - g.y0;
       if (g.state === 'pending') {
         if (Math.hypot(dx, dy) < LOCK_DIST) return;
         if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 放弃，让页面捲动
+        if (dx > 0 && g.base === 0) { g = null; return; }      // 关着的列往右滑：不处理
         g.state = 'drag';
         rec.dragging = true;
+        dragging += 1;
         if (openRow && openRow !== rec) closeRow(openRow);
         try { c.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
       }
@@ -260,10 +286,12 @@ export function mountHome(root, store) {
 
     const end = (e, cancelled) => {
       if (!g || e.pointerId !== g.pid) return;
+      clearTimeout(g.lostTimer);
       const wasDrag = g.state === 'drag';
       g = null;
       if (!wasDrag) return;
       rec.dragging = false;
+      dragging -= 1;
       rec.suppressClickUntil = performance.now() + CLICK_WINDOW; // 拖动后的 click 不要打开 sheet
       const w = rec.el.clientWidth;
       const pulled = -rec.offset;
@@ -271,14 +299,26 @@ export function mountHome(root, store) {
         if (openRow === rec) openRow = null;
         setOffset(rec, -w, true);
         deleteRow(rec);
-      } else if (!cancelled && pulled > OPEN_MIN) {
-        openRowTo(rec);
+      } else if (pulled > OPEN_MIN) {
+        openRowTo(rec);   // 被中断（cancel / 失去 capture）时停到最近的状态，不删除
       } else {
         closeRow(rec);
       }
+      if (renderPending && dragging === 0) render();
     };
     c.addEventListener('pointerup', (e) => end(e, false));
     c.addEventListener('pointercancel', (e) => end(e, true));
+    // 失去 capture：Chrome 在 touch 的隐式 capture 换成显式 capture 时会先发 lost 再发 got，
+    // 所以不立刻结束；短时间内没有拿回 capture、也没有新的 move，才当作中断（停到最近状态）。
+    // 正常 pointerup 之后 g 已清空 → 不做事。
+    c.addEventListener('lostpointercapture', (e) => {
+      if (!g || e.pointerId !== g.pid || g.state !== 'drag') return;
+      clearTimeout(g.lostTimer);
+      g.lostTimer = setTimeout(() => end(e, true), LOST_GRACE);
+    });
+    c.addEventListener('gotpointercapture', (e) => {
+      if (g && e.pointerId === g.pid) clearTimeout(g.lostTimer);
+    });
   }
 
   // 点其他地方 / 捲动 → 关闭滑开的列
@@ -298,16 +338,19 @@ export function mountHome(root, store) {
   document.addEventListener('pointerup', endGesture, true);
   document.addEventListener('pointercancel', endGesture, true);
   window.addEventListener('scroll', () => {
-    if (openRow && !openRow.dragging) closeOpenRow();
+    // 键盘聚焦删除按钮时浏览器会把它捲进画面；重新渲染时还原 scrollY 也会发 scroll 事件。
+    // 这两种都不能把列关掉 → 焦点在删除按钮上时不关；其余只在 scrollY 真的离开打开时的位置才关。
+    if (!openRow || openRow.dragging || document.activeElement === openRow.del) return;
+    if (Math.abs(window.scrollY - openScrollY) > 4) closeOpenRow();
   }, { passive: true });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && openRow && depth() === 0) closeOpenRow();
   });
 
   // ---------- 更新时机 ----------
-  store.subscribe(render);
+  store.subscribe(requestRender);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && todayLocal() !== today) render();
+    if (document.visibilityState === 'visible' && todayLocal() !== today) requestRender();
   });
 
   render();

@@ -40,7 +40,7 @@ test('删除与还原', async () => {
   assert.equal((await db.getAll('transactions'))[0].deleted, true);
   await store.restoreTransaction(t.id);
   assert.equal(store.transactions().length, 1);
-  await assert.rejects(store.deleteTransaction('nope'), /找不到这笔纪录/);
+  await assert.rejects(store.deleteTransaction('nope'), /找不到这笔记录/);
 });
 
 test('重复删除不写入也不通知', async () => {
@@ -113,7 +113,7 @@ test('save 已删除纪录的 id 会复活它', async () => {
 
 test('restoreTransaction 找不到 id → 抛错', async () => {
   const { store } = await setup();
-  await assert.rejects(store.restoreTransaction('nope'), /找不到这笔纪录/);
+  await assert.rejects(store.restoreTransaction('nope'), /找不到这笔记录/);
 });
 
 test('setMeta 不通知订阅者', async () => {
