@@ -648,8 +648,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   height: calc(100% - var(--safe-top) - 10px);
   display: flex;
   flex-direction: column;
-  border-radius: 14px 14px 0 0;
-  background: var(--sheet-bg);
+  border-radius: 30px 30px 0 0;
+  background: var(--drawer);
   box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.12);
   transform: translateY(100%);
   transition: transform 0.4s var(--ease-out);
@@ -687,11 +687,11 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   min-width: var(--hit);
   padding: 0 var(--margin);
   font: var(--font-body);
-  color: var(--accent);
+  color: var(--ink);
   touch-action: manipulation;
 }
 .modal-sheet-action.is-bold { font-weight: 600; }
-.modal-sheet-action:disabled { color: var(--tertiary-label); }
+.modal-sheet-action:disabled { color: var(--ink-3); }
 .modal-sheet-action:active:not(:disabled) { opacity: 0.5; }
 
 .modal-sheet-body {
@@ -747,6 +747,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   transition: color 0.2s ease;
 }
 .segment[aria-checked="true"] { color: var(--btn-fg); }
+/* 抽屉是白底：轨道改用 ink 淡色，去掉玻璃边（深色时 ink-tint 同样可见） */
+.modal-sheet .segmented { background: var(--ink-tint); border-color: transparent; }
 .segment::after { content: ""; position: absolute; inset: -4px 0; } /* 36pt 按钮的点击区扩到 44pt */
 .segment:focus-visible { outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
@@ -761,7 +763,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   min-height: 68px;
   padding: 12px 16px;
   border-radius: var(--radius-card);
-  background: var(--cell-bg);
+  background: var(--ink-tint); /* 抽屉是白底：分组卡改用 ink 淡色 */
   cursor: text;
 }
 .entry-amount-prefix { font: var(--font-title3); color: var(--secondary-label); }
@@ -772,17 +774,17 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   border: 0;
   outline: none;
   background: transparent;
-  color: var(--label);
-  caret-color: var(--accent);
+  color: var(--ink);
+  caret-color: var(--ink);
   font-family: var(--font-family);
-  font-size: 34px;
-  font-weight: 600;
-  line-height: 41px;
+  font-size: calc(1rem * 2.6);
+  font-weight: 300;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
 .entry-amount-input::placeholder { color: var(--tertiary-label); }
-.entry-amount-input::selection { background: var(--accent-sel); color: var(--label); }
+.entry-amount-input::selection { background: var(--ink-sel); color: var(--ink); }
 .entry-amount.has-error .entry-amount-row { box-shadow: inset 0 0 0 1px var(--red); }
 
 /* 区段标题与卡片 */
@@ -792,7 +794,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font: var(--font-footnote);
   color: var(--secondary-label);
 }
-.entry-card { border-radius: var(--radius-card); background: var(--cell-bg); }
+.entry-card { border-radius: var(--radius-card); background: var(--ink-tint); }
+.entry-card.cat-card { background: transparent; } /* 分类格直接放在抽屉上，选中环的间隙才与底色一致 */
 
 /* 分类网格：每列 4 个，每格 ≥ 44x44 */
 .cat-grid {
@@ -821,8 +824,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  color: var(--accent);
-  background: var(--accent-tint);
+  color: var(--ink);
+  background: var(--ink-tint);
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .cat-tile-name {
@@ -831,18 +834,13 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   text-overflow: ellipsis;
   white-space: nowrap;
   font: var(--font-caption);
-  color: var(--label);
+  color: var(--ink-2);
 }
-.cat-tile[aria-pressed="true"] .cat-tile-icon {
-  background: var(--accent);
-  color: var(--btn-fg);
-  box-shadow: 0 0 0 2px var(--cell-bg), 0 0 0 4px var(--accent); /* --accent 外框 */
-}
-.cat-tile[aria-pressed="true"] .cat-tile-name { font-weight: 600; }
+/* 选中：圆标外一圈 2px ink 外框，中间留 2px 抽屉色间隙（彩色圆标上才看得清） */
+.cat-tile[aria-pressed="true"] .cat-tile-icon { box-shadow: 0 0 0 2px var(--drawer), 0 0 0 4px var(--ink); }
+.cat-tile[aria-pressed="true"] .cat-tile-name { color: var(--ink); font-weight: 600; }
 .cat-tile:active .cat-tile-icon { filter: brightness(0.92); }
 .cat-tile:focus-visible { outline-offset: 0; }
-.cat-tile.is-deleted .cat-tile-icon { color: var(--secondary-label); background: var(--fill); }
-.cat-tile.is-deleted[aria-pressed="true"] .cat-tile-icon { color: var(--btn-fg); background: var(--secondary-label); }
 .cat-tile-badge {
   margin-top: -4px;
   padding: 0 5px;
@@ -852,7 +850,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font-size: 11px;
   line-height: 15px;
 }
-.cat-tile-add .cat-tile-icon { color: var(--secondary-label); background: var(--fill); }
+.cat-tile.is-deleted .cat-tile-icon, .cat-tile-add .cat-tile-icon { color: var(--ink-2); background: var(--fill); }
 .cat-tile-plus { font-size: 22px; line-height: 1; }
 
 /* 日期、备注：inset grouped 列表 */
@@ -891,7 +889,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   background: var(--seg-track);
   text-align: right;
 }
-.entry-input[type="date"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.entry-input[type="date"]:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
 .entry-note { flex: 1; min-width: 0; padding: 11px 0; }
 .entry-note::placeholder { color: var(--tertiary-label); }
 
@@ -899,7 +897,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   width: 100%;
   min-height: var(--hit);
   border-radius: var(--radius-card);
-  background: var(--cell-bg);
+  background: var(--ink-tint);
   color: var(--red);
   font: var(--font-body);
 }
@@ -1480,7 +1478,7 @@ button.inset-row:active { background: var(--press-bg); }
   min-height: var(--hit);
   min-width: var(--hit);
   padding: 0 12px 0 6px;
-  color: var(--accent);
+  color: var(--ink);
   font: var(--font-body);
 }
 .nav-back-chevron { display: flex; }
@@ -1528,7 +1526,7 @@ button.inset-row:active { background: var(--press-bg); }
   font: var(--font-body);
 }
 .cat-row-chevron { flex: none; display: flex; color: var(--tertiary-label); }
-.cat-row-add .cat-row-main { color: var(--accent); }
+.cat-row-add .cat-row-main { color: var(--ink); }
 .cat-row-plus {
   flex: none;
   width: 36px;
@@ -1556,7 +1554,7 @@ button.inset-row:active { background: var(--press-bg); }
 /* 新增 / 编辑分类 sheet：名称列 + 图示网格（只有图示，没有文字） */
 .cat-name-input { flex: 1; min-width: 0; padding: 11px 0; }
 .cat-name-input::placeholder { color: var(--tertiary-label); }
-.icon-grid .cat-tile { min-height: 52px; justify-content: center; }
+.icon-grid .cat-tile { min-height: 60px; justify-content: center; }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-page { transform: none; opacity: 0; transition: opacity 0.2s ease; }
@@ -1630,9 +1628,4 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 
 .home-row-icon[data-icon] { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
 .cat-tile[data-icon] .cat-tile-icon { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
-.cat-tile[data-icon][aria-pressed="true"] .cat-tile-icon {
-  color: var(--cat-fg, var(--secondary-label));
-  background: var(--cat-bg, var(--fill));
-  box-shadow: 0 0 0 2px var(--cell-bg), 0 0 0 4px var(--cat-fg, var(--secondary-label));
-}
 .stats-bar-fill[data-icon] { background: var(--cat-fg, var(--secondary-label)); }
