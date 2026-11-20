@@ -116,6 +116,7 @@ export function mountHome(root, store) {
   let dragging = 0;            // 正在拖动的列数；拖动中不重排 DOM（会让 pointer capture 失效）
   let renderPending = false;
   let rendering = false;       // render() 正在搬动 DOM
+  const activeDrags = new Set(); // 拖动中的列 record
   function requestRender() {
     if (dragging > 0) { renderPending = true; return; }
     render();
@@ -250,46 +251,28 @@ export function mountHome(root, store) {
     }, (e) => {
       console.error(e);
       rec.deleting = false;
+      // 焦点若在（即将被收起的）删除按钮上，先移回列内容
+      if (document.activeElement === rec.del) rec.content.focus({ preventScroll: true });
       closeRow(rec);
       messageDialog({ title: '删除失败', message: '请稍后再试一次。' });
     });
   }
 
   // ---------- 左滑手势（pointer events，垂直捲动优先） ----------
+  // 拖动状态必须成对：每次 dragging += 1 都只能由 finish() 减回来一次。
+  // 拖动中的列登记在 activeDrags；新的主要指标按下、或指标在列外放开时，由文件层的后备逻辑收尾，
+  // 避免失去 capture 又收不到 pointerup 时 dragging 永远不归零（列表与摘要就不会再更新）。
   function attachSwipe(rec) {
     const c = rec.content;
-    let g = null; // { pid, x0, y0, base, state: 'pending'|'drag' }
+    let g = null; // { pid, x0, y0, base, state: 'pending'|'drag', lostTimer }
 
-    c.addEventListener('pointerdown', (e) => {
-      if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0) || rec.deleting) return;
-      g = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, base: rec.offset, state: 'pending' };
-    });
-
-    c.addEventListener('pointermove', (e) => {
-      if (!g || e.pointerId !== g.pid) return;
-      clearTimeout(g.lostTimer); // 还收得到 move → 手势仍在进行
-      const dx = e.clientX - g.x0;
-      const dy = e.clientY - g.y0;
-      if (g.state === 'pending') {
-        if (Math.hypot(dx, dy) < LOCK_DIST) return;
-        if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 放弃，让页面捲动
-        if (dx > 0 && g.base === 0) { g = null; return; }      // 关着的列往右滑：不处理
-        g.state = 'drag';
-        rec.dragging = true;
-        dragging += 1;
-        if (openRow && openRow !== rec) closeRow(openRow);
-        try { c.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
-      }
-      const w = rec.el.clientWidth;
-      setOffset(rec, Math.max(-w, Math.min(0, g.base + dx)), false);
-    });
-
-    const end = (e, cancelled) => {
-      if (!g || e.pointerId !== g.pid) return;
-      clearTimeout(g.lostTimer);
-      const wasDrag = g.state === 'drag';
+    // 结束指定的手势（只对仍是目前手势的 gs 生效，旧计时器不会清掉新手势）
+    function finish(gs, cancelled) {
+      if (!gs || g !== gs) return;
+      clearTimeout(gs.lostTimer);
       g = null;
-      if (!wasDrag) return;
+      if (gs.state !== 'drag') return;
+      activeDrags.delete(rec);
       rec.dragging = false;
       dragging -= 1;
       rec.suppressClickUntil = performance.now() + CLICK_WINDOW; // 拖动后的 click 不要打开 sheet
@@ -305,21 +288,69 @@ export function mountHome(root, store) {
         closeRow(rec);
       }
       if (renderPending && dragging === 0) render();
-    };
-    c.addEventListener('pointerup', (e) => end(e, false));
-    c.addEventListener('pointercancel', (e) => end(e, true));
+    }
+    rec.finishDrag = (cancelled) => finish(g, cancelled);
+    rec.dragPointerId = () => (g ? g.pid : null);
+
+    c.addEventListener('pointerdown', (e) => {
+      if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0) || rec.deleting) return;
+      finish(g, true); // 上一个手势没收到 pointerup（例如失去 capture）→ 先收尾，计数保持配对
+      g = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, base: rec.offset, state: 'pending', lostTimer: 0 };
+    });
+
+    c.addEventListener('pointermove', (e) => {
+      if (!g || e.pointerId !== g.pid) return;
+      clearTimeout(g.lostTimer); // 还收得到 move → 手势仍在进行
+      const dx = e.clientX - g.x0;
+      const dy = e.clientY - g.y0;
+      if (g.state === 'pending') {
+        if (Math.hypot(dx, dy) < LOCK_DIST) return;
+        if (Math.abs(dy) >= Math.abs(dx)) { g = null; return; } // 偏垂直 → 放弃，让页面捲动
+        if (dx > 0 && g.base === 0) { g = null; return; }      // 关着的列往右滑：不处理
+        g.state = 'drag';
+        rec.dragging = true;
+        dragging += 1;
+        activeDrags.add(rec);
+        if (openRow && openRow !== rec) closeRow(openRow);
+        try { c.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
+      }
+      const w = rec.el.clientWidth;
+      setOffset(rec, Math.max(-w, Math.min(0, g.base + dx)), false);
+    });
+
+    const onEnd = (cancelled) => (e) => { if (g && e.pointerId === g.pid) finish(g, cancelled); };
+    c.addEventListener('pointerup', onEnd(false));
+    c.addEventListener('pointercancel', onEnd(true));
     // 失去 capture：Chrome 在 touch 的隐式 capture 换成显式 capture 时会先发 lost 再发 got，
     // 所以不立刻结束；短时间内没有拿回 capture、也没有新的 move，才当作中断（停到最近状态）。
     // 正常 pointerup 之后 g 已清空 → 不做事。
     c.addEventListener('lostpointercapture', (e) => {
       if (!g || e.pointerId !== g.pid || g.state !== 'drag') return;
-      clearTimeout(g.lostTimer);
-      g.lostTimer = setTimeout(() => end(e, true), LOST_GRACE);
+      const gs = g;
+      clearTimeout(gs.lostTimer);
+      gs.lostTimer = setTimeout(() => finish(gs, true), LOST_GRACE);
     });
     c.addEventListener('gotpointercapture', (e) => {
       if (g && e.pointerId === g.pid) clearTimeout(g.lostTimer);
     });
   }
+
+  // 后备：拖动中的列若已失去 capture，pointerup / cancel 可能落在别处 → 在文件层收尾（当作中断）。
+  // 落在该列内容上的事件交给列自己的 handler（不重复处理）。
+  const finishStrayDrags = (e) => {
+    for (const rec of [...activeDrags]) {
+      if (rec.dragPointerId() === e.pointerId && !rec.content.contains(e.target)) rec.finishDrag(true);
+    }
+  };
+  document.addEventListener('pointerup', finishStrayDrags, true);
+  document.addEventListener('pointercancel', finishStrayDrags, true);
+  // 新的主要指标按下 = 之前的主要指标早已放开；还挂着的拖动一律收尾
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.isPrimary) return;
+    for (const rec of [...activeDrags]) {
+      if (rec.dragPointerId() !== e.pointerId || !rec.content.contains(e.target)) rec.finishDrag(true);
+    }
+  }, true);
 
   // 点其他地方 / 捲动 → 关闭滑开的列
   document.addEventListener('pointerdown', (e) => {
