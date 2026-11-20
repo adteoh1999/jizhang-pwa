@@ -24,8 +24,8 @@ function namesAndValues(body) {
 }
 
 const light = namesAndValues(blockAfter(css, ':root {'));
-const mediaStart = css.indexOf('@media (prefers-color-scheme: dark)');
-const mediaDark = namesAndValues(blockAfter(css, ':root:not([data-theme="light"])', mediaStart));
+const mediaBlock = blockAfter(css, '@media (prefers-color-scheme: dark)');
+const mediaDark = namesAndValues(blockAfter(mediaBlock, ':root:not([data-theme="light"])'));
 const attrDark = namesAndValues(blockAfter(css, ':root[data-theme="dark"]'));
 
 test('dark tokens are defined identically in both dark blocks', () => {
@@ -35,6 +35,19 @@ test('dark tokens are defined identically in both dark blocks', () => {
 
 test('every dark token also exists in the light :root', () => {
   for (const name of Object.keys(attrDark)) assert.ok(light[name] !== undefined, name);
+});
+
+test('every literal-colour light token also exists in both dark blocks', () => {
+  for (const [name, val] of Object.entries(light)) {
+    if (val.startsWith('var(')) continue;
+    assert.ok(mediaDark[name] !== undefined, `media dark: ${name}`);
+    assert.ok(attrDark[name] !== undefined, `attr dark: ${name}`);
+  }
+});
+
+test('html rule has no background (body background must propagate under .sky)', () => {
+  assert.ok(!/background/.test(blockAfter(css, '\nhtml {')));
+  assert.match(blockAfter(css, '\nbody {'), /background:\s*var\(--sky-low\)/);
 });
 
 test('spec colors are used verbatim', () => {

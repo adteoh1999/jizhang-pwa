@@ -179,7 +179,6 @@ html {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   overscroll-behavior-y: none;
-  background: var(--sky-low);
 }
 html.has-layer { overflow: hidden; }
 
@@ -232,19 +231,13 @@ button:disabled { cursor: default; }
     radial-gradient(90% 50% at 100% 18%, var(--sky-tint), transparent 70%),
     linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 42%, var(--sky-low) 100%);
 }
-@media (prefers-contrast: more) {
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .sky { background: var(--sky-mid); }
   :root { --glass: #FFFFFF; }
+  :root[data-theme="dark"] { --glass: #1A1D23; }
 }
-@media (prefers-reduced-transparency: reduce) {
-  .sky { background: var(--sky-mid); }
-  :root { --glass: #FFFFFF; }
-}
-@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]), :root[data-theme="dark"] { --glass: #1A1D23; }
-}
-@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]), :root[data-theme="dark"] { --glass: #1A1D23; }
+@media ((prefers-contrast: more) or (prefers-reduced-transparency: reduce)) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --glass: #1A1D23; }
 }
 
 h1, h2, p { margin: 0; }
