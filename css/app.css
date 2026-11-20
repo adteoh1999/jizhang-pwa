@@ -788,3 +788,186 @@ h1, h2, p { margin: 0; }
   .segmented::before, .cat-tile-icon { transition: none; }
   .is-shaking { animation: none; }
 }
+
+/* =====================================================================
+   15. Home（首页）— js/ui/home.js
+   - [hig-components-content] 空状态要告诉使用者怎么开始；大量资料分页（200 笔 + 显示更多）。
+   - [hig-patterns] 删除不跳确认框，改用「撤销」toast；左滑露出红色「删除」（80pt）。
+   - 列表是 inset grouped：12pt 圆角卡片、内缩分隔线、组标题用 footnote 次要色。
+   ===================================================================== */
+.home-summary {
+  margin-top: 4px;
+  padding: 12px 16px 6px;
+  border-radius: var(--radius-card);
+  background: var(--bg-grouped-secondary);
+}
+.home-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 6px;
+}
+.home-summary-title { font: var(--font-headline); }
+.home-summary-month { font: var(--font-subhead); color: var(--secondary-label); }
+.home-summary-row {
+  position: relative;
+  min-height: var(--hit);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.home-summary-row + .home-summary-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: -16px;
+  height: 0.5px;
+  background: var(--separator);
+}
+.home-summary-label { font: var(--font-body); color: var(--secondary-label); }
+.home-summary-value {
+  font: var(--font-headline);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.home-summary-value.is-income { color: var(--green); }
+
+/* 主按钮：满版宽、≥50pt 高 */
+.home-add {
+  display: block;
+  width: 100%;
+  min-height: 50px;
+  margin: 16px 0 8px;
+  border-radius: var(--radius-card);
+  background: var(--accent);
+  color: #FFFFFF;
+  font: var(--font-headline);
+}
+
+.home-empty {
+  padding: 48px 16px;
+  text-align: center;
+  font: var(--font-subhead);
+  color: var(--secondary-label);
+}
+
+/* 日期组 */
+.home-day { margin-top: 20px; }
+.home-day-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px 6px;
+  font: var(--font-footnote);
+  color: var(--secondary-label);
+}
+.home-day-net { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.home-group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-card);
+  background: var(--bg-grouped-secondary);
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* 一列：红色删除按钮在下层（右侧），内容在上层可左右滑动 */
+.home-row {
+  position: relative;
+  overflow: hidden;
+}
+.home-row-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  text-align: left;
+  background: var(--bg-grouped-secondary);
+  touch-action: pan-y;           /* 垂直捲动交给浏览器，水平给左滑 */
+  -webkit-touch-callout: none;
+}
+.home-row-content:active { background: color-mix(in srgb, var(--fill) 50%, var(--bg-grouped-secondary)); }
+.home-row-content:focus-visible { outline-offset: -2px; }
+.home-row + .home-row .home-row-content::before { /* 内缩分隔线，随内容移动 */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 64px;
+  right: 0;
+  height: 0.5px;
+  background: var(--separator);
+}
+.home-row-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.home-row-icon.is-muted { color: var(--secondary-label); background: var(--fill); }
+.home-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.home-row-name, .home-row-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-row-name { font: var(--font-body); }
+.home-row-note { font: var(--font-subhead); color: var(--secondary-label); }
+.home-row-amount {
+  flex: none;
+  font: var(--font-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--label);
+}
+.home-row-amount.is-income { color: var(--green); }
+
+.home-row-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 80px;
+  background: var(--red);
+  color: #FFFFFF;
+  font: var(--font-body);
+  opacity: 0;                  /* 未滑开时透明（避免圆角边缘透出红色）；仍可被键盘 / VoiceOver 聚焦 */
+}
+.home-row.is-revealed .home-row-delete,
+.home-row-delete:focus { opacity: 1; }
+.home-row-delete:focus-visible { outline: 2px solid #FFFFFF; outline-offset: -4px; }
+.home-row-content.is-animating { transition: transform 0.3s var(--ease-out); }
+.home-row-delete.is-animating { transition: width 0.3s var(--ease-out); }
+
+.home-more {
+  display: block;
+  width: 100%;
+  min-height: var(--hit);
+  margin-top: 20px;
+  border-radius: var(--radius-card);
+  background: var(--bg-grouped-secondary);
+  color: var(--accent);
+  font: var(--font-body);
+}
+.home-more:active { filter: brightness(0.92); }
+
+/* Reduce Motion：左滑放开后直接定位，不做弹回动画 */
+@media (prefers-reduced-motion: reduce) {
+  .home-row-content.is-animating, .home-row-delete.is-animating { transition: none; }
+}
