@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
-import { ValidationError } from '../js/model.js';
+import { ValidationError, timeValue } from '../js/model.js';
 
 const now = () => new Date('2026-11-20T10:00:00.000Z');
 async function setup() {
@@ -76,21 +76,68 @@ test('分类 kind 不符或不存在 → ValidationError category', async () => 
 
 test('write 失败：reject、快取不变、后续写入照常', async () => {
   const { db, store } = await setup();
+  let hits = 0;
+  store.subscribe(() => hits++);
   db.failNextWrite(new Error('quota'));
   await assert.rejects(store.saveTransaction(input()), /quota/);
   assert.equal(store.transactions().length, 0);
+  assert.equal(hits, 0);
   await store.saveTransaction(input());
   assert.equal(store.transactions().length, 1);
 });
 
 test('同 id 连续 save 两次（不 await）只有一笔，created_at 不变', async () => {
-  const { store } = await setup();
+  let t = Date.parse('2026-11-20T10:00:00.000Z');
+  const db = createMemoryDb();
+  let n = 0;
+  const store = createStore({ db, now: () => new Date((t += 1000)), uuid: () => `id-${++n}` });
+  await store.init();
   const p1 = store.saveTransaction(input({ id: 'x' }));
   const p2 = store.saveTransaction(input({ id: 'x', amountMinor: 500 }));
   const [a, b] = await Promise.all([p1, p2]);
   assert.equal(store.transactions().length, 1);
-  assert.equal(a.created_at, b.created_at);
+  assert.equal((await db.getAll('transactions')).length, 1);
+  assert.equal(b.created_at, a.created_at);
+  assert.ok(timeValue(b.updated_at) > timeValue(a.updated_at));
   assert.equal(store.transactions()[0].amount_minor, 500);
+});
+
+test('save 已删除纪录的 id 会复活它', async () => {
+  const { store } = await setup();
+  const t = await store.saveTransaction(input({ id: 'r' }));
+  await store.deleteTransaction(t.id);
+  const r = await store.saveTransaction(input({ id: 'r', amountMinor: 700 }));
+  assert.equal(r.deleted, false);
+  assert.equal(store.transactions().length, 1);
+});
+
+test('restoreTransaction 找不到 id → 抛错', async () => {
+  const { store } = await setup();
+  await assert.rejects(store.restoreTransaction('nope'), /找不到这笔纪录/);
+});
+
+test('setMeta 不通知订阅者', async () => {
+  const { store } = await setup();
+  let hits = 0;
+  store.subscribe(() => hits++);
+  await store.setMeta('k', 1);
+  assert.equal(hits, 0);
+});
+
+test('init 与 save 并发：快取仍含已存的纪录', async () => {
+  const { store } = await setup();
+  const p = store.saveTransaction(input({ id: 'c' }));
+  const q = store.init();
+  await Promise.all([p, q]);
+  assert.equal(store.transactions().length, 1);
+});
+
+test('applyImport 后改动 plan 不影响快取', async () => {
+  const { store } = await setup();
+  const p = store.previewImport('date,kind,amount,category\r\n2026-11-01,expense,10.00,餐饮\r\n');
+  await store.applyImport(p.plan);
+  p.plan.txs[0].note = 'hacked';
+  assert.equal(store.transactions()[0].note, '');
 });
 
 test('transactions() 回传的对象不能改动快取', async () => {
@@ -122,12 +169,13 @@ test('订阅：listener 抛错不影响 store；可取消', async () => {
   const { store } = await setup();
   const origErr = console.error; console.error = () => {};
   let hits = 0;
-  store.subscribe(() => { throw new Error('boom'); });
-  const off = store.subscribe(() => hits++);
-  await store.saveTransaction(input());
-  off();
-  await store.saveTransaction(input());
-  console.error = origErr;
+  try {
+    store.subscribe(() => { throw new Error('boom'); });
+    const off = store.subscribe(() => hits++);
+    await store.saveTransaction(input());
+    off();
+    await store.saveTransaction(input());
+  } finally { console.error = origErr; }
   assert.equal(hits, 1);
   assert.equal(store.transactions().length, 2);
 });

@@ -30,18 +30,20 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   // 写入 db，成功后套用到快取并通知
   async function commit(changes) {
     await db.write(changes);
-    for (const t of changes.transactions || []) txs.set(t.id, t);
-    for (const c of changes.categories || []) cats.set(c.id, c);
+    for (const t of changes.transactions || []) txs.set(t.id, { ...t });
+    for (const c of changes.categories || []) cats.set(c.id, { ...c });
     notify();
   }
 
   const api = {
-    async init() {
-      const [t, c] = await Promise.all([db.getAll('transactions'), db.getAll('categories')]);
-      txs.clear(); cats.clear();
-      for (const r of t) txs.set(r.id, r);
-      for (const r of c) cats.set(r.id, r);
-      if (cats.size === 0) await enqueue(() => commit({ categories: defaultCategories() }));
+    init() {
+      return enqueue(async () => {
+        const [t, c] = await Promise.all([db.getAll('transactions'), db.getAll('categories')]);
+        txs.clear(); cats.clear();
+        for (const r of t) txs.set(r.id, r);
+        for (const r of c) cats.set(r.id, r);
+        if (cats.size === 0) await commit({ categories: defaultCategories() });
+      });
     },
 
     transactions() {

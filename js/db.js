@@ -31,14 +31,29 @@ const promisify = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.r
 function makeAdapter(db) {
   // 单一 readwrite transaction，oncomplete 才 resolve
   const run = (storeNames, fn) => new Promise((resolve, reject) => {
-    const tx = db.transaction(storeNames, 'readwrite');
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('写入被中止'));
-    fn(tx);
+    let tx;
+    let failure = null; // 第一个错误，onabort 时用
+    let done = false;
+    const fail = (err) => {
+      if (done) return;
+      done = true;
+      reject(err instanceof Error ? err : new Error('写入失败'));
+    };
+    try {
+      tx = db.transaction(storeNames, 'readwrite');
+      tx.oncomplete = () => { if (!done) { done = true; resolve(); } };
+      // error 事件时 tx.error 还是 null，真正的失败在 abort 时才确定
+      tx.onerror = (ev) => { if (!failure) failure = ev.target && ev.target.error; };
+      tx.onabort = () => fail(failure || tx.error);
+      fn(tx);
+    } catch (e) {
+      failure = e;
+      fail(e);
+      try { tx && tx.abort(); } catch { /* 已结束 */ }
+    }
   });
   return {
-    getAll: (store) => promisify(db.transaction(store).objectStore(store).getAll()),
+    async getAll(store) { return promisify(db.transaction(store).objectStore(store).getAll()); },
     write(changes) {
       const names = [...STORES.filter((s) => changes[s]), ...(changes.meta ? ['meta'] : [])];
       if (names.length === 0) return Promise.resolve();
