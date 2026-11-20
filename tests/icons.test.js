@@ -6,7 +6,7 @@ const REQUIRED = [
   'food', 'transport', 'shopping', 'bills', 'fun', 'other',
   'salary', 'bonus', 'side', 'other_income',
   'pet', 'health', 'home', 'gift', 'travel', 'education', 'coffee', 'phone',
-  'house', 'chart', 'gear', 'plus', 'chevron-left', 'chevron-right', 'trash', 'share', 'square-arrow-up',
+  'house', 'chart', 'gear', 'tab-home', 'tab-stats', 'tab-settings', 'plus', 'chevron-left', 'chevron-right', 'trash', 'share', 'square-arrow-up',
 ];
 
 test('all required icon names exist', () => {

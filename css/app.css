@@ -63,9 +63,6 @@
   --sheet-material: rgba(242, 242, 242, 0.86);
   --sheet-cancel-bg: #FFFFFF;
   --dim: rgba(0, 0, 0, 0.2);
-  --toast-bg: rgba(10, 10, 11, 0.92);
-  --toast-label: #FFFFFF;
-  --toast-accent: #FFFFFF;
   --sheet-bg: #F1F3F5;
   --cell-bg: #FFFFFF;
   --seg-track: rgba(118, 118, 128, 0.12);
@@ -105,7 +102,6 @@
     --bar-material: rgba(30, 34, 42, 0.72);
     --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
     --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
-    --toast-bg: rgba(244, 246, 248, 0.94); --toast-label: #0A0A0B; --toast-accent: #0A0A0B;
     --sheet-bg: #121820; --cell-bg: #1A1D23;
     --seg-track: rgba(118, 118, 128, 0.24); --seg-thumb: #636366;
     --grabber: rgba(235, 235, 245, 0.3);
@@ -129,7 +125,6 @@
   --bar-material: rgba(30, 34, 42, 0.72);
   --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
   --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
-  --toast-bg: rgba(244, 246, 248, 0.94); --toast-label: #0A0A0B; --toast-accent: #0A0A0B;
   --sheet-bg: #121820; --cell-bg: #1A1D23;
   --seg-track: rgba(118, 118, 128, 0.24); --seg-thumb: #636366;
   --grabber: rgba(235, 235, 245, 0.3);
@@ -150,10 +145,12 @@
 
   --radius-card: 12px;
   --hit: 44px;          /* 最小点击区 44x44 pt */
-  --tabbar-h: 49px;     /* iPhone Tab Bar 内容高度（不含安全区） */
+  --tabbar-h: 68px;     /* 胶囊标签栏高度 */
+  --tabbar-gap: 12px;   /* 胶囊下方间距 */
   --navbar-h: 44px;
   --margin: 16px;       /* iPhone 版面边距 */
 
+  --tabbar-total: calc(var(--tabbar-h) + var(--tabbar-gap) + var(--safe-bottom));
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -233,11 +230,11 @@ button:disabled { cursor: default; }
 }
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .sky { background: var(--sky-mid); }
-  :root { --glass: #FFFFFF; }
-  :root[data-theme="dark"] { --glass: #1A1D23; }
+  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; }
+  :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; }
 }
 @media ((prefers-contrast: more) or (prefers-reduced-transparency: reduce)) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --glass: #1A1D23; }
+  :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; }
 }
 
 h1, h2, p { margin: 0; }
@@ -252,10 +249,10 @@ h1, h2, p { margin: 0; }
   min-height: 100dvh;
   padding-top: var(--safe-top);
   /* 内容不要被 Tab Bar 盖住 */
-  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px);
+  padding-bottom: calc(var(--tabbar-total) + 24px);
 }
 /* 有 toast 时多留出 toast 的高度，最后一行可以捲到 toast 之上 */
-body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px + 12px + var(--hit) + 16px); }
+body.has-toast .shell { padding-bottom: calc(var(--tabbar-total) + 24px + 12px + var(--hit) + 16px); }
 
 .screen {
   padding-left: calc(var(--margin) + var(--safe-left));
@@ -280,39 +277,58 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
 /* ---------- 5. Tab Bar ---------- */
 .tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: calc(max(16px, var(--safe-left)));
+  right: calc(max(16px, var(--safe-right)));
+  bottom: calc(var(--tabbar-gap) + var(--safe-bottom));
   z-index: 50;
-  display: flex;
-  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
-  background: var(--bar-material);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  height: var(--tabbar-h);
+  padding: 6px;
+  border-radius: 34px;
+  background: var(--tab-glass);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
-  box-shadow: inset 0 0.5px 0 var(--separator); /* 顶端 hairline */
+  border: 1px solid var(--hairline);
+  box-shadow: 0 10px 30px -12px var(--glass-shade);
+}
+/* 黑色胶囊随选中项滑动，带一点回弹 */
+.tabbar-pill {
+  position: absolute;
+  top: 6px; bottom: 6px; left: 6px;
+  width: calc((100% - 12px) / 3);
+  border-radius: 28px;
+  background: var(--btn-bg);
+  transform: translateX(calc(var(--i, 0) * 100%));
+  transition: transform 0.42s cubic-bezier(0.34, 1.45, 0.6, 1);
 }
 
 .tabbar-item {
-  flex: 1 1 0;
+  position: relative;
+  z-index: 1;
   min-width: var(--hit);
-  min-height: var(--tabbar-h);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding-top: 4px;
-  color: var(--tab-inactive);
-  transition: color 0.15s ease;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  border-radius: 28px;
+  color: var(--tab-off);
+  transition: color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.tabbar-item[aria-selected="true"] { color: var(--accent); }
-.tabbar-item:focus-visible { outline-offset: -4px; border-radius: 8px; }
+.tabbar-item svg { stroke-width: 2.3; transition: transform 0.35s cubic-bezier(0.34, 1.6, 0.6, 1); }
+.tabbar-item[aria-selected="true"] { color: var(--btn-fg); }
+.tabbar-item[aria-selected="true"] svg { transform: scale(1.06); }
+.tabbar-item:active svg { transform: scale(0.88); }
+.tabbar-item:focus-visible { outline-offset: -4px; }
+@media (prefers-reduced-motion: reduce) {
+  .tabbar-pill, .tabbar-item, .tabbar-item svg { transition: none; }
+}
 
 .tabbar-label {
-  font-size: 10px;      /* Tab Bar 标签固定小字级，不跟 Dynamic Type 放大，避免撑破 */
-  font-weight: 500;
-  line-height: 12px;
-  letter-spacing: 0.01em;
+  font-size: 11px;      /* Tab Bar 标签固定小字级，不跟 Dynamic Type 放大，避免撑破 */
+  font-weight: 600;
+  line-height: 11px;
 }
 
 /* ---------- 6. 安装提示（顶端） ---------- */
@@ -489,7 +505,7 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
   z-index: 80; /* 在 Tab Bar(50) 之上、浮层遮罩(100) 之下 */
   left: calc(var(--margin) + var(--safe-left));
   right: calc(var(--margin) + var(--safe-right));
-  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
+  bottom: calc(var(--tabbar-total) + 12px);
   margin: 0 auto;
   max-width: 420px;
   min-height: var(--hit);
@@ -498,25 +514,23 @@ body.has-toast .shell { padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom
   gap: 12px;
   padding: 6px 6px 6px 16px;
   border-radius: 14px;
-  background: var(--toast-bg);
-  color: var(--toast-label);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
   font: var(--font-subhead);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.25s ease, transform 0.3s var(--ease-out);
 }
 .toast.is-visible { opacity: 1; transform: translateY(0); }
-.toast-message { flex: 1; padding: 6px 0; }
+.toast-message { flex: 1; padding: 6px 0; font-weight: 400; }
 .toast-action {
   flex: none;
   min-height: 36px;
   min-width: var(--hit);
   padding: 0 12px;
   border-radius: 10px;
-  color: var(--toast-accent);
+  color: inherit;
   font-weight: 600;
   position: relative;
 }

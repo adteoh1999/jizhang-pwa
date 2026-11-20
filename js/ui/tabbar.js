@@ -2,10 +2,16 @@
 import { h } from './dom.js';
 import { icon } from './icons.js';
 
+/** 胶囊停靠的位置（0 起算）；未知 id 退回 0。 */
+export function pillIndex(tabs, id) {
+  const i = tabs.findIndex((t) => t.id === id);
+  return i === -1 ? 0 : i;
+}
+
 export function mountTabBar(root, { tabs, onSelect, selected = tabs[0].id }) {
   const buttons = new Map();
   const bar = h('nav', { class: 'tabbar', role: 'tablist', 'aria-label': '主选单' },
-    tabs.map((t) => {
+    [h('span', { class: 'tabbar-pill', 'aria-hidden': 'true' }), ...tabs.map((t) => {
       const btn = h('button', {
         type: 'button', class: 'tabbar-item', role: 'tab', 'data-tab': t.id,
         id: `tab-${t.id}`, 'aria-controls': `screen-${t.id}`, 'aria-label': t.label,
@@ -13,9 +19,10 @@ export function mountTabBar(root, { tabs, onSelect, selected = tabs[0].id }) {
       }, icon(t.icon, 26), h('span', { class: 'tabbar-label', 'aria-hidden': 'true' }, t.label));
       buttons.set(t.id, btn);
       return btn;
-    }));
+    })]);
 
   function setSelected(id) {
+    bar.style.setProperty('--i', String(pillIndex(tabs, id)));
     for (const [tid, btn] of buttons) {
       const on = tid === id;
       btn.setAttribute('aria-selected', String(on));

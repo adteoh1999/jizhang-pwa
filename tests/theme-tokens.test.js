@@ -86,8 +86,7 @@ function blurSelectors(src) {
   }
   return out;
 }
-// Task 3 拿掉 Toast 的模糊后改回 test
-test.todo('backdrop-filter used exactly on the 4 allowed selectors', () => {
+test('backdrop-filter used exactly on the 4 allowed selectors', () => {
   assert.deepEqual(blurSelectors(css).sort(), ['.alert', '.nav-page-bar', '.sheet-group', '.tabbar']);
 });
 

@@ -13,9 +13,9 @@ import { showToast, whenToastIdle } from './ui/toast.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 
 const TABS = [
-  { id: 'home', label: '首页', icon: 'house', title: '记账' },
-  { id: 'stats', label: '统计', icon: 'chart', title: '统计' },
-  { id: 'settings', label: '设置', icon: 'gear', title: '设置' },
+  { id: 'home', label: '首页', icon: 'tab-home', title: '记账' },
+  { id: 'stats', label: '统计', icon: 'tab-stats', title: '统计' },
+  { id: 'settings', label: '设置', icon: 'tab-settings', title: '设置' },
 ];
 
 const isDevHost = () => location.hostname === 'localhost' || location.hostname === '127.0.0.1';
