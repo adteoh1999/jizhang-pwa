@@ -21,7 +21,7 @@
        [hig-platforms] iOS 触控优先、单手操作、尊重安全区。
    - [apple-skills:hig alerts.md] 取消在 leading、主要动作在 trailing；不要把取消设成默认。
    - [apple-skills:hig action-sheets.md] 取消按钮放在最下面；破坏性动作用 destructive 样式。
-   - 卡片圆角：HIG 未给数值，保留 brief 的 12px。
+   - 卡片 / 抽屉圆角：HIG 未给数值，结余卡与抽屉 / sheet 现用 30pt 大圆角；--radius-card 12px 仅留给小型提示条 / 分组块。
    ===================================================================== */
 
 /* ---------- 1. 设计 token：颜色（浅色，雾蓝主题） ----------
@@ -72,8 +72,6 @@
   --sheet-material: rgba(242, 242, 242, 0.86);
   --sheet-cancel-bg: #FFFFFF;
   --dim: rgba(0, 0, 0, 0.2);
-  --sheet-bg: #F1F3F5;
-  --cell-bg: #FFFFFF;
   --seg-track: rgba(118, 118, 128, 0.12);
   --grabber: rgba(60, 60, 67, 0.3);
 
@@ -81,11 +79,6 @@
   --label: var(--ink);
   --secondary-label: var(--ink-2);
   --tertiary-label: var(--ink-3);
-  --accent: var(--ink);
-  --accent-tint: var(--ink-tint);
-  --accent-sel: var(--ink-sel);
-  --green: var(--income);
-  --bg-grouped: var(--sky-low);
   --bg-grouped-secondary: var(--drawer);
 }
 
@@ -113,7 +106,6 @@
     --bar-material: rgba(30, 34, 42, 0.72);
     --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
     --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
-    --sheet-bg: #121820; --cell-bg: #1A1D23;
     --seg-track: rgba(118, 118, 128, 0.24);
     --grabber: rgba(235, 235, 245, 0.3);
   }
@@ -140,7 +132,6 @@
   --bar-material: rgba(30, 34, 42, 0.72);
   --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
   --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
-  --sheet-bg: #121820; --cell-bg: #1A1D23;
   --seg-track: rgba(118, 118, 128, 0.24);
   --grabber: rgba(235, 235, 245, 0.3);
 }
@@ -645,9 +636,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    13. Sheet（底部 modal sheet，large detent）— js/ui/sheet.js
    - [hig-components-dialogs / sheets.md] 可调整的 sheet 要有 grabber、支援下拉关闭；
      取消在左上、完成（储存）在右上。
-   - sheet 底色 / 卡片色：iOS 的 systemGroupedBackground（浅色）与 elevated 版本（深色）
-     #1C1C1E / #2C2C2E（UIKit 公开值，凭既有知识，skill 无法查证）。
-   - 分段控件：tertiarySystemFill 底、选中块浅色白 / 深色 #636366（UIKit 外观，凭既有知识）。
+   - sheet 底色 / 卡片色：走主题 token（--drawer 抽屉色 / --sky-* 天空底），不再用 iOS 分组灰。
+   - 分段控件：--seg-track 底，选中块为黑色胶囊（--btn-bg / --btn-fg，深色反相）。
    ===================================================================== */
 
 .overlay-modal {
@@ -1162,8 +1152,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  color: var(--accent);
-  background: var(--accent-tint);
+  color: var(--ink);
+  background: var(--ink-tint);
 }
 .home-row .home-row-icon { width: 44px; height: 44px; }
 .home-row-icon.is-muted { color: var(--secondary-label); background: var(--fill); }
@@ -1454,7 +1444,8 @@ button.inset-row:active { background: var(--press-bg); }
 .inset-row.is-action { color: var(--ink); }
 .inset-row-label { flex: 1; min-width: 0; }
 .inset-row-detail { flex: none; color: var(--secondary-label); font-variant-numeric: tabular-nums; }
-.inset-row-chevron { flex: none; display: flex; color: var(--tertiary-label); }
+.inset-row-chevron { flex: none; display: flex; color: var(--ink-3); }
+.home-balance-sign { font: 500 1.1765rem/1 var(--font-family); color: var(--ink-2); margin-right: -6px; }
 
 /* =====================================================================
    17. Categories page 分类管理子画面 — js/ui/categories-page.js
@@ -1578,8 +1569,9 @@ button.inset-row:active { background: var(--press-bg); }
 
 /* 设置页「有新版本 · 更新」：行高保持 44pt，点击区用 ::after 扩大 */
 button.update-action {
-  appearance: none; border: 0; background: none; font: inherit;
-  color: var(--accent); cursor: pointer; padding: 0; margin: 0; position: relative;
+  appearance: none; border: 0; font: inherit;
+  background: var(--btn-bg); color: var(--btn-fg); font-weight: 600; font-size: 0.8824rem;
+  cursor: pointer; padding: 4px 12px; margin: 0; position: relative; border-radius: 999px;
 }
 button.update-action::after { content: ""; position: absolute; inset: -12px -8px; }
 

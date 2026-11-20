@@ -45,9 +45,8 @@ test('spec colors are used verbatim', () => {
 });
 
 test('old names are kept as aliases of the new tokens', () => {
-  assert.equal(light['--accent'], 'var(--ink)');
   assert.equal(light['--label'], 'var(--ink)');
-  assert.equal(light['--green'], 'var(--income)');
+  for (const gone of ['--accent', '--accent-tint', '--accent-sel', '--green', '--bg-grouped', '--sheet-bg', '--cell-bg']) assert.ok(!(gone in light), gone);
   assert.equal(light['--bg-grouped-secondary'], 'var(--drawer)');
 });
 

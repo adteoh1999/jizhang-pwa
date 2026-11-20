@@ -42,10 +42,10 @@ test('flowSizeClass：收入 / 支出金额字串 ≥13 字元缩一级', () => 
   assert.equal(flowSizeClass(10002345599), 'is-small');
 });
 
-test('balanceParts：RM / 整数 / .角，负数整数前加 U+2212', () => {
-  assert.deepEqual(balanceParts(123450), { int: '1,234', dec: '.50' });
-  assert.deepEqual(balanceParts(-5), { int: '−0', dec: '.05' });
-  assert.deepEqual(balanceParts(0), { int: '0', dec: '.00' });
+test('balanceParts：sign / 整数 / .角，负数 sign 为 U+2212（显示在 RM 之前）', () => {
+  assert.deepEqual(balanceParts(123450), { sign: '', int: '1,234', dec: '.50' });
+  assert.deepEqual(balanceParts(-5), { sign: '−', int: '0', dec: '.05' });
+  assert.deepEqual(balanceParts(0), { sign: '', int: '0', dec: '.00' });
 });
 
 test('rowIconAttr：有效分类 → iconKey；已删除 / 未分类 → null', () => {

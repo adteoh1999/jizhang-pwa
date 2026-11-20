@@ -33,7 +33,7 @@ export function mountSettings(root, store) {
       h('div', { class: 'inset-group' }, rows),
       footer ? h('p', { class: 'settings-footer' }, footer) : null);
   };
-  // chevron：推入子画面；action：蓝字动作列
+  // chevron：推入子画面 / 可点动作的尾随箭头；action：ink 色动作列
   const buttonRow = (label, onClick, { chevron = false, action = false } = {}) => h('button', {
     type: 'button', class: `inset-row${action ? ' is-action' : ''}`, on: { click: onClick },
   },
@@ -164,8 +164,8 @@ export function mountSettings(root, store) {
       buttonRow('管理分类', () => openCategoriesPage(store, { from: 'settings' }), { chevron: true }),
     ]),
     section('数据', [
-      buttonRow('导出 CSV', onExport, { action: true }),
-      buttonRow('导入 CSV', () => fileInput.click(), { action: true }),
+      buttonRow('导出 CSV', onExport, { action: true, chevron: true }),
+      buttonRow('导入 CSV', () => fileInput.click(), { action: true, chevron: true }),
     ]),
     section('关于', [versionRow], '数据只存在这台设备。'),
     fileInput,

@@ -25,12 +25,13 @@ const LOST_GRACE = 150;      // 失去 pointer capture 后等多久才当作手�
 /** 结余数字拆成整数与「.角」；负数在整数前加 U+2212（「RM」另外显示）。 */
 export function balanceParts(minor) {
   const [i, f] = formatRM(minor, { sign: 'none' }).slice(3).split('.');
-  return { int: (minor < 0 ? '\u2212' : '') + i, dec: `.${f}` };
+  return { sign: minor < 0 ? '\u2212' : '', int: i, dec: `.${f}` };
 }
 
 /** 依整数部分字元数（含 U+2212 与逗号，不含「RM」）决定大数字缩级：≤5 → ''，6–9 → is-long，≥10 → is-xlong。 */
 export function balanceSizeClass(minor) {
-  const n = balanceParts(minor).int.length;
+  const { sign, int } = balanceParts(minor);
+  const n = sign.length + int.length;
   return n >= 10 ? 'is-xlong' : n >= 6 ? 'is-long' : '';
 }
 
@@ -77,8 +78,9 @@ export function mountHome(root, store, { monthEl = null } = {}) {
   const balSr = h('span', { class: 'sr-only' });
   const balInt = h('span', { class: 'home-balance-int', 'aria-hidden': 'true' });
   const balDec = h('span', { class: 'home-balance-dec', 'aria-hidden': 'true' });
+  const balSign = h('span', { class: 'home-balance-sign', 'aria-hidden': 'true' });
   const balanceEl = h('p', { class: 'home-balance' },
-    balSr, h('span', { class: 'home-balance-cur', 'aria-hidden': 'true' }, 'RM'), balInt, balDec);
+    balSr, balSign, h('span', { class: 'home-balance-cur', 'aria-hidden': 'true' }, 'RM'), balInt, balDec);
   const incomeEl = h('span', { class: 'home-flow-v' });
   const expenseEl = h('span', { class: 'home-flow-v' });
   const flowCol = (name, label, valueEl) => h('div', { class: 'home-flow-item' },
@@ -180,6 +182,8 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     const s = summarizeMonth(all, month);
     if (monthEl) monthEl.textContent = formatMonthTitle(month);
     const bp = balanceParts(s.balance);
+    balSign.textContent = bp.sign;
+    balSign.hidden = !bp.sign;
     balInt.textContent = bp.int;
     balDec.textContent = bp.dec;
     const sizeCls = balanceSizeClass(s.balance);

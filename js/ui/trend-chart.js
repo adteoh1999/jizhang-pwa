@@ -103,10 +103,11 @@ export function mountTrendChart(container, { onChangeText } = {}) {
   // 标签置中在圆点上方，贴边时夹在图内；盒宽 0（分页隐藏中）时等 ResizeObserver 再算
   function positionTip() {
     if (!boxW || !pts.length) return;
-    if (!tipW) { tipW = tip.offsetWidth; tipH = tipH || tip.offsetHeight; }
+    if (!tipW) { tipW = tip.getBoundingClientRect().width; tipH = tipH || tip.offsetHeight; }
     const scale = boxW / W;
     const [x, y] = pts[sel - 1];
-    const left = Math.min(Math.max(x * scale - tipW / 2, 0), Math.max(0, boxW - tipW));
+    // 左右都夹：标签比可用宽度还宽时（最大字级）左缘优先贴齐，不溢出右侧
+    const left = Math.max(0, Math.min(x * scale - tipW / 2, boxW - tipW));
     const top = Math.max(0, y * scale - tipH - TIP_GAP);
     tip.style.transform = `translate(${left.toFixed(1)}px, ${top.toFixed(1)}px)`;
   }
