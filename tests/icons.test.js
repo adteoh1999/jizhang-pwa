@@ -57,6 +57,7 @@ test('icon() 生成正确属性与路径数量', async () => {
     assert.equal(svg.ns, 'http://www.w3.org/2000/svg');
     assert.equal(svg.attrs.viewBox, '0 0 24 24');
     assert.equal(svg.attrs.width, '20');
+    assert.equal(svg.attrs.height, '20');
     assert.equal(svg.attrs.fill, 'none');
     assert.equal(svg.attrs.stroke, 'currentColor');
     assert.equal(svg.attrs['stroke-width'], '2');
@@ -64,6 +65,10 @@ test('icon() 生成正确属性与路径数量', async () => {
     assert.equal(svg.attrs['stroke-linejoin'], 'round');
     assert.equal(svg.attrs['aria-hidden'], 'true');
     assert.equal(svg.children.length, ICON_DATA.trash.length);
+    for (const c of svg.children) {
+      assert.equal(c.tag, 'path');
+      assert.equal(c.ns, 'http://www.w3.org/2000/svg');
+    }
     assert.equal(icon('plus').attrs.width, '24');
   });
 });
@@ -80,7 +85,7 @@ test('icon() 未知名称与 toString 退回 other', async () => {
 
 test('图示数据被冻结', () => {
   assert.ok(Object.isFrozen(ICON_DATA));
-  assert.ok(Object.isFrozen(ICON_DATA.food));
+  for (const n of ICON_NAMES) assert.ok(Object.isFrozen(ICON_DATA[n]), n);
   assert.ok(Object.isFrozen(ICON_NAMES));
   assert.ok(Object.isFrozen(CATEGORY_ICON_CHOICES));
 });
