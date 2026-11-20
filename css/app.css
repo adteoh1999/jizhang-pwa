@@ -995,7 +995,7 @@ h1, h2, p { margin: 0; }
   justify-content: center;
   color: var(--accent);
 }
-.stats-month-btn:disabled { opacity: 0.3; pointer-events: none; }
+.stats-month-btn[aria-disabled="true"] { opacity: 0.3; }
 .stats-summary { margin-bottom: 12px; padding-top: 6px; }
 .stats-group {
   list-style: none;
@@ -1023,17 +1023,27 @@ h1, h2, p { margin: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.stats-row-amount, .stats-row-pct {
+.stats-row-amount {
   flex: none;
   font: var(--font-body);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.stats-row-pct { min-width: 3.2em; text-align: right; color: var(--secondary-label); }
+.stats-row-sub { display: flex; align-items: center; gap: 10px; margin: 6px 0 0 48px; }
+.stats-row-pct {
+  flex: none;
+  min-width: 3.2em;
+  text-align: right;
+  font: var(--font-subhead);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--label);
+}
 .stats-bar {
+  flex: 1;
+  min-width: 0;
   display: block;
   height: 6px;
-  margin: 8px 0 0 48px;
   border-radius: 3px;
   background: var(--fill);
   overflow: hidden;

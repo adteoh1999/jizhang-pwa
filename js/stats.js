@@ -49,3 +49,11 @@ export function groupByDate(txs) {
   }
   return [...groups.values()];
 }
+
+/** 百分比显示：极小占比显示「<1%」；四舍五入到 100 但并非全部时显示「99%」。 */
+export function formatPercent(ratio) {
+  if (ratio > 0 && ratio < 0.005) return '<1%';
+  const p = Math.round(ratio * 100);
+  if (p >= 100 && ratio < 1) return '99%';
+  return `${p}%`;
+}

@@ -2,7 +2,7 @@
 // 选中的月份与类型只存在记忆体（切换分页时保留）。
 import { h } from './dom.js';
 import { icon } from './icons.js';
-import { summarizeMonth, byCategory } from '../stats.js';
+import { summarizeMonth, byCategory, formatPercent } from '../stats.js';
 import { formatRM } from '../money.js';
 import { todayLocal, monthOf, shiftMonth, formatMonthTitle } from '../dates.js';
 
@@ -31,7 +31,7 @@ export function mountStats(root, store) {
   const balanceEl = h('span', { class: 'home-summary-value' });
   const row = (label, el) => h('div', { class: 'home-summary-row' },
     h('span', { class: 'home-summary-label' }, label), el);
-  const summary = h('section', { class: 'home-summary stats-summary', 'aria-label': '本月收支摘要' },
+  const summary = h('section', { class: 'home-summary stats-summary' },
     row('收入', incomeEl), row('支出', expenseEl), row('结余', balanceEl));
 
   // ---------- 支出 / 收入 ----------
@@ -61,11 +61,16 @@ export function mountStats(root, store) {
   root.replaceChildren(switcher, summary, segmented, list);
 
   function render() {
-    curMonth = monthOf(todayLocal());
+    const now = monthOf(todayLocal());
+    if (now !== curMonth) {
+      if (month === curMonth) month = now; // 原本看着「本月」→ 跟到新的本月
+      curMonth = now;
+    }
     if (month > curMonth) month = curMonth;
-    title.textContent = formatMonthTitle(month);
-    const atCurrent = month === curMonth;
-    nextBtn.disabled = atCurrent;
+    const titleText = formatMonthTitle(month);
+    if (title.textContent !== titleText) title.textContent = titleText; // live region 只在变动时更新
+    summary.setAttribute('aria-label', `收支摘要，${titleText}`);
+    nextBtn.setAttribute('aria-disabled', month === curMonth ? 'true' : 'false');
 
     const all = store.transactions();
     const s = summarizeMonth(all, month);
@@ -89,29 +94,25 @@ export function mountStats(root, store) {
     list.replaceChildren(h('ul', { class: 'stats-group', role: 'list' }, rows.map((r) => {
       const cat = store.categoryById(r.category_id);
       const name = cat ? cat.name : '未分类';
-      const pct = `${Math.round(r.ratio * 100)}%`;
+      const pct = formatPercent(r.ratio);
       const bar = h('span', { class: 'stats-bar-fill' });
-      bar.style.width = `max(2px, ${(r.ratio * 100).toFixed(2)}%)`;
+      bar.style.width = `max(6px, ${(r.ratio * 100).toFixed(2)}%)`;
       return h('li', { class: 'stats-row' },
         h('div', { class: 'stats-row-main' },
           h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}` },
             icon(cat ? cat.icon : 'other', 20)),
           h('span', { class: 'stats-row-name' }, name),
-          h('span', { class: 'stats-row-amount' }, formatRM(r.total, { sign: 'none' })),
-          h('span', { class: 'stats-row-pct' }, pct)),
-        h('span', { class: 'stats-bar', 'aria-hidden': 'true' }, bar));
+          h('span', { class: 'stats-row-amount' }, formatRM(r.total, { sign: 'none' }))),
+        h('div', { class: 'stats-row-sub' },
+          h('span', { class: 'stats-bar', 'aria-hidden': 'true' }, bar),
+          h('span', { class: 'stats-row-pct' }, pct)));
     })));
   }
 
   store.subscribe(render);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    const now = monthOf(todayLocal());
-    if (now !== curMonth) {
-      if (month === curMonth) month = now; // 原本看着「本月」→ 跟到新的本月
-      render();
-    }
-  });
+  const onWake = () => { if (document.visibilityState === 'visible') render(); };
+  document.addEventListener('visibilitychange', onWake);
+  window.addEventListener('pageshow', onWake);
 
   render();
 }
