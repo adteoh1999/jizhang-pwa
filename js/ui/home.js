@@ -5,7 +5,7 @@
 // 无障碍删除路径：每一列的红色「删除」按钮一直在 DOM 里（排在列内容之后），
 // 键盘 Tab / VoiceOver 都能直接到达并启动，不必左滑；键盘焦点落在它上面时，该列自动滑开露出按钮。
 import { h } from './dom.js';
-import { icon } from './icons.js';
+import { icon, iconKey } from './icons.js';
 import { openEntrySheet } from './entry-sheet.js';
 import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
@@ -109,7 +109,7 @@ export function mountHome(root, store) {
       ? formatRM(tx.amount_minor, { sign: 'always' })
       : formatRM(-tx.amount_minor);
     rec.content.replaceChildren(
-      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? cat.icon : null }, icon(cat ? cat.icon : 'other', 20)),
+      h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? iconKey(cat.icon) : null }, icon(cat ? cat.icon : 'other', 20)),
       h('span', { class: 'home-row-text' },
         h('span', { class: 'home-row-name' }, name),
         tx.note ? h('span', { class: 'home-row-note' }, tx.note) : null),

@@ -8,7 +8,7 @@
 // 2) 每列后面一直在 DOM 里的「删除」按钮（平常隐藏，键盘 Tab / VoiceOver 聚焦时显示）。
 // 两条路都先用 action sheet 确认。
 import { h } from './dom.js';
-import { icon, CATEGORY_ICON_CHOICES, ICON_LABELS } from './icons.js';
+import { icon, iconKey, CATEGORY_ICON_CHOICES, ICON_LABELS } from './icons.js';
 import { pushLayer } from './nav.js';
 import { openSheet } from './sheet.js';
 import { actionSheet, messageDialog, trapFocus } from './dialogs.js';
@@ -260,7 +260,7 @@ export function openCategoriesPage(store, {
     const sig = `${c.name}\u0001${c.icon}`;
     if (sig === rec.sig) return;
     rec.sig = sig;
-    rec.iconEl.dataset.icon = c.icon;
+    rec.iconEl.dataset.icon = iconKey(c.icon);
     rec.iconEl.replaceChildren(icon(c.icon, 20));
     rec.nameEl.textContent = c.name;
     rec.del.setAttribute('aria-label', `删除 ${c.name}`);

@@ -2,7 +2,7 @@
 // 注意：openEntrySheet 必须在使用者的点击事件里「同步」呼叫——金额框的 focus() 在任何 await 之前，
 // iOS 才会弹出键盘。
 import { h } from './dom.js';
-import { icon } from './icons.js';
+import { icon, iconKey } from './icons.js';
 import { openSheet } from './sheet.js';
 import { actionSheet, messageDialog } from './dialogs.js';
 import { kindSegmented, confirmDiscard } from './components.js';
@@ -98,7 +98,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     const selected = catId === state.categoryId;
     return h('button', {
       type: 'button', class: `cat-tile${deleted ? ' is-deleted' : ''}`,
-      'aria-pressed': selected ? 'true' : 'false', 'data-cat': catId, 'data-icon': deleted ? null : iconName,
+      'aria-pressed': selected ? 'true' : 'false', 'data-cat': catId, 'data-icon': deleted ? null : iconKey(iconName),
       'aria-label': deleted ? `${name}（已删除）` : name,
       on: {
         click: () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ICON_NAMES, ICON_DATA, CATEGORY_ICON_CHOICES, ICON_LABELS } from '../js/ui/icons.js';
+import { ICON_NAMES, ICON_DATA, CATEGORY_ICON_CHOICES, ICON_LABELS, iconKey } from '../js/ui/icons.js';
 
 const REQUIRED = [
   'food', 'transport', 'shopping', 'bills', 'fun', 'other',
@@ -97,4 +97,9 @@ test('图示数据被冻结', () => {
   for (const n of ICON_NAMES) assert.ok(Object.isFrozen(ICON_DATA[n]), n);
   assert.ok(Object.isFrozen(ICON_NAMES));
   assert.ok(Object.isFrozen(CATEGORY_ICON_CHOICES));
+});
+
+test('iconKey keeps coloured names and resolves unknown names to other', () => {
+  for (const n of CATEGORY_ICON_CHOICES) assert.equal(iconKey(n), n);
+  for (const n of ['unknown', 'house', '', undefined, null, 'constructor']) assert.equal(iconKey(n), 'other');
 });

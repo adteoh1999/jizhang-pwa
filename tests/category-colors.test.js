@@ -18,13 +18,26 @@ function rule(prefix, n) {
   return bg && fg ? { bg: bg[1].trim(), fg: fg[1].trim() } : null;
 }
 const lightRuleFor = (n) => rule('', n);
-// 必须出现在最后一个 prefers-color-scheme: dark 区块之内（区块从其 @media 起、到下一个顶层规则前）
+// 取出所有 `@media (prefers-color-scheme: dark) { … }` 区块（以大括号配对）
+function darkMediaBlocks() {
+  const out = [];
+  let i = 0;
+  while ((i = css.indexOf('@media (prefers-color-scheme: dark)', i)) >= 0) {
+    const start = css.indexOf('{', i);
+    let depth = 0, k = start;
+    for (; k < css.length; k++) {
+      if (css[k] === '{') depth++;
+      else if (css[k] === '}' && --depth === 0) break;
+    }
+    out.push(css.slice(start, k + 1));
+    i = k;
+  }
+  return out;
+}
+const mediaWithIcons = darkMediaBlocks().filter((b) => b.includes('[data-icon='));
 const darkMedia = (n) => {
-  const i = css.lastIndexOf('@media (prefers-color-scheme: dark)');
-  const end = css.indexOf('\n}\n', i);
-  const body = css.slice(i, end);
-  return body.includes(`:root:not([data-theme="light"]) [data-icon="${n}"]`)
-    ? rule(':root:not([data-theme="light"]) ', n) : null;
+  const b = mediaWithIcons.find((x) => x.includes(`:root:not([data-theme="light"]) [data-icon="${n}"]`));
+  return b ? rule(':root:not([data-theme="light"]) ', n) : null;
 };
 const darkAttr = (n) => rule(':root[data-theme="dark"] ', n);
 
@@ -71,6 +84,27 @@ test('foreground reaches 3:1 against its circle in light and dark', () => {
 });
 
 test('icon containers are wired to data-icon', () => {
-  assert.match(css, /\.home-row-icon\[data-icon\]\s*\{[^}]*var\(--cat-bg\)/);
-  assert.match(css, /\.cat-tile\[data-icon\] \.cat-tile-icon\s*\{[^}]*var\(--cat-bg\)/);
+  assert.match(css, /\.home-row-icon\[data-icon\]\s*\{[^}]*var\(--cat-bg,/);
+  assert.match(css, /\.cat-tile\[data-icon\] \.cat-tile-icon\s*\{[^}]*var\(--cat-bg,/);
+});
+
+test('there is a dark @media block with the icon rules, and the attr rules sit outside any @media', () => {
+  assert.equal(mediaWithIcons.length, 1);
+  const attrIdx = css.indexOf(':root[data-theme="dark"] [data-icon=');
+  assert.ok(attrIdx >= 0);
+  const re = /@media[^{]*\{/g;
+  let m;
+  while ((m = re.exec(css))) {
+    const start = m.index + m[0].length - 1;
+    let depth = 0, k = start;
+    for (; k < css.length; k++) {
+      if (css[k] === '{') depth++;
+      else if (css[k] === '}' && --depth === 0) break;
+    }
+    assert.ok(!(attrIdx > start && attrIdx < k), 'attr dark rules must not be inside @media');
+  }
+});
+
+test('colour use sites carry a grey fallback', () => {
+  assert.doesNotMatch(css, /var\(--cat-(bg|fg)\)/);
 });

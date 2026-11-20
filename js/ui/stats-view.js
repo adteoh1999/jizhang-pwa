@@ -1,7 +1,7 @@
 // 统计页：月份切换器、当月摘要、支出/收入分类占比清单（横向比例条）。
 // 选中的月份与类型只存在记忆体（切换分页时保留）。
 import { h } from './dom.js';
-import { icon } from './icons.js';
+import { icon, iconKey } from './icons.js';
 import { kindSegmented } from './components.js';
 import { summarizeMonth, byCategory, formatPercent } from '../stats.js';
 import { formatRM } from '../money.js';
@@ -74,11 +74,11 @@ export function mountStats(root, store) {
       const cat = store.categoryById(r.category_id);
       const name = cat ? cat.name : '未分类';
       const pct = formatPercent(r.ratio);
-      const bar = h('span', { class: 'stats-bar-fill', 'data-icon': cat && !cat.deleted ? cat.icon : null });
+      const bar = h('span', { class: 'stats-bar-fill', 'data-icon': cat && !cat.deleted ? iconKey(cat.icon) : null });
       bar.style.width = `max(6px, ${(r.ratio * 100).toFixed(2)}%)`;
       return h('li', { class: 'stats-row' },
         h('div', { class: 'stats-row-main' },
-          h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? cat.icon : null },
+          h('span', { class: `home-row-icon${!cat || cat.deleted ? ' is-muted' : ''}`, 'data-icon': cat && !cat.deleted ? iconKey(cat.icon) : null },
             icon(cat ? cat.icon : 'other', 20)),
           h('span', { class: 'stats-row-name' }, name),
           h('span', { class: 'stats-row-amount' }, formatRM(r.total, { sign: 'none' }))),

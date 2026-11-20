@@ -59,6 +59,11 @@ export const ICON_LABELS = Object.freeze({
   coffee: '咖啡', phone: '手机',
 });
 
+/** 分类圆标颜色的键：只有 CATEGORY_ICON_CHOICES 内的名称有配色，其余（未知名称）一律退回 'other'。 */
+export function iconKey(name) {
+  return CATEGORY_ICON_CHOICES.includes(name) ? name : 'other';
+}
+
 /** 返回 SVGElement；未知名称退回 'other'，不会抛错。 */
 export function icon(name, size = 24) {
   const paths = Object.prototype.hasOwnProperty.call(ICON_DATA, name) ? ICON_DATA[name] : ICON_DATA.other;
