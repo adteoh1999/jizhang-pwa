@@ -1,8 +1,12 @@
 // 底部提示：一次只显示一个（新的取代旧的），位于 Tab Bar 上方。
 // duration: Infinity → 一直显示，直到按下动作或被取代。
 import { h } from './dom.js';
+import { depth, onDepthChange } from './nav.js';
 
 let current = null; // { el, timer }
+
+// 有浮层时 toast 被遮罩盖住，也不可操作
+onDepthChange((d) => { if (current) current.el.inert = d > 0; });
 
 function dismiss(t) {
   if (!t || t.gone) return;
@@ -31,6 +35,7 @@ export function showToast(message, { actionLabel, onAction, duration = 4000 } = 
     : null;
   t.el = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite' },
     h('span', { class: 'toast-message' }, message), action);
+  t.el.inert = depth() > 0;
   document.body.append(t.el);
   current = t;
   // 下一帧加 class 才有进场动画

@@ -5,7 +5,6 @@ import { createStore } from './store.js';
 import { h } from './ui/dom.js';
 import { mountTabBar } from './ui/tabbar.js';
 import { onDepthChange } from './ui/nav.js';
-import { showToast } from './ui/toast.js';
 import { maybeShowInstallHint } from './ui/install-hint.js';
 
 const TABS = [
@@ -24,6 +23,26 @@ export function renderDbError(root, err) {
     h('button', {
       type: 'button', class: 'fatal-button pressable', on: { click: () => location.reload() },
     }, '重新整理')));
+}
+
+/** 资料库被其他分页升级 / 删除：连线已关闭，写入会失败 → 不可关闭的阻挡画面（不入 nav 栈，Esc 关不掉）。 */
+export function showDbClosedNotice() {
+  if (document.querySelector('[data-db-closed]')) return;
+  for (const el of document.body.children) el.inert = true;
+  const btn = h('button', {
+    type: 'button', class: 'alert-button is-bold', on: { click: () => location.reload() },
+  }, '重新整理');
+  const panel = h('div', {
+    class: 'alert', role: 'alertdialog', 'aria-modal': 'true',
+    'aria-labelledby': 'db-closed-title', 'aria-describedby': 'db-closed-msg',
+  },
+  h('div', { class: 'alert-body' },
+    h('h2', { class: 'alert-title', id: 'db-closed-title' }, '资料库已更新'),
+    h('p', { class: 'alert-message', id: 'db-closed-msg' }, '资料库已在其他地方更新，请重新整理后继续使用。')),
+  h('div', { class: 'alert-buttons' }, btn));
+  const overlay = h('div', { class: 'overlay overlay-alert overlay-blocking is-visible', 'data-db-closed': '' }, panel);
+  document.body.append(overlay);
+  btn.focus({ preventScroll: true });
 }
 
 function mountShell(root, store) {
@@ -67,8 +86,9 @@ function mountShell(root, store) {
 
   // 有浮层时，底下的画面不可操作（VoiceOver 也不会读到）
   onDepthChange((d) => {
-    shell.inert = d > 0;
-    tabbar.element.inert = d > 0;
+    const off = d > 0 || !!document.querySelector('[data-db-closed]'); // 阻挡画面在时保持不可操作
+    shell.inert = off;
+    tabbar.element.inert = off;
     document.documentElement.classList.toggle('has-layer', d > 0);
   });
 
@@ -77,27 +97,21 @@ function mountShell(root, store) {
 
 async function boot() {
   const root = document.getElementById('app');
-  window.addEventListener('jizhang:db-versionchange', () => {
-    showToast('资料库已更新，请重新整理', {
-      actionLabel: '重新整理', onAction: () => location.reload(), duration: Infinity,
-    });
-  });
-  let store;
+  window.addEventListener('jizhang:db-versionchange', showDbClosedNotice);
   try {
     // 开发用：只在本机网址上，?simulateDbError=1 模拟开库失败
     if (isDevHost() && new URLSearchParams(location.search).has('simulateDbError')) {
       throw new Error('（模拟）IndexedDB 已停用');
     }
     const db = await openDatabase();
-    store = createStore({ db });
+    const store = createStore({ db });
     await store.init();
+    if (isDevHost()) window.__store = store;
+    mountShell(root, store);
   } catch (err) {
-    console.warn('openDatabase/init failed:', err);
+    console.warn('boot failed:', err);
     renderDbError(root, err);
-    return;
   }
-  if (isDevHost()) window.__store = store;
-  mountShell(root, store);
 }
 
 boot();

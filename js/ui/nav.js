@@ -18,8 +18,9 @@ export function pushLayer({ onClose } = {}) {
     layer.closed = true;
     const i = stack.indexOf(layer);
     if (i !== -1) stack.splice(i, 1);
-    try { onClose && onClose(); } catch (e) { console.error(e); }
+    // 先通知 depth（app.js 会解除 inert），再 onClose（才能把焦点还原到底下的元素）
     notify();
+    try { onClose && onClose(); } catch (e) { console.error(e); }
   };
   stack.push(layer);
   notify();
@@ -41,6 +42,7 @@ export function onDepthChange(fn) {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return; // 输入法组字中
     if (e.key === 'Escape' && stack.length > 0) {
       e.preventDefault();
       popLayer();

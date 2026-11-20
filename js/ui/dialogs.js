@@ -25,8 +25,10 @@ function present({ kind, panel, onClosed, onBackdrop }) {
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
+  let closed = false;
   const handle = pushLayer({
     onClose: () => {
+      closed = true;
       overlay.classList.remove('is-visible');
       const remove = () => overlay.remove();
       overlay.addEventListener('transitionend', (e) => { if (e.target === overlay) remove(); });
@@ -36,7 +38,7 @@ function present({ kind, panel, onClosed, onBackdrop }) {
     },
   });
   document.body.append(overlay);
-  requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('is-visible')));
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (!closed) overlay.classList.add('is-visible'); }));
   return { overlay, close: handle.close };
 }
 
@@ -84,11 +86,19 @@ export function confirmDialog({
       confirmBtn.disabled = true;
       input.addEventListener('input', () => { confirmBtn.disabled = input.value !== requireText; });
       input.addEventListener('keydown', (e) => {
+        if (e.isComposing || e.keyCode === 229) return; // 输入法组字中
         if (e.key === 'Enter' && !confirmBtn.disabled) { e.preventDefault(); confirmBtn.click(); }
       });
     }
     // HIG：取消在前（leading），主要动作在后（trailing）
-    const panel = alertPanel({ title, message, extra: input, buttons: [cancelBtn, confirmBtn] });
+    // 输入框视觉保持 iOS 的紧凑高度，外层包一个 ≥44px 的点击区
+    const field = input
+      ? h('div', {
+        class: 'alert-field',
+        on: { pointerdown: (e) => { if (e.target !== input) { e.preventDefault(); input.focus(); } } },
+      }, input)
+      : null;
+    const panel = alertPanel({ title, message, extra: field, buttons: [cancelBtn, confirmBtn] });
     const { close } = present({ kind: 'alert', panel, onClosed: () => resolve(result) });
     (input || (destructive ? cancelBtn : confirmBtn)).focus({ preventScroll: true });
   });

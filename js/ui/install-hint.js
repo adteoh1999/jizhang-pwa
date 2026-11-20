@@ -30,7 +30,10 @@ export async function maybeShowInstallHint(root, store) {
   }, h('span', { 'aria-hidden': 'true' }, '✕'));
   const el = h('div', { class: 'install-hint', role: 'note', 'data-install-hint': '' },
     h('span', { class: 'install-hint-icon' }, icon('square-arrow-up', 20)),
-    h('p', { class: 'install-hint-text' }, '添加到主屏幕使用：点 分享 → 添加到主屏幕'),
+    // 两段各自不断行，窄屏时在冒号后换行，不会把词拆开
+    h('p', { class: 'install-hint-text' },
+      h('span', { class: 'nowrap' }, '添加到主屏幕：'),
+      h('span', { class: 'nowrap' }, '点 分享 → 添加到主屏幕')),
     close);
   root.prepend(el);
   return el;

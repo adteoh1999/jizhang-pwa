@@ -1,0 +1,93 @@
+import { test, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { pushLayer, popLayer, depth, onDepthChange } from '../js/ui/nav.js';
+
+// nav.js 是模块级单例：每个测试后清空堆叠
+afterEach(() => { while (depth() > 0) popLayer(); });
+
+test('Node 环境（没有 document）可以载入 nav.js', () => {
+  assert.equal(typeof document, 'undefined');
+  assert.equal(depth(), 0);
+});
+
+test('close() 幂等：onClose 只呼叫一次，depth 只减一次', () => {
+  let calls = 0;
+  pushLayer({ onClose: () => {} });
+  const h = pushLayer({ onClose: () => { calls += 1; } });
+  assert.equal(depth(), 2);
+  h.close();
+  h.close();
+  assert.equal(calls, 1);
+  assert.equal(depth(), 1);
+});
+
+test('关闭中间一层：只移除那一层，其他层不受影响', () => {
+  const closed = [];
+  const a = pushLayer({ onClose: () => closed.push('a') });
+  const b = pushLayer({ onClose: () => closed.push('b') });
+  pushLayer({ onClose: () => closed.push('c') });
+  b.close();
+  assert.deepEqual(closed, ['b']);
+  assert.equal(depth(), 2);
+  popLayer();
+  assert.deepEqual(closed, ['b', 'c']);
+  a.close();
+  assert.deepEqual(closed, ['b', 'c', 'a']);
+  assert.equal(depth(), 0);
+});
+
+test('popLayer 依 LIFO 顺序关闭；空堆叠时不做事', () => {
+  const closed = [];
+  pushLayer({ onClose: () => closed.push(1) });
+  pushLayer({ onClose: () => closed.push(2) });
+  pushLayer({ onClose: () => closed.push(3) });
+  popLayer(); popLayer(); popLayer();
+  assert.deepEqual(closed, [3, 2, 1]);
+  assert.doesNotThrow(() => popLayer());
+  assert.equal(depth(), 0);
+});
+
+test('depth 监听：每次 push / close 各通知一次，重复 close 不通知；取消订阅后不再通知', () => {
+  const seen = [];
+  const off = onDepthChange((d) => seen.push(d));
+  const a = pushLayer({});
+  const b = pushLayer({});
+  b.close();
+  b.close();
+  a.close();
+  assert.deepEqual(seen, [1, 2, 1, 0]);
+  off();
+  pushLayer({});
+  assert.deepEqual(seen, [1, 2, 1, 0]);
+});
+
+test('关闭时先通知 depth 监听，再呼叫 onClose（焦点还原需要先解除 inert）', () => {
+  const order = [];
+  const off = onDepthChange((d) => order.push(`depth:${d}`));
+  const h = pushLayer({ onClose: () => order.push(`onClose:depth=${depth()}`) });
+  h.close();
+  off();
+  assert.deepEqual(order, ['depth:1', 'depth:0', 'onClose:depth=0']);
+});
+
+test('onClose 抛错不会破坏堆叠', () => {
+  const origError = console.error;
+  const logged = [];
+  console.error = (e) => logged.push(e);
+  try {
+    const a = pushLayer({ onClose: () => { throw new Error('boom'); } });
+    const b = pushLayer({ onClose: () => { throw new Error('boom2'); } });
+    popLayer();
+    assert.equal(depth(), 1);
+    a.close();
+    assert.equal(depth(), 0);
+    b.close(); // 已关闭：不做事
+    assert.equal(logged.length, 2);
+  } finally {
+    console.error = origError;
+  }
+  const c = pushLayer({});
+  assert.equal(depth(), 1);
+  c.close();
+  assert.equal(depth(), 0);
+});
