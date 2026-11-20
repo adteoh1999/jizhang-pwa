@@ -42,7 +42,7 @@ export function showDbClosedNotice() {
     'aria-labelledby': 'db-closed-title', 'aria-describedby': 'db-closed-msg',
   },
   h('div', { class: 'alert-body' },
-    h('h2', { class: 'alert-title', id: 'db-closed-title' }, '资料库连线中断'),
+    h('h2', { class: 'alert-title', id: 'db-closed-title' }, '需要重新载入'),
     h('p', { class: 'alert-message', id: 'db-closed-msg' }, '请重新整理以继续使用。')),
   h('div', { class: 'alert-buttons' }, btn));
   const overlay = h('div', { class: 'overlay overlay-alert overlay-blocking is-visible', 'data-db-closed': '' }, panel);

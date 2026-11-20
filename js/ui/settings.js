@@ -41,6 +41,7 @@ export function mountSettings(root, store) {
   chevron ? h('span', { class: 'inset-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16)) : null);
 
   // ---------- 导出 ----------
+  let shareSeq = 0; // 每次分享一个编号，旧分享迟到的 finally 不会清掉新的
   let sharing = false; // 分享选单开着时再按一次「导出 CSV」不重复呼叫 navigator.share
   function onExport() {
     if (sharing) return;
@@ -57,8 +58,12 @@ export function mountSettings(root, store) {
     if (!canShare) { download(file); return; }
     sharing = true;
     const startedAt = Date.now();
-    const clear = () => { sharing = false; document.removeEventListener('visibilitychange', onVisible); };
-    // 选单被系统吃掉而 promise 一直不结束时，回到前景就放开
+    const myId = ++shareSeq;
+    const clear = () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (myId === shareSeq) sharing = false;
+    };
+    // 只有 app 从背景回到前景才会触发（iOS 分享选单本身不改变 visibility）
     const onVisible = () => { if (document.visibilityState === 'visible' && Date.now() - startedAt > 1000) clear(); };
     document.addEventListener('visibilitychange', onVisible);
     try {
