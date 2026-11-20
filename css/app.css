@@ -1,0 +1,462 @@
+/* =====================================================================
+   记账 app.css — 设计 token、全域、App 壳、Tab Bar、浮层、对话框、Toast
+   ---------------------------------------------------------------------
+   数值来源（Task 8 查证）：
+   - [apple-skills:hig typography.md「iOS, iPadOS Dynamic Type sizes · Large (default)」]
+       Large Title 34/41 · Title 3 20/25 · Headline 17/22 semibold · Body 17/22
+       Subhead 15/20 · Footnote 13/18 · Caption 1 12/16（size/leading，单位 pt）
+       Large Title 的 emphasized weight 为 Bold。
+   - [apple-skills:hig accessibility.md / buttons.md] iOS 最小点击区 44x44 pt。
+   - [apple-skills:hig color.md「System colors」表，iOS 26 快照]
+       Blue  light rgb(0,136,255)  dark rgb(0,145,255)
+       Green light rgb(52,199,89)  dark rgb(48,209,88)
+       Red   light rgb(255,56,60)  dark rgb(255,66,69)
+   - [apple-skills:hig color.md] 语义色名称（label / secondaryLabel / tertiaryLabel /
+       separator / systemGroupedBackground / secondarySystemGroupedBackground / systemFill）
+       有列出，但没有给数值；下面的数值是 UIKit 公开的标准值（凭既有知识，skill 无法查证）。
+   - Tab Bar 高度：apple-skills:hig tab-bars.md 只有 tvOS（68pt）数值，iOS 没有；
+       这里用 UIKit 传统 iPhone Tab Bar 49pt（凭既有知识，skill 无法查证）。
+   - [apple-hig-skills:hig-foundations] 用系统语义色、支援深色模式、Dynamic Type、
+       Reduce Motion；[hig-components-layout] iPhone 3–5 个同级分页用底部 Tab Bar；
+       [hig-platforms] iOS 触控优先、单手操作、尊重安全区。
+   - [apple-skills:hig alerts.md] 取消在 leading、主要动作在 trailing；不要把取消设成默认。
+   - [apple-skills:hig action-sheets.md] 取消按钮放在最下面；破坏性动作用 destructive 样式。
+   - 卡片圆角：HIG 未给数值，保留 brief 的 12px。
+   ===================================================================== */
+
+/* ---------- 1. 设计 token：颜色（浅色） ---------- */
+:root {
+  color-scheme: light dark;
+
+  --label: #000000;
+  --secondary-label: rgba(60, 60, 67, 0.6);
+  --tertiary-label: rgba(60, 60, 67, 0.3);
+  --separator: rgba(60, 60, 67, 0.29);
+  --bg-grouped: #F2F2F7;            /* systemGroupedBackground */
+  --bg-grouped-secondary: #FFFFFF;  /* secondarySystemGroupedBackground */
+  --fill: rgba(120, 120, 128, 0.2); /* systemFill */
+  --accent: rgb(0, 136, 255);       /* systemBlue */
+  --green: rgb(52, 199, 89);
+  --red: rgb(255, 56, 60);
+
+  /* 材质（毛玻璃）与遮罩 */
+  --bar-material: rgba(249, 249, 249, 0.78);
+  --alert-material: rgba(242, 242, 242, 0.86);
+  --sheet-material: rgba(242, 242, 242, 0.86);
+  --sheet-cancel-bg: #FFFFFF;
+  --dim: rgba(0, 0, 0, 0.2);
+  --toast-bg: rgba(28, 28, 30, 0.92);
+  --toast-label: #FFFFFF;
+  --toast-accent: rgb(0, 145, 255);
+  --tab-inactive: rgba(60, 60, 67, 0.6);
+}
+
+/* ---------- 1b. 设计 token：颜色（深色） ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --label: #FFFFFF;
+    --secondary-label: rgba(235, 235, 245, 0.6);
+    --tertiary-label: rgba(235, 235, 245, 0.3);
+    --separator: rgba(84, 84, 88, 0.6);
+    --bg-grouped: #000000;
+    --bg-grouped-secondary: #1C1C1E;
+    --fill: rgba(120, 120, 128, 0.36);
+    --accent: rgb(0, 145, 255);
+    --green: rgb(48, 209, 88);
+    --red: rgb(255, 66, 69);
+
+    --bar-material: rgba(22, 22, 23, 0.78);
+    --alert-material: rgba(44, 44, 46, 0.86);
+    --sheet-material: rgba(44, 44, 46, 0.86);
+    --sheet-cancel-bg: #2C2C2E;
+    --dim: rgba(0, 0, 0, 0.48);
+    --toast-bg: rgba(58, 58, 60, 0.95);
+    --toast-label: #FFFFFF;
+    --toast-accent: rgb(0, 145, 255);
+    --tab-inactive: rgba(235, 235, 245, 0.6);
+  }
+}
+
+/* ---------- 2. 设计 token：字级、间距、尺寸 ----------
+   html 用 -apple-system-body，rem = 使用者在 iOS 设定的内文字级（预设 17px），
+   其余字级按 HIG 默认比例换算（34/17、20/17 …），跟着 Dynamic Type 一起缩放。 */
+:root {
+  --font-large-title: 700 2rem/1.206 var(--font-family);        /* 34/41 bold */
+  --font-title3: 600 1.1765rem/1.25 var(--font-family);         /* 20/25 */
+  --font-headline: 600 1rem/1.294 var(--font-family);           /* 17/22 semibold */
+  --font-body: 400 1rem/1.294 var(--font-family);               /* 17/22 */
+  --font-subhead: 400 0.8824rem/1.333 var(--font-family);       /* 15/20 */
+  --font-footnote: 400 0.7647rem/1.385 var(--font-family);      /* 13/18 */
+  --font-caption: 400 0.7059rem/1.333 var(--font-family);       /* 12/16 */
+  --font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  --radius-card: 12px;
+  --hit: 44px;          /* 最小点击区 44x44 pt */
+  --tabbar-h: 49px;     /* iPhone Tab Bar 内容高度（不含安全区） */
+  --navbar-h: 44px;
+  --margin: 16px;       /* iPhone 版面边距 */
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (min-width: 414px) {
+  :root { --margin: 20px; }
+}
+
+/* ---------- 3. 全域 ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html {
+  font-family: var(--font-family);
+  font-size: 17px;
+  line-height: 1.294;
+  font: -apple-system-body; /* iOS：跟随使用者的字体大小设定 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  background: var(--bg-grouped);
+}
+html.has-layer { overflow: hidden; }
+
+body {
+  margin: 0;
+  font: -apple-system-body;
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: var(--label);
+  background: var(--bg-grouped);
+  overscroll-behavior-y: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+input, textarea, select, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  font-size: max(16px, 1rem); /* ≥16px，避免 iOS 自动放大 */
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+h1, h2, p { margin: 0; }
+
+/* 按压回馈 */
+.pressable { transition: transform 0.12s ease, opacity 0.12s ease; }
+.pressable:active { transform: scale(0.97); opacity: 0.7; }
+
+/* ---------- 4. App 壳与分页 ---------- */
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-top: var(--safe-top);
+  /* 内容不要被 Tab Bar 盖住 */
+  padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px);
+}
+
+.screen {
+  padding-left: calc(var(--margin) + var(--safe-left));
+  padding-right: calc(var(--margin) + var(--safe-right));
+}
+
+/* 导航列：先留空 44pt（之后放按钮），大标题在下方，靠左 */
+.nav-bar {
+  height: var(--navbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.large-title {
+  font: var(--font-large-title);
+  letter-spacing: 0.01em;
+  padding: 3px 0 8px;
+  text-align: left;
+}
+
+/* ---------- 5. Tab Bar ---------- */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: var(--bar-material);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: inset 0 0.5px 0 var(--separator); /* 顶端 hairline */
+}
+
+.tabbar-item {
+  flex: 1 1 0;
+  min-width: var(--hit);
+  min-height: var(--tabbar-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding-top: 4px;
+  color: var(--tab-inactive);
+  transition: color 0.15s ease;
+}
+.tabbar-item[aria-selected="true"] { color: var(--accent); }
+.tabbar-item:focus-visible { outline-offset: -4px; border-radius: 8px; }
+
+.tabbar-label {
+  font-size: 10px;      /* Tab Bar 标签固定小字级，不跟 Dynamic Type 放大，避免撑破 */
+  font-weight: 500;
+  line-height: 12px;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- 6. 安装提示（顶端） ---------- */
+.install-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px calc(var(--margin) + var(--safe-right)) 0 calc(var(--margin) + var(--safe-left));
+  padding: 10px 4px 10px 14px;
+  border-radius: var(--radius-card);
+  background: var(--bg-grouped-secondary);
+  font: var(--font-subhead);
+  color: var(--label);
+}
+.install-hint-icon { color: var(--accent); display: flex; flex: none; }
+.install-hint-text { flex: 1; }
+.install-hint-close {
+  flex: none;
+  width: var(--hit);
+  height: var(--hit);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--secondary-label);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ---------- 7. 浮层（共用遮罩） ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--dim);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+.overlay.is-visible { opacity: 1; }
+
+/* ---------- 8. Alert（置中，270pt 宽） ---------- */
+.overlay-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 16px);
+}
+.alert {
+  width: 270px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--alert-material);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+  text-align: center;
+  transform: scale(1.12);
+  transition: transform 0.25s var(--ease-out);
+  touch-action: auto;
+}
+.overlay-alert.is-visible .alert { transform: scale(1); }
+
+.alert-body { padding: 19px 16px 20px; }
+.alert-title { font: var(--font-headline); }
+.alert-message { font: var(--font-footnote); margin-top: 4px; }
+.alert-input {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--separator);
+  border-radius: 7px;
+  background: var(--bg-grouped-secondary);
+  color: var(--label);
+  font-family: var(--font-family);
+  font-size: 16px;
+  text-align: left;
+}
+.alert-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.alert-buttons {
+  display: flex;
+  box-shadow: inset 0 0.5px 0 var(--separator);
+}
+.alert-buttons.is-stacked { flex-direction: column; }
+.alert-button {
+  flex: 1 1 0;
+  min-height: var(--hit);
+  padding: 0 8px;
+  font: var(--font-body);
+  color: var(--accent);
+}
+.alert-buttons:not(.is-stacked) .alert-button + .alert-button { box-shadow: inset 0.5px 0 0 var(--separator); }
+.alert-buttons.is-stacked .alert-button + .alert-button { box-shadow: inset 0 0.5px 0 var(--separator); }
+.alert-button.is-bold { font-weight: 600; }
+.alert-button.is-destructive { color: var(--red); }
+.alert-button:disabled { color: var(--tertiary-label); }
+.alert-button:active:not(:disabled) { background: var(--fill); }
+
+/* ---------- 9. Action sheet（底部） ---------- */
+.overlay-sheet {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: calc(var(--safe-top) + 8px) calc(8px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(8px + var(--safe-left));
+}
+.action-sheet {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transform: translateY(110%);
+  transition: transform 0.35s var(--ease-out);
+  touch-action: auto;
+}
+.overlay-sheet.is-visible .action-sheet { transform: translateY(0); }
+
+.sheet-group {
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--sheet-material);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+}
+.sheet-head {
+  padding: 14px 16px;
+  text-align: center;
+  color: var(--secondary-label);
+}
+.sheet-title { font: var(--font-footnote); font-weight: 600; }
+.sheet-message { font: var(--font-footnote); margin-top: 2px; }
+
+.sheet-button {
+  display: block;
+  width: 100%;
+  min-height: 57px;
+  padding: 8px 16px;
+  font: var(--font-body);
+  font-size: 1.1765rem; /* action sheet 按钮约 20pt */
+  color: var(--accent);
+  text-align: center;
+}
+.sheet-group > * + * { box-shadow: inset 0 0.5px 0 var(--separator); }
+.sheet-button.is-destructive { color: var(--red); }
+.sheet-group .sheet-button:active { background: var(--fill); }
+.sheet-cancel {
+  border-radius: 14px;
+  background: var(--sheet-cancel-bg);
+  font-weight: 600;
+}
+.sheet-cancel:active { filter: brightness(0.92); }
+
+/* ---------- 10. Toast（Tab Bar 上方） ---------- */
+.toast {
+  position: fixed;
+  z-index: 200;
+  left: calc(var(--margin) + var(--safe-left));
+  right: calc(var(--margin) + var(--safe-right));
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
+  margin: 0 auto;
+  max-width: 420px;
+  min-height: var(--hit);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 14px;
+  background: var(--toast-bg);
+  color: var(--toast-label);
+  font: var(--font-subhead);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.25s ease, transform 0.3s var(--ease-out);
+}
+.toast.is-visible { opacity: 1; transform: translateY(0); }
+.toast-message { flex: 1; padding: 6px 0; }
+.toast-action {
+  flex: none;
+  min-height: 36px;
+  min-width: var(--hit);
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--toast-accent);
+  font-weight: 600;
+  position: relative;
+}
+.toast-action::after { /* 视觉 36px，点击区扩到 44px */
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+
+/* ---------- 11. 开库失败画面 ---------- */
+.fatal {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: calc(var(--safe-top) + 24px) calc(32px + var(--safe-right)) calc(var(--safe-bottom) + 24px) calc(32px + var(--safe-left));
+  text-align: center;
+}
+.fatal-title { font: var(--font-title3); }
+.fatal-message { font: var(--font-subhead); color: var(--secondary-label); max-width: 320px; overflow-wrap: anywhere; }
+.fatal-button {
+  margin-top: 12px;
+  min-height: 50px;
+  min-width: 200px;
+  padding: 0 24px;
+  border-radius: var(--radius-card);
+  background: var(--accent);
+  color: #FFFFFF;
+  font: var(--font-headline);
+}
+
+/* ---------- 12. Reduce Motion：取消缩放 / 位移，只留淡入淡出 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .pressable:active { transform: none; }
+  .alert, .overlay-alert.is-visible .alert,
+  .action-sheet, .overlay-sheet.is-visible .action-sheet,
+  .toast, .toast.is-visible { transform: none; }
+  .pressable, .alert, .action-sheet { transition: none; }
+  .toast { transition: opacity 0.2s ease; }
+  .overlay { transition: opacity 0.2s ease; }
+}
