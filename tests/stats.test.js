@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeMonth, byCategory, groupByDate, spendMeter } from '../js/stats.js';
+import { summarizeMonth, byCategory, groupByDate, spendMeter, cumulativeByDay } from '../js/stats.js';
 
 const T = (id, kind, amt, cat, day, created = '2026-11-01T00:00:00.000Z') => ({
   id, kind, amount_minor: amt, category_id: cat, occurred_on: day, note: '',
@@ -58,4 +58,35 @@ test('spendMeter', () => {
   assert.deepEqual(spendMeter(1000, 1000), { state: 'ratio', pct: 100 });
   assert.deepEqual(spendMeter(1000, 1001), { state: 'over', pct: 100 });
   assert.deepEqual(spendMeter(100000, 1), { state: 'ratio', pct: 0 });
+});
+
+const tx = (occurred_on, kind, amount_minor) => ({
+  id: `${occurred_on}-${kind}-${amount_minor}`, occurred_on, kind, amount_minor, category_id: 'food',
+  deleted: false, created_at: '2026-11-01T00:00:00.000Z',
+});
+
+test('cumulativeByDay current month stops at today', () => {
+  const txs = [tx('2026-11-02', 'expense', 4590), tx('2026-11-05', 'expense', 12800),
+               tx('2026-11-05', 'income', 12000), tx('2026-10-31', 'expense', 999)];
+  const v = cumulativeByDay(txs, '2026-11', 'expense', '2026-11-20');
+  assert.equal(v.length, 30);
+  assert.equal(v[0], 0); assert.equal(v[1], 4590); assert.equal(v[4], 17390); assert.equal(v[19], 17390);
+  assert.equal(v[20], null); assert.equal(v[29], null);
+});
+
+test('cumulativeByDay past month is complete', () => {
+  const v = cumulativeByDay([], '2026-02', 'income', '2026-11-20');
+  assert.equal(v.length, 28); assert.ok(v.every((x) => x === 0));
+});
+
+test('cumulativeByDay first of month, leap year, month lengths, income kind', () => {
+  const one = cumulativeByDay([tx('2026-12-01', 'expense', 500)], '2026-12', 'expense', '2026-12-01');
+  assert.equal(one.length, 31);
+  assert.equal(one[0], 500);
+  assert.equal(one.filter((x) => x !== null).length, 1);
+  assert.equal(cumulativeByDay([], '2028-02', 'expense', '2028-03-01').length, 29);
+  const inc = cumulativeByDay([tx('2026-10-31', 'income', 700), tx('2026-10-01', 'income', 300),
+    tx('2026-10-15', 'expense', 999)], '2026-10', 'income', '2026-11-20');
+  assert.equal(inc[0], 300); assert.equal(inc[29], 300); assert.equal(inc[30], 1000);
+  assert.ok(cumulativeByDay([], '2026-12', 'expense', '2026-11-20').every((x) => x === null)); // 未来月份
 });

@@ -34,6 +34,27 @@ export function byCategory(txs, month, kind) {
     .sort((a, b) => b.total - a.total || (a.category_id < b.category_id ? -1 : a.category_id > b.category_id ? 1 : 0));
 }
 
+/**
+ * 累计走势：回传长度 = 该月天数的阵列，第 d 天（索引 d-1）为 1..d 日的累计金额（sen）。
+ * 本月（month === monthOf(today)）今天之后为 null；过去月份全是数字；未来月份全是 null。
+ */
+export function cumulativeByDay(txs, month, kind, today) {
+  const [y, m] = month.split('-').map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const thisMonth = monthOf(today);
+  const lastDay = month < thisMonth ? days : month === thisMonth ? Number(today.slice(8, 10)) : 0;
+  const daily = new Array(days).fill(0);
+  for (const t of txs) {
+    if (t.kind !== kind || monthOf(t.occurred_on) !== month) continue;
+    daily[Number(t.occurred_on.slice(8, 10)) - 1] += t.amount_minor;
+  }
+  let acc = 0;
+  return daily.map((v, i) => {
+    acc += v;
+    return i < lastDay ? acc : null;
+  });
+}
+
 const cmpDesc = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
 
 // 日期新→旧；同日 created_at 新→旧，再以 id 保证顺序固定

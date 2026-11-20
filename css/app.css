@@ -73,7 +73,6 @@
   --sheet-bg: #F1F3F5;
   --cell-bg: #FFFFFF;
   --seg-track: rgba(118, 118, 128, 0.12);
-  --seg-thumb: #FFFFFF;
   --grabber: rgba(60, 60, 67, 0.3);
 
   /* 旧名别名：未改到的旧样式自动跟上新 token */
@@ -113,7 +112,7 @@
     --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
     --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
     --sheet-bg: #121820; --cell-bg: #1A1D23;
-    --seg-track: rgba(118, 118, 128, 0.24); --seg-thumb: #636366;
+    --seg-track: rgba(118, 118, 128, 0.24);
     --grabber: rgba(235, 235, 245, 0.3);
   }
 }
@@ -140,7 +139,7 @@
   --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
   --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
   --sheet-bg: #121820; --cell-bg: #1A1D23;
-  --seg-track: rgba(118, 118, 128, 0.24); --seg-thumb: #636366;
+  --seg-track: rgba(118, 118, 128, 0.24);
   --grabber: rgba(235, 235, 245, 0.3);
 }
 
@@ -274,7 +273,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 首页是 flex column：抽屉 flex 撑满剩下的高度（不量测 DOM） */
 .screens { flex: 1 0 auto; display: flex; flex-direction: column; }
 .screen[data-screen="home"],
-.screen[data-screen="home"] > .screen-content { flex: 1 0 auto; display: flex; flex-direction: column; }
+.screen[data-screen="home"] > .screen-content,
+.screen[data-screen="stats"],
+.screen[data-screen="stats"] > .screen-content { flex: 1 0 auto; display: flex; flex-direction: column; }
 
 .sr-only {
   position: absolute;
@@ -710,41 +711,46 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    ===================================================================== */
 .entry { display: flex; flex-direction: column; gap: 20px; padding-top: 4px; }
 
-/* 支出 / 收入 分段控件：视觉 32pt 高，点击区扩到 44pt */
+/* 支出 / 收入 分段控件：黑色胶囊（与标签栏同语言），共用于统计页、记一笔、分类管理。
+   轨道 = 玻璃 + 玻璃边；选中 = --btn-bg / --btn-fg 的胶囊底块（transform 滑动，只走合成）。高 44pt。 */
 .segmented {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  height: 32px;
+  min-height: var(--hit);
   margin: 6px 0;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--seg-track);
+  padding: 3px;
+  border-radius: 22px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
 }
-.segmented::before { /* 选中的底块 */
+.segmented::before { /* 选中的胶囊底块 */
   content: "";
   position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  width: calc(50% - 2px);
-  border-radius: 7px;
-  background: var(--seg-thumb);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 3px 1px rgba(0, 0, 0, 0.04);
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  border-radius: 19px;
+  background: var(--btn-bg);
   transition: transform 0.25s var(--ease-out);
 }
 .segmented[data-selected="income"]::before { transform: translateX(100%); }
 .segment {
   position: relative;
   z-index: 1;
-  font: var(--font-footnote);
-  font-weight: 500;
-  color: var(--label);
-  border-radius: 7px;
+  min-height: 36px;
+  border-radius: 19px;
+  font: var(--font-subhead);
+  font-weight: 600;
+  color: var(--ink);
+  transition: color 0.2s ease;
 }
-.segment[aria-checked="true"] { font-weight: 600; }
-.segment::after { content: ""; position: absolute; inset: -6px 0; }
-.segment:focus-visible { outline-offset: 0; }
+.segment[aria-checked="true"] { color: var(--btn-fg); }
+.segment:focus-visible { outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .segment { transition: none; }
+}
 
 /* 金额：大字、前面固定 RM */
 .entry-amount-row {
@@ -927,45 +933,6 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    - [hig-patterns] 删除不跳确认框，改用「撤销」toast；左滑露出红色「删除」（80pt）。
    - 列表是 inset grouped：12pt 圆角卡片、内缩分隔线、组标题用 footnote 次要色。
    ===================================================================== */
-.home-summary {
-  margin-top: 4px;
-  padding: 12px 16px 6px;
-  border-radius: var(--radius-card);
-  background: var(--bg-grouped-secondary);
-}
-.home-summary-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding-bottom: 6px;
-}
-.home-summary-title { font: var(--font-headline); }
-.home-summary-month { font: var(--font-subhead); color: var(--secondary-label); }
-.home-summary-row {
-  position: relative;
-  min-height: var(--hit);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.home-summary-row + .home-summary-row::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: -16px;
-  height: 0.5px;
-  background: var(--separator);
-}
-.home-summary-label { font: var(--font-body); color: var(--secondary-label); }
-.home-summary-value {
-  font: var(--font-headline);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.home-summary-value.is-income { color: var(--green); }
-
 /* ---------- 结余卡：假玻璃（无 backdrop-filter），光晕被卡片裁切 ---------- */
 .home-card {
   position: relative;
@@ -1090,7 +1057,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .home-add:focus-visible { outline-offset: 3px; }
 
 /* ---------- 账单抽屉：满版宽、上圆角，最少撑到画面底部 ---------- */
-.home-drawer {
+.home-drawer,
+.stats-drawer {
   position: relative;
   flex: 1 0 auto;
   margin: 22px calc(-1 * (var(--margin) + var(--safe-right))) calc(-1 * var(--shell-pad-bottom))
@@ -1099,7 +1067,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   border-radius: 30px 30px 0 0;
   background: var(--drawer);
 }
-.home-drawer::before { /* 阴影只挂在顶端 30px，不挂在可能很长的抽屉本身 */
+.home-drawer::before,
+.stats-drawer::before { /* 阴影只挂在顶端 30px，不挂在可能很长的抽屉本身 */
   content: "";
   position: absolute;
   top: 0;
@@ -1245,10 +1214,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 
 /* =====================================================================
-   15. Stats 统计页 — js/ui/stats-view.js
-   - [hig-components-content / dataviz] 占比用单一 --accent 色横向条（不靠颜色区分类别，
-     每列都有名称 + 金额 + 百分比文字，条本身 aria-hidden）。
-   - 摘要卡、分段控件、图示圆圈沿用首页 / 记账页的 class。
+   15. Stats 统计页 — js/ui/stats-view.js、js/ui/trend-chart.js
+   - 顺序：月份切换 → 摘要玻璃卡（无光晕）→ 黑色胶囊分段 → 累计走势图卡 → 分类抽屉。
+   - [dataviz] 走势图单色 ink；比例条用分类色，但每列都有名称 + 金额 + 百分比文字，条本身 aria-hidden。
+   - 效能：玻璃卡是静态渐层（无 backdrop-filter）；分类列不加阴影 / 渐层；拖动只改标记与标签属性。
    ===================================================================== */
 .stats-month {
   display: flex;
@@ -1256,74 +1225,161 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   justify-content: space-between;
   margin-bottom: 4px;
 }
-.stats-month-title { font: var(--font-headline); text-align: center; flex: 1; }
+.stats-month-title { font: var(--font-headline); text-align: center; flex: 1; font-variant-numeric: tabular-nums; }
 .stats-month-btn {
   width: var(--hit);
   height: var(--hit);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent);
+  border-radius: 22px;
+  color: var(--ink);
 }
-.stats-month-btn[aria-disabled="true"] { opacity: 0.3; }
-.stats-summary { margin-bottom: 12px; padding-top: 6px; }
-.stats-group {
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0 16px;
-  border-radius: var(--radius-card);
-  background: var(--bg-grouped-secondary);
+.stats-month-btn[aria-disabled="true"] { color: var(--ink-3); }
+
+/* 共用玻璃卡（无光晕）：静态渐层 + 玻璃边，不用 backdrop-filter */
+.glass-card {
+  border-radius: 26px;
+  background: linear-gradient(155deg, var(--glass-sheen), transparent 45%), var(--glass);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 18px 40px -18px var(--glass-shade);
 }
-.stats-row { position: relative; padding: 10px 0 12px; }
-.stats-row + .stats-row::before {
-  content: "";
+
+/* 摘要：三栏；金额放不下时自动换行（不截断） */
+.stats-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+  padding: 16px 18px;
+}
+.stats-sum-item { flex: 1 1 0; min-width: max-content; display: grid; gap: 4px; }
+.stats-sum-k { font: var(--font-footnote); color: var(--ink-2); }
+.stats-sum-v {
+  font: 500 0.9412rem/1.2 var(--font-family);   /* 16/17 */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stats-sum-v.is-income { color: var(--income); }
+
+.stats-summary + .segmented { margin: 16px 0 0; }
+
+/* 走势图卡 */
+.trend-card { margin-top: 12px; padding: 16px 14px 12px; }
+.trend-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 0 4px 6px;
+}
+.trend-title { font: var(--font-subhead); font-weight: 600; }
+.trend-total {
+  font: var(--font-footnote);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trend-box { position: relative; }
+.trend-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;           /* 上下滑交给页面捲动，水平拖动给图表 */
+  -webkit-touch-callout: none;
+  cursor: crosshair;
+}
+.trend-svg:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 8px; }
+.trend-base { stroke: var(--hairline); stroke-width: 1; }
+.trend-future { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+.trend-line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.trend-area { stroke: none; }
+.trend-stop0 { stop-color: var(--ink); stop-opacity: 0.12; }
+.trend-stop1 { stop-color: var(--ink); stop-opacity: 0; }
+.trend-single { fill: var(--ink); }
+.trend-mline { stroke: var(--ink-3); stroke-width: 1; }
+.trend-mdot { fill: var(--btn-bg); stroke: var(--drawer); stroke-width: 2.5; }
+.trend-tip {
   position: absolute;
   top: 0;
-  left: 48px;
-  right: -16px;
-  height: 0.5px;
-  background: var(--separator);
+  left: 0;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: var(--font-caption);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
 }
-.stats-row-main { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+.trend-axis {
+  position: relative;
+  height: calc(0.6471rem * 1.333 + 6px);   /* 11/17 字级的一行 + 上方间距 */
+  margin-top: 6px;
+  font: 400 0.6471rem/1.333 var(--font-family);   /* 11/17 */
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.trend-tick { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.trend-tick:first-child { transform: none; }          /* 「1 日」靠左对齐，不超出卡片 */
+.trend-tick:last-child { transform: translateX(-100%); }
+.trend-empty {
+  padding: 40px 8px 44px;
+  text-align: center;
+  font: var(--font-subhead);
+  color: var(--ink-2);
+}
+
+/* 分类抽屉（与首页账单抽屉同样式，见上方 .home-drawer） */
+.stats-drawer { margin-top: 18px; }
+.stats-group { list-style: none; margin: 0; padding: 6px 0 0; }
+.stats-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 9px calc(20px + var(--safe-right)) 9px calc(20px + var(--safe-left));
+}
+.stats-row .home-row-icon { width: 44px; height: 44px; }
+.stats-row-text { flex: 1; min-width: 0; display: grid; gap: 7px; }
 .stats-row-name {
-  flex: 1;
-  min-width: 0;
   font: var(--font-body);
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.stats-row-amount {
-  flex: none;
-  font: var(--font-body);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.stats-row-sub { display: flex; align-items: center; gap: 10px; margin: 6px 0 0 48px; }
-.stats-row-pct {
-  flex: none;
-  min-width: 3.2em;
-  text-align: right;
-  font: var(--font-subhead);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  color: var(--label);
-}
 .stats-bar {
-  flex: 1;
-  min-width: 0;
   display: block;
   height: 6px;
   border-radius: 3px;
-  background: var(--fill);
+  background: var(--track);
   overflow: hidden;
 }
-.stats-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
-.stats-empty {
-  margin: 40px 0;
-  text-align: center;
+.stats-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--cat-fg, var(--secondary-label)); }
+.stats-row-nums { flex: none; display: grid; justify-items: end; gap: 3px; }
+.stats-row-amount {
   font: var(--font-body);
-  color: var(--secondary-label);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stats-row-pct {
+  font: var(--font-caption);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* =====================================================================
