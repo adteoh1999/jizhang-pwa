@@ -17,7 +17,7 @@ export function toCSV(txs, categoriesById) {
     t.id, t.occurred_on, t.kind, minorToDecimalString(t.amount_minor),
     categoriesById.get(t.category_id)?.name ?? '未分类', t.note, t.updated_at,
   ]);
-  return '﻿' + [CSV_HEADER, ...rows].map((r) => r.map(esc).join(',')).join('\r\n') + '\r\n';
+  return '\ufeff' + [CSV_HEADER, ...rows].map((r) => r.map(esc).join(',')).join('\r\n') + '\r\n';
 }
 
 export function parseCSV(text) {
@@ -45,6 +45,7 @@ export function parseCSV(text) {
       row.push(cell); rows.push(row); row = []; cell = '';
     } else { cell += c; i++; }
   }
+  if (inQ) throw new Error('CSV 格式不对：引号没有闭合');
   if (cell !== '' || row.length > 0) { row.push(cell); rows.push(row); }
   while (rows.length && rows[rows.length - 1].length === 1 && rows[rows.length - 1][0] === '') rows.pop();
   return rows;

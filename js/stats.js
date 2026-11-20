@@ -1,5 +1,6 @@
 // 统计：输入都是未删除的 Transaction 阵列
 import { monthOf } from './dates.js';
+import { timeValue } from './model.js';
 
 export function summarizeMonth(txs, month) {
   let income = 0;
@@ -31,7 +32,7 @@ const cmpDesc = (a, b) => (a < b ? 1 : a > b ? -1 : 0);
 // 日期新→旧；同日 created_at 新→旧，再以 id 保证顺序固定
 export function compareTx(a, b) {
   return cmpDesc(a.occurred_on, b.occurred_on)
-    || cmpDesc(a.created_at, b.created_at)
+    || cmpDesc(timeValue(a.created_at), timeValue(b.created_at))
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 

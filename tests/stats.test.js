@@ -38,3 +38,15 @@ test('groupByDate 顺序与 net，同 created_at 依 id', () => {
   assert.equal(g[1].net, -3000);
   assert.deepEqual(groupByDate([]), []);
 });
+
+test('groupByDate 同日 created_at 用时间数值比较（不同格式）', () => {
+  const a = T('a', 'expense', 1, 'food', '2026-11-20', '2026-11-20T10:00:00.000Z');
+  const b = T('b', 'expense', 1, 'food', '2026-11-20', '2026-11-20T18:30:00+08:00');
+  assert.deepEqual(groupByDate([a, b])[0].items.map((x) => x.id), ['b', 'a']);
+});
+
+test('groupByDate created_at 字串顺序与时间顺序不一致时以时间为准', () => {
+  const c = T('c', 'expense', 1, 'food', '2026-11-20', '2026-11-20T18:30:00+08:00'); // 10:30Z
+  const d = T('d', 'expense', 1, 'food', '2026-11-20', '2026-11-20T12:00:00.000Z');
+  assert.deepEqual(groupByDate([c, d])[0].items.map((x) => x.id), ['d', 'c']);
+});

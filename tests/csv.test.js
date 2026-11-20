@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CSV_HEADER, toCSV, parseCSV, planImport } from '../js/csv.js';
-import { defaultCategories } from '../js/model.js';
+import { defaultCategories, nextUpdatedAt } from '../js/model.js';
 
 const cats = defaultCategories();
 const byId = new Map(cats.map((c) => [c.id, c]));
@@ -18,7 +18,8 @@ const T = (o) => ({
 test('往返：中文、逗号、引号、换行', () => {
   const txs = [T({ note: '午餐, 和"老王"\n第二行' })];
   const csv = toCSV(txs, byId);
-  assert.ok(csv.startsWith('﻿'));
+  assert.ok(csv.startsWith('\ufeff'));
+  assert.equal(csv.charCodeAt(0), 0xFEFF);
   assert.equal(csv.split('\r\n')[0].slice(1), CSV_HEADER.join(','));
   const plan = planImport(parseCSV(csv), ctx({ existingTxs: new Map(txs.map((t) => [t.id, t])) }));
   assert.equal(plan.imported, 0);
@@ -26,6 +27,7 @@ test('往返：中文、逗号、引号、换行', () => {
   const fresh = planImport(parseCSV(csv), ctx());
   assert.equal(fresh.txs[0].note, '午餐, 和"老王"\n第二行');
   assert.equal(fresh.txs[0].amount_minor, txs[0].amount_minor);
+  assert.equal(fresh.txs[0].id, txs[0].id);
   assert.equal(fresh.txs[0].category_id, 'food');
   assert.equal(fresh.txs[0].dirty, 1);
 });
@@ -87,7 +89,8 @@ test('较新的 updated_at 覆盖已存在纪录', () => {
   const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([['t1', ex]]) }));
   assert.equal(plan.imported, 1);
   assert.equal(plan.txs[0].amount_minor, 2000);
-  assert.ok(plan.txs[0].updated_at > ex.updated_at);
+  assert.equal(plan.txs[0].updated_at, nextUpdatedAt(ex.updated_at, now));
+  assert.equal(plan.txs[0].updated_at, now.toISOString());
 });
 
 test('Excel 日期 20/11/2026 与 2026/11/5', () => {
@@ -116,6 +119,35 @@ test('缺少必要栏位丢错', () => {
 });
 
 test('parseCSV：引号、空行', () => {
-  assert.deepEqual(parseCSV('﻿a,"b,""c"""\n\n'), [['a', 'b,"c"']]);
+  assert.deepEqual(parseCSV('\ufeffa,"b,""c"""\n\n'), [['a', 'b,"c"']]);
   assert.deepEqual(parseCSV('a\r\nb'), [['a'], ['b']]);
+});
+
+test('分类比对忽略已删除分类', () => {
+  const old = { id: 'old-pet', kind: 'expense', name: '宠物', icon: 'other', sort: 9, updated_at: '1970-01-01T00:00:00.000Z', deleted: true, dirty: 0 };
+  const plan = planImport(parseCSV('date,kind,amount,category\n2026-11-01,expense,1,宠物\n'), ctx({ categories: [...cats, old] }));
+  assert.equal(plan.newCategories.length, 1);
+  assert.notEqual(plan.newCategories[0].id, 'old-pet');
+  assert.equal(plan.newCategories[0].sort, 10);
+  assert.equal(plan.txs[0].category_id, plan.newCategories[0].id);
+});
+
+test('toCSV 顺序：日期新→旧，同日 created_at 新→旧', () => {
+  const txs = [
+    T({ id: 'x1', occurred_on: '2026-11-01', created_at: '2026-11-01T01:00:00.000Z' }),
+    T({ id: 'x2', occurred_on: '2026-11-02', created_at: '2026-11-02T01:00:00.000Z' }),
+    T({ id: 'x3', occurred_on: '2026-11-02', created_at: '2026-11-02T05:00:00.000Z' }),
+  ];
+  assert.deepEqual(parseCSV(toCSV(txs, byId)).slice(1).map((r) => r[0]), ['x3', 'x2', 'x1']);
+});
+
+test('日期歧义：5/11/2026 日在前；1/13/2026 略过', () => {
+  const plan = planImport(parseCSV('date,kind,amount,category\n5/11/2026,expense,1,餐饮\n1/13/2026,expense,1,餐饮\n'), ctx());
+  assert.equal(plan.txs[0].occurred_on, '2026-11-05');
+  assert.equal(plan.imported, 1);
+  assert.equal(plan.skipped, 1);
+});
+
+test('引号没有闭合丢错', () => {
+  assert.throws(() => parseCSV('a,"b\nc'), /引号没有闭合/);
 });
