@@ -2,11 +2,10 @@
 // 选中的月份与类型只存在记忆体（切换分页时保留）。
 import { h } from './dom.js';
 import { icon } from './icons.js';
+import { kindSegmented } from './components.js';
 import { summarizeMonth, byCategory, formatPercent } from '../stats.js';
 import { formatRM } from '../money.js';
 import { todayLocal, monthOf, shiftMonth, formatMonthTitle } from '../dates.js';
-
-const KINDS = [{ id: 'expense', label: '支出' }, { id: 'income', label: '收入' }];
 
 export function mountStats(root, store) {
   let curMonth = monthOf(todayLocal()); // 上次渲染时的「本月」
@@ -35,22 +34,7 @@ export function mountStats(root, store) {
     row('收入', incomeEl), row('支出', expenseEl), row('结余', balanceEl));
 
   // ---------- 支出 / 收入 ----------
-  const segButtons = KINDS.map((k) => h('button', {
-    type: 'button', role: 'radio', class: 'segment', 'data-kind': k.id,
-    on: { click: () => setKind(k.id) },
-  }, k.label));
-  const segmented = h('div', {
-    class: 'segmented', role: 'radiogroup', 'aria-label': '类型',
-    on: {
-      keydown: (e) => {
-        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-        e.preventDefault();
-        const next = kind === 'expense' ? 'income' : 'expense';
-        setKind(next);
-        segButtons.find((b) => b.dataset.kind === next).focus();
-      },
-    },
-  }, segButtons);
+  const seg = kindSegmented({ value: kind, onChange: (k) => setKind(k) });
   function setKind(k) {
     if (k === kind) return;
     kind = k;
@@ -58,7 +42,7 @@ export function mountStats(root, store) {
   }
 
   const list = h('div', { class: 'stats-list' });
-  root.replaceChildren(switcher, summary, segmented, list);
+  root.replaceChildren(switcher, summary, seg.element, list);
 
   function render() {
     const now = monthOf(todayLocal());
@@ -78,12 +62,7 @@ export function mountStats(root, store) {
     expenseEl.textContent = formatRM(s.expense, { sign: 'none' });
     balanceEl.textContent = formatRM(s.balance);
 
-    for (const b of segButtons) {
-      const on = b.dataset.kind === kind;
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-      b.tabIndex = on ? 0 : -1;
-    }
-    segmented.dataset.selected = kind;
+    seg.set(kind);
 
     const rows = byCategory(all, month, kind);
     if (rows.length === 0) {

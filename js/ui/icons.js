@@ -51,6 +51,14 @@ export const CATEGORY_ICON_CHOICES = Object.freeze([
   'pet', 'health', 'home', 'gift', 'travel', 'education', 'coffee', 'phone',
 ]);
 
+// 分类图示的中文名称（图示选择器的 aria-label）；与 CATEGORY_ICON_CHOICES 一一对应（测试会检查）
+export const ICON_LABELS = Object.freeze({
+  food: '餐饮', transport: '交通', shopping: '购物', bills: '账单', fun: '娱乐', other: '其他',
+  salary: '工资', bonus: '奖金', side: '副业', other_income: '其他收入',
+  pet: '宠物', health: '医疗', home: '居家', gift: '礼物', travel: '旅行', education: '教育',
+  coffee: '咖啡', phone: '手机',
+});
+
 /** 返回 SVGElement；未知名称退回 'other'，不会抛错。 */
 export function icon(name, size = 24) {
   const paths = Object.hasOwn(ICON_DATA, name) ? ICON_DATA[name] : ICON_DATA.other;

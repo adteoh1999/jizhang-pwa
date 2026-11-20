@@ -38,7 +38,9 @@ export function mountHome(root, store) {
   let order = [];              // 目前画出来的列 id（由上到下）
   let openScrollY = 0;         // 列滑开时的 scrollY；只有真的捲离这个位置才关闭
   // 记一笔里的「＋ 新增」：叠一层分类管理子画面，新增后回到记一笔并选中新分类
-  const onAddCategory = ({ kind, select }) => openCategoriesPage(store, { kind, from: 'entry', onPicked: select });
+  const onAddCategory = ({ kind, select, refocus }) => openCategoriesPage(store, {
+    kind, from: 'entry', onPicked: select, restoreFocus: refocus,
+  });
 
   // ---------- 静态骨架 ----------
   const sumTitle = h('h2', { class: 'home-summary-title' }, '本月');

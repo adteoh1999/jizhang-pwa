@@ -8,24 +8,12 @@
 // 2) 每列后面一直在 DOM 里的「删除」按钮（平常隐藏，键盘 Tab / VoiceOver 聚焦时显示）。
 // 两条路都先用 action sheet 确认。
 import { h } from './dom.js';
-import { icon, CATEGORY_ICON_CHOICES } from './icons.js';
+import { icon, CATEGORY_ICON_CHOICES, ICON_LABELS } from './icons.js';
 import { pushLayer } from './nav.js';
 import { openSheet } from './sheet.js';
 import { actionSheet, messageDialog, trapFocus } from './dialogs.js';
+import { kindSegmented, confirmDiscard } from './components.js';
 import { ValidationError, CATEGORY_NAME_MAX } from '../model.js';
-
-const KINDS = [
-  { id: 'expense', label: '支出' },
-  { id: 'income', label: '收入' },
-];
-
-// 图示的中文名称（VoiceOver 用）
-const ICON_LABELS = {
-  food: '餐饮', transport: '交通', shopping: '购物', bills: '账单', fun: '娱乐', other: '其他',
-  salary: '工资', bonus: '奖金', side: '副业', other_income: '其他收入',
-  pet: '宠物', health: '医疗', home: '居家', gift: '礼物', travel: '旅行', education: '教育',
-  coffee: '咖啡', phone: '手机',
-};
 
 let seq = 0;
 
@@ -62,9 +50,10 @@ async function confirmDeleteCategory(store, cat) {
 
 /**
  * 新增 / 编辑分类的 sheet。必须在点击事件里同步呼叫（名称框 focus 才会弹出键盘）。
- * openCategoryEditor(store, { kind, category?, onSaved? })；onSaved(rec) 在储存成功、sheet 关闭后呼叫。
+ * openCategoryEditor(store, { kind, category?, onSaved?, onClosed? })
+ * onSaved(rec)：储存成功、sheet 关闭后呼叫。onClosed()：任何途径关闭后呼叫（焦点已尝试还原给开启者之后）。
  */
-export function openCategoryEditor(store, { kind, category, onSaved } = {}) {
+export function openCategoryEditor(store, { kind, category, onSaved, onClosed } = {}) {
   const cat = category || null;
   const catKind = cat ? cat.kind : kind;
   const uid = `cated-${++seq}`;
@@ -147,11 +136,7 @@ export function openCategoryEditor(store, { kind, category, onSaved } = {}) {
     if (!isDirty()) { close(); return; }
     confirming = true;
     try {
-      const choice = await actionSheet({
-        title: '放弃这次修改？',
-        actions: [{ label: '放弃修改', style: 'destructive' }, { label: '取消', style: 'cancel' }],
-      });
-      if (choice === '放弃修改') close();
+      if (await confirmDiscard()) close();
     } finally {
       confirming = false;
     }
@@ -160,6 +145,8 @@ export function openCategoryEditor(store, { kind, category, onSaved } = {}) {
   async function save() {
     if (saving || confirming) return;
     clearNameError();
+    // 编辑时没有实际变动 → 直接关闭，不写入（不改动默认分类的 updated_at / dirty）
+    if (cat && nameInput.value.trim() === initial.name && iconSel === initial.icon) { sheet.close(); return; }
     const bad = checkCategoryName(nameInput.value, store.categories(catKind), cat ? cat.id : null);
     if (bad) { showNameError(bad); return; }
     saving = true;
@@ -202,6 +189,7 @@ export function openCategoryEditor(store, { kind, category, onSaved } = {}) {
     leftAction: { label: '取消', onClick: () => sheet.requestDismiss() },
     rightAction: { label: '储存', bold: true, onClick: () => { save(); } },
     onDismissRequest,
+    onClosed,
   });
   // 必须同步（不能在 await 之后），iOS 才会弹出键盘
   nameInput.focus({ preventScroll: true });
@@ -209,15 +197,18 @@ export function openCategoryEditor(store, { kind, category, onSaved } = {}) {
 }
 
 /**
- * openCategoriesPage(store, { kind?, from?, onPicked? }) → { close }
+ * openCategoriesPage(store, { kind?, from?, onPicked?, restoreFocus? }) → { close }
  * kind：一开始显示的类型（预设 'expense'）。
  * from：'settings'（预设，返回键「‹ 设置」）或 'entry'（叠在记一笔上，返回键「‹ 返回」）。
  * onPicked(category)：有给时，新增分类成功后关闭子画面并呼叫它（记一笔用来选中新分类）。
+ * restoreFocus()：关闭时开启者（例如记一笔的「＋ 新增」格）已因重画离开 DOM，改由它放回焦点。
  */
-export function openCategoriesPage(store, { kind = 'expense', from = 'settings', onPicked } = {}) {
+export function openCategoriesPage(store, {
+  kind = 'expense', from = 'settings', onPicked, restoreFocus,
+} = {}) {
   const opener = document.activeElement;
   const uid = `catpage-${++seq}`;
-  let curKind = KINDS.some((k) => k.id === kind) ? kind : 'expense';
+  let curKind = kind === 'income' ? 'income' : 'expense';
 
   // ---------- 导航列 ----------
   const backBtn = h('button', {
@@ -231,74 +222,78 @@ export function openCategoriesPage(store, { kind = 'expense', from = 'settings',
     h('span', { 'aria-hidden': 'true' }));
 
   // ---------- 支出 / 收入 ----------
-  const segButtons = KINDS.map((k) => h('button', {
-    type: 'button', role: 'radio', class: 'segment', 'data-kind': k.id,
-    on: { click: () => setKind(k.id) },
-  }, k.label));
-  const segmented = h('div', {
-    class: 'segmented', role: 'radiogroup', 'aria-label': '类型',
-    on: {
-      keydown: (e) => {
-        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-        e.preventDefault();
-        const next = curKind === 'expense' ? 'income' : 'expense';
-        setKind(next);
-        segButtons.find((b) => b.dataset.kind === next).focus();
-      },
-    },
-  }, segButtons);
-  function syncSegments() {
-    for (const b of segButtons) {
-      const on = b.dataset.kind === curKind;
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-      b.tabIndex = on ? 0 : -1;
-    }
-    segmented.dataset.selected = curKind;
-  }
-  function setKind(k) {
-    if (k === curKind) return;
-    curKind = k;
-    syncSegments();
-    renderList();
-  }
+  const seg = kindSegmented({
+    value: curKind,
+    onChange: (k) => { curKind = k; renderList(); },
+  });
 
   // ---------- 清单 ----------
+  // 列按分类 id 重用（只更新名称 / 图示），编辑 sheet 的开启者（列按钮）才会一直留在 DOM，关闭后焦点能还原。
   const list = h('ul', { class: 'inset-group cat-list', role: 'list', 'aria-label': '分类' });
+  const rows = new Map(); // id → { li, main, del, iconEl, nameEl, cat, sig }
 
-  function row(c) {
-    return h('li', { class: 'cat-row', 'data-id': c.id },
-      h('button', {
-        type: 'button', class: 'cat-row-main', 'data-focus': `main:${c.id}`,
-        on: { click: () => openCategoryEditor(store, { category: c }) }, // 同步呼叫
-      },
-      h('span', { class: 'home-row-icon' }, icon(c.icon, 20)),
-      h('span', { class: 'cat-row-name' }, c.name),
-      h('span', { class: 'cat-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16))),
-      h('button', {
-        type: 'button', class: 'cat-row-delete', 'data-focus': `del:${c.id}`, 'aria-label': `删除 ${c.name}`,
-        on: { click: () => { confirmDeleteCategory(store, c); } },
-      }, '删除'));
+  // 编辑 sheet 关闭后：开启者已不在（那列被删掉）→ 焦点放到「新增分类」，不掉到 body
+  function afterEditorClosed() {
+    if (!closed && !page.contains(document.activeElement)) addMain.focus({ preventScroll: true });
   }
 
-  const addRow = h('li', { class: 'cat-row cat-row-add' },
-    h('button', {
-      type: 'button', class: 'cat-row-main', 'data-focus': 'add',
-      on: {
-        click: () => openCategoryEditor(store, { kind: curKind, onSaved: onCreated }), // 同步呼叫
-      },
+  function buildRow(c) {
+    const rec = { cat: c, sig: '' };
+    rec.iconEl = h('span', { class: 'home-row-icon' });
+    rec.nameEl = h('span', { class: 'cat-row-name' });
+    rec.main = h('button', {
+      type: 'button', class: 'cat-row-main',
+      on: { click: () => openCategoryEditor(store, { category: rec.cat, onClosed: afterEditorClosed }) }, // 同步呼叫
     },
-    h('span', { class: 'cat-row-plus', 'aria-hidden': 'true' }, icon('plus', 20)),
-    h('span', { class: 'cat-row-name' }, '新增分类')));
+    rec.iconEl, rec.nameEl,
+    h('span', { class: 'cat-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16)));
+    rec.del = h('button', {
+      type: 'button', class: 'cat-row-delete',
+      on: { click: () => { confirmDeleteCategory(store, rec.cat); } },
+    }, '删除');
+    rec.li = h('li', { class: 'cat-row', 'data-id': c.id }, rec.main, rec.del);
+    return rec;
+  }
+
+  function fillRow(rec, c) {
+    rec.cat = c;
+    const sig = `${c.name}\u0001${c.icon}`;
+    if (sig === rec.sig) return;
+    rec.sig = sig;
+    rec.iconEl.replaceChildren(icon(c.icon, 20));
+    rec.nameEl.textContent = c.name;
+    rec.del.setAttribute('aria-label', `删除 ${c.name}`);
+  }
+
+  const addMain = h('button', {
+    type: 'button', class: 'cat-row-main',
+    on: {
+      click: () => openCategoryEditor(store, { kind: curKind, onSaved: onCreated }), // 同步呼叫
+    },
+  },
+  h('span', { class: 'cat-row-plus', 'aria-hidden': 'true' }, icon('plus', 20)),
+  h('span', { class: 'cat-row-name' }, '新增分类'));
+  const addRow = h('li', { class: 'cat-row cat-row-add' }, addMain);
 
   function renderList() {
-    const focused = list.contains(document.activeElement) ? document.activeElement.dataset.focus : null;
-    const cats = store.categories(curKind);
-    list.replaceChildren(...cats.map(row), addRow);
-    if (focused && !list.contains(document.activeElement)) {
-      const again = list.querySelector(`[data-focus="${CSS.escape(focused)}"]`)
-        || (focused.startsWith('del:') ? list.querySelector(`[data-focus="main:${CSS.escape(focused.slice(4))}"]`) : null)
-        || addRow.firstChild; // 那列被删掉 → 焦点放到「新增分类」，不掉回页首
-      again.focus({ preventScroll: true });
+    const hadFocus = list.contains(document.activeElement) ? document.activeElement : null;
+    const wanted = [];
+    const seen = new Set();
+    for (const c of store.categories(curKind)) {
+      let rec = rows.get(c.id);
+      if (!rec) { rec = buildRow(c); rows.set(c.id, rec); }
+      fillRow(rec, c);
+      seen.add(c.id);
+      wanted.push(rec.li);
+    }
+    wanted.push(addRow);
+    for (const id of [...rows.keys()]) if (!seen.has(id)) rows.delete(id);
+    // 顺序没变就不搬动节点（搬动会让焦点掉到 body）
+    const same = wanted.length === list.children.length && wanted.every((el, i) => list.children[i] === el);
+    if (!same) list.replaceChildren(...wanted);
+    if (hadFocus && document.activeElement !== hadFocus) {
+      // 原本的按钮还在 → 放回去；那列被删掉 → 焦点放到「新增分类」，不掉回页首
+      (list.contains(hadFocus) ? hadFocus : addMain).focus({ preventScroll: true });
     }
   }
 
@@ -309,8 +304,8 @@ export function openCategoriesPage(store, { kind = 'expense', from = 'settings',
   }
 
   const body = h('div', { class: 'nav-page-body' },
-    segmented, list,
-    h('p', { class: 'settings-footer' }, '点一下分类可以改名、换图示。'));
+    seg.element, list,
+    h('p', { class: 'settings-footer' }, '点一下分类可以改名、换图示或删除。'));
   const page = h('div', {
     class: 'nav-page', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${uid}-title`,
   }, bar, body);
@@ -330,12 +325,13 @@ export function openCategoriesPage(store, { kind = 'expense', from = 'settings',
       setTimeout(remove, 450); // 后备
       if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
         opener.focus({ preventScroll: true });
+      } else if (restoreFocus) {
+        restoreFocus();
       }
     },
   });
   function close() { handle.close(); }
 
-  syncSegments();
   renderList();
   document.body.append(page);
   backBtn.focus({ preventScroll: true });

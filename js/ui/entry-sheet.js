@@ -5,16 +5,13 @@ import { h } from './dom.js';
 import { icon } from './icons.js';
 import { openSheet } from './sheet.js';
 import { actionSheet, messageDialog } from './dialogs.js';
+import { kindSegmented, confirmDiscard } from './components.js';
 import { showToast } from './toast.js';
 import { parseAmount, minorToDecimalString } from '../money.js';
 import { todayLocal, isValidDateString } from '../dates.js';
 import { ValidationError, NOTE_MAX } from '../model.js';
 import { uuid } from '../uuid.js';
 
-const KINDS = [
-  { id: 'expense', label: '支出' },
-  { id: 'income', label: '收入' },
-];
 const MAX_DAYS_AHEAD = 365;
 
 let seq = 0;
@@ -48,8 +45,9 @@ function messageFor(field, { amountText, date }, categoryMissing) {
 
 /**
  * openEntrySheet(store, { transaction?, onAddCategory? }) → { close }
- * onAddCategory({ kind, select })：有给才显示「＋ 新增」。kind 是目前的类型；
- * select(category) 由呼叫者在新增分类成功后呼叫 → 切到该分类的类型并选中它（网格由 store.subscribe 重画）。
+ * onAddCategory({ kind, select, refocus })：有给才显示「＋ 新增」。kind 是目前的类型；
+ * select(category) 由呼叫者在新增分类成功后呼叫 → 切到该分类的类型并选中它（网格由 store.subscribe 重画）；
+ * refocus() 把焦点放回目前的「＋ 新增」格（网格重画后原本的按钮已不在 DOM 时用）。
  */
 export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
   const tx = transaction || null;
@@ -86,22 +84,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     amountError);
 
   // ---------- 支出 / 收入 ----------
-  const segButtons = KINDS.map((k) => h('button', {
-    type: 'button', role: 'radio', class: 'segment', 'data-kind': k.id,
-    on: { click: () => setKind(k.id) },
-  }, k.label));
-  const segmented = h('div', {
-    class: 'segmented', role: 'radiogroup', 'aria-label': '类型',
-    on: {
-      keydown: (e) => {
-        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
-        e.preventDefault();
-        const next = state.kind === 'expense' ? 'income' : 'expense';
-        setKind(next);
-        segButtons.find((b) => b.dataset.kind === next).focus();
-      },
-    },
-  }, segButtons);
+  const seg = kindSegmented({ value: state.kind, onChange: (k) => setKind(k) });
 
   // ---------- 分类网格 ----------
   const grid = h('div', { class: 'cat-grid', role: 'group', 'aria-labelledby': `${uid}-cat-label` });
@@ -157,7 +140,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     if (onAddCategory) {
       tiles.push(h('button', {
         type: 'button', class: 'cat-tile cat-tile-add', 'aria-label': '新增分类',
-        on: { click: () => onAddCategory({ kind: state.kind, select: selectCategory }) },
+        on: { click: () => onAddCategory({ kind: state.kind, select: selectCategory, refocus: focusAddTile }) },
       },
       h('span', { class: 'cat-tile-icon' }, h('span', { class: 'cat-tile-plus', 'aria-hidden': 'true' }, '＋')),
       h('span', { class: 'cat-tile-name' }, '新增')));
@@ -170,15 +153,6 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     }
   }
 
-  function syncSegments() {
-    for (const b of segButtons) {
-      const on = b.dataset.kind === state.kind;
-      b.setAttribute('aria-checked', on ? 'true' : 'false');
-      b.tabIndex = on ? 0 : -1;
-    }
-    segmented.dataset.selected = state.kind; // CSS 用来滑动选中的底块
-  }
-
   function setKind(kind) {
     if (state.kind === kind) return;
     state.kind = kind;
@@ -189,7 +163,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       || (kind === initial.kind && remembered === initial.categoryId));
     state.categoryId = valid ? remembered : ((cats[0] || {}).id || null);
     state.byKind[kind] = state.categoryId;
-    syncSegments();
+    seg.set(state.kind);
     clearError(catField, catError);
     renderGrid();
   }
@@ -204,6 +178,11 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     clearError(catField, catError);
     renderGrid();
     const t = grid.querySelector(`[data-cat="${CSS.escape(c.id)}"]`);
+    if (t) t.focus({ preventScroll: false });
+  }
+
+  function focusAddTile() {
+    const t = grid.querySelector('.cat-tile-add');
     if (t) t.focus({ preventScroll: false });
   }
 
@@ -230,7 +209,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     : null;
 
   const content = h('div', { class: 'entry' },
-    segmented, amountField, catField, detailField,
+    seg.element, amountField, catField, detailField,
     deleteButton ? h('div', { class: 'entry-section' }, deleteButton) : null);
 
   // ---------- 错误显示 ----------
@@ -302,11 +281,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     if (!isDirty()) { close(); return; }
     confirming = true;
     try {
-      const choice = await actionSheet({
-        title: '放弃这次修改？',
-        actions: [{ label: '放弃修改', style: 'destructive' }, { label: '取消', style: 'cancel' }],
-      });
-      if (choice === '放弃修改') close();
+      if (await confirmDiscard()) close();
     } finally {
       confirming = false;
     }
@@ -378,7 +353,6 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
   // ---------- 打开 ----------
   // 分类在 sheet 开着时有变动（例如 Task 12 新增分类）→ 重画网格
   const unsubscribe = store.subscribe(() => renderGrid());
-  syncSegments();
   renderGrid();
 
   const sheet = openSheet({

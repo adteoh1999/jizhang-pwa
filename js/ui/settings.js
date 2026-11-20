@@ -20,7 +20,7 @@ function download(file) {
   document.body.append(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000); // 给浏览器时间开始下载再释放
+  setTimeout(() => URL.revokeObjectURL(url), 60000); // 给浏览器（尤其 iOS）时间开始下载再释放
 }
 
 export function mountSettings(root, store) {
@@ -40,21 +40,25 @@ export function mountSettings(root, store) {
   chevron ? h('span', { class: 'inset-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16)) : null);
 
   // ---------- 导出 ----------
+  let sharing = false; // 分享选单开着时再按一次「导出 CSV」不重复呼叫 navigator.share
   function onExport() {
+    if (sharing) return;
     if (store.transactions().length === 0) {
       messageDialog({ title: '没有可导出的记录' });
       return;
     }
     const file = new File([store.exportCSV()], exportFileName(), { type: 'text/csv' }); // exportCSV 已含 BOM
+    const data = { files: [file] }; // canShare 与 share 用同一个物件
     let canShare = false;
     try {
-      canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+      canShare = !!(navigator.canShare && navigator.canShare(data));
     } catch { /* 部分浏览器对 files 会 throw → 当作不支援 */ }
     if (!canShare) { download(file); return; }
-    navigator.share({ files: [file], title: '记账导出' }).catch((e) => {
+    sharing = true;
+    navigator.share(data).catch((e) => {
       if (e && e.name === 'AbortError') return; // 使用者在分享选单按取消，不算错误
       download(file);
-    });
+    }).finally(() => { sharing = false; });
   }
 
   // ---------- 导入 ----------

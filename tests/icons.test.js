@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ICON_NAMES, ICON_DATA, CATEGORY_ICON_CHOICES } from '../js/ui/icons.js';
+import { ICON_NAMES, ICON_DATA, CATEGORY_ICON_CHOICES, ICON_LABELS } from '../js/ui/icons.js';
 
 const REQUIRED = [
   'food', 'transport', 'shopping', 'bills', 'fun', 'other',
@@ -17,6 +17,15 @@ test('CATEGORY_ICON_CHOICES has 18 entries, all defined, in order', () => {
   assert.equal(CATEGORY_ICON_CHOICES.length, 18);
   assert.deepEqual(CATEGORY_ICON_CHOICES, REQUIRED.slice(0, 18));
   for (const n of CATEGORY_ICON_CHOICES) assert.ok(ICON_NAMES.includes(n));
+});
+
+test('ICON_LABELS：每个 CATEGORY_ICON_CHOICES 都有中文名称，且没有多余项目', () => {
+  for (const n of CATEGORY_ICON_CHOICES) {
+    assert.equal(typeof ICON_LABELS[n], 'string', `missing label ${n}`);
+    assert.match(ICON_LABELS[n], /^[\u4e00-\u9fff]+$/, n);
+  }
+  assert.deepEqual(Object.keys(ICON_LABELS).sort(), [...CATEGORY_ICON_CHOICES].sort());
+  assert.ok(Object.isFrozen(ICON_LABELS));
 });
 
 test('every path string is non-empty and only has path commands and numbers', () => {
