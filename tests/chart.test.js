@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monotonePath, snapDay, trendLabel, trendState, CHART } from '../js/chart.js';
+import { monotonePath, snapDay, trendLabel, trendState, CHART, revealPercent } from '../js/chart.js';
 import { cumulativeByDay } from '../js/stats.js';
 
 // 解析 `M x y C c1x c1y c2x c2y x y …` → 每段 { y0, c1y, c2y, y1 }
@@ -80,4 +80,39 @@ test('trendState: no records → empty; one day → dot; normal → line scaled 
   assert.equal(st.mode, 'line'); assert.equal(st.lastDay, 31); assert.equal(st.total, 400);
   assert.equal(st.ys[0], CHART.H - CHART.PB); assert.equal(st.ys[30], CHART.PT);
   assert.ok(st.ys.every((y) => Number.isFinite(y)));
+});
+
+test('revealPercent：走势线揭开的距离对到最后有值那天（占图宽 %）', () => {
+  assert.equal(revealPercent(170, 340), 50);
+  assert.equal(revealPercent(400, 340), 100);
+  assert.equal(revealPercent(-1, 340), 0);
+});
+
+test('走势图拆层：线与渐层在 aria-hidden 的揭开层；统计页分类条用滑入、换月份有整块包装', async () => {
+  const { readFileSync } = await import('node:fs');
+  const tc = readFileSync(new URL('../js/ui/trend-chart.js', import.meta.url), 'utf8');
+  assert.match(tc, /class: 'trend-reveal'/);
+  assert.match(tc, /class: 'trend-art'/);
+  assert.match(tc, /playReveal/);
+  const sv = readFileSync(new URL('../js/ui/stats-view.js', import.meta.url), 'utf8');
+  assert.ok(!/bar\.style\.width/.test(sv), '分类条不能再改 width');
+  assert.match(sv, /slideX\(r\.ratio, 6\)/);
+  assert.match(sv, /class: 'stats-body'/);
+  assert.match(sv, /chart\.playReveal\(\)/);
+});
+
+test('走势图揭开层：内距放在里层（两层同宽，位移才相等）；连点换月份用序号；拖动时标记马上出现', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (sel) => { const i = css.indexOf(`\n${sel} {`); assert.ok(i >= 0, sel); return css.slice(i, css.indexOf('}', i)); };
+  assert.ok(!/padding/.test(rule('.trend-reveal')), '外层不能有内距');
+  assert.match(rule('.trend-reveal-in'), /padding:\s*4px/);
+  assert.equal(css.split('\n.trend-svg {').length - 1, 1, '.trend-svg 只有一条规则');
+  const sv = readFileSync(new URL('../js/ui/stats-view.js', import.meta.url), 'utf8');
+  assert.match(sv, /const seq = \+\+switchSeq;/);
+  assert.match(sv, /clipSupported\(\)/);
+  assert.match(sv, /Math\.min\(i, 8\)/);
+  const tc = readFileSync(new URL('../js/ui/trend-chart.js', import.meta.url), 'utf8');
+  assert.match(tc, /function stopReveal\(/);
+  assert.ok((tc.match(/stopReveal\(\)/g) || []).length >= 3, 'update（换月）、拖动、键盘都要停掉揭开');
 });

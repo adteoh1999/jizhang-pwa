@@ -2,8 +2,9 @@
 // 图表本身是一个滑杆（role=slider）：左右键 / VoiceOver 上下滑逐日移动；手指水平拖动逐日吸附。
 // 效能：资料变动时才重画曲线；拖动只改标记（竖线 + 圆点）与黑色标签的属性。
 import { h } from './dom.js';
-import { CHART, dayX, monotonePath, snapDay, trendLabel, trendState } from '../chart.js';
+import { CHART, dayX, monotonePath, snapDay, trendLabel, trendState, revealPercent } from '../chart.js';
 import { formatRM } from '../money.js';
+import { animate, fade, cancelAnims, reducedMotion, DUR, EASE_DRAW } from './motion.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const LOCK_DIST = 10;   // 判断方向前要移动的距离（同首页左滑删除）
@@ -48,9 +49,15 @@ export function mountTrendChart(container, { onChangeText } = {}) {
     class: 'trend-svg', viewBox: `0 0 ${W} ${H}`, role: 'slider', tabindex: 0,
     'aria-valuemin': 1,
   });
-  svg.append(defs, baseLine, futureLine, area, line, single, marker);
+  svg.append(baseLine, futureLine, single, marker);
+  // v2.3：线与渐层放在独立的 HTML 揭开层（在滑杆 SVG 底下），用「外层往右、里层往左」的反向位移
+  // 由左往右露出（只动 transform）。SVG 内部的 <g> 不能 overflow:hidden，所以拆出来
+  const art = s('svg', { class: 'trend-art', viewBox: `0 0 ${W} ${H}`, 'aria-hidden': 'true' });
+  art.append(defs, area, line);
+  const revealIn = h('div', { class: 'trend-reveal-in' }, art);
+  const reveal = h('div', { class: 'trend-reveal', 'aria-hidden': 'true' }, revealIn);
   const tip = h('div', { class: 'trend-tip', 'aria-hidden': 'true' });
-  const box = h('div', { class: 'trend-box' }, svg, tip);
+  const box = h('div', { class: 'trend-box' }, reveal, svg, tip);
   const axis = h('div', { class: 'trend-axis', 'aria-hidden': 'true' });
   const empty = h('p', { class: 'trend-empty', hidden: true });
   const element = h('section', { class: 'glass-card trend-card' },
@@ -114,6 +121,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
 
   function update(next) {
     const changed = next.month !== month || next.kind !== kind;
+    if (changed) stopReveal();   // 换月份 / 类型：不要被旧的揭开动画裁住
     const wasAtEnd = sel === lastDay;
     ({ month, kind, values } = next);
     const label = kind === 'income' ? '累计收入' : '累计支出';
@@ -167,6 +175,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
   // ---------- 键盘 / VoiceOver（WebKit 的 increment / decrement 会送方向键） ----------
   svg.addEventListener('keydown', (e) => {
     if (!lastDay) return;
+    stopReveal();   // 揭开中按键：标记马上出现
     const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
     if (step) place(sel + step);
     else if (e.key === 'Home') place(1);
@@ -179,6 +188,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
   const dayAt = (e) => snapDay(e.clientX - g.left, g.width, days, lastDay);
   svg.addEventListener('pointerdown', (e) => {
     if (!e.isPrimary || !lastDay || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    stopReveal();   // 揭开中拖动：标记马上出现
     const r = box.getBoundingClientRect(); // 手势开始时量一次；拖动中不再读版面
     boxW = r.width;
     g = { pid: e.pointerId, x0: e.clientX, y0: e.clientY, state: 'pending', left: r.left, width: r.width };
@@ -217,5 +227,39 @@ export function mountTrendChart(container, { onChangeText } = {}) {
     }).observe(box);
   }
 
-  return { update, element };
+  // 进入统计页时：线由左往右画出（只揭开到最后有值那天），画完后标记圆点弹出、竖线与标签淡入。
+  // delay：和分页淡入同时开始，前一小段整页还接近透明，所以晚一点开始。
+  function stopReveal() {
+    for (const el of [reveal, revealIn, mDot, single, mLine, tip]) cancelAnims(el);
+  }
+
+  function playReveal({ delay = 80 } = {}) {
+    if (box.hidden || !lastDay) return;
+    const parts = [mDot, single, mLine, tip];
+    stopReveal();
+    if (reducedMotion()) {
+      fade(reveal, 'in', { delay });
+      for (const el of parts) fade(el, 'in', { delay });
+      return;
+    }
+    if (!line.getAttribute('d')) { // 只有一个点（月初）：没有线可画，圆点直接弹出
+      for (const el of [mDot, single]) {
+        animate(el, [{ opacity: 0, transform: 'scale(0.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: DUR.dot, delay });
+      }
+      for (const el of [mLine, tip]) fade(el, 'in', { delay });
+      return;
+    }
+    const p = Math.min(100, revealPercent(pts[lastDay - 1][0], W) + 2); // +2%：线的圆头
+    animate(reveal, [{ transform: 'translateX(-100%)' }, { transform: `translateX(${(p - 100).toFixed(2)}%)` }],
+      { duration: DUR.draw, delay, easing: EASE_DRAW });
+    animate(revealIn, [{ transform: 'translateX(100%)' }, { transform: `translateX(${(100 - p).toFixed(2)}%)` }],
+      { duration: DUR.draw, delay, easing: EASE_DRAW });
+    const after = delay + DUR.draw - 60;
+    for (const el of [mDot, single]) {
+      animate(el, [{ opacity: 0, transform: 'scale(0.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: DUR.dot, delay: after });
+    }
+    for (const el of [mLine, tip]) fade(el, 'in', { delay: after });
+  }
+
+  return { update, element, playReveal };
 }

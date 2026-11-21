@@ -1411,6 +1411,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 .trend-box { position: relative; }
 .trend-svg {
+  position: relative;   /* v2.3：叠在走势线揭开层上面（拖动、键盘都在这一层） */
   display: block;
   width: 100%;
   height: auto;
@@ -1421,6 +1422,17 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   user-select: none;
   cursor: crosshair;
 }
+/* v2.3 走势线揭开层：在滑杆 SVG 底下、同大小；四边多 4px 才不会切到线的圆头。
+   内距放在里层：外层与里层要同宽，translateX 的百分比才相等（否则线会漂移） */
+.trend-reveal {
+  position: absolute;
+  inset: -4px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.trend-reveal-in { padding: 4px; }
+.trend-art { display: block; width: 100%; height: auto; overflow: visible; }
+.trend-mdot, .trend-single { transform-box: fill-box; transform-origin: center; }   /* 画完后圆点从中心弹出 */
 .trend-svg:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; border-radius: 8px; }
 .trend-base { stroke: var(--hairline); stroke-width: 1; }
 .trend-future { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
@@ -1491,13 +1503,23 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   white-space: nowrap;
 }
 .stats-bar {
+  position: relative;
   display: block;
   height: 6px;
   border-radius: 3px;
   background: var(--track);
   overflow: hidden;
 }
-.stats-bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--cat-fg, var(--secondary-label)); }
+/* v2.3 分类条「滑入」：固定 100% 宽，translateX 往左藏（只走合成）；::before 往左延伸补弹过头的缝 */
+.stats-bar-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border-radius: 0 3px 3px 0;
+  background: var(--cat-fg, var(--secondary-label));
+}
+.stats-bar-fill::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 100%; background: inherit; }
+.stats-body { display: flex; flex-direction: column; flex: 1 0 auto; }   /* 换月份时整块滑动 */
 .stats-row-nums { flex: none; display: grid; justify-items: end; gap: 3px; }
 .stats-row-amount {
   font: var(--font-body);

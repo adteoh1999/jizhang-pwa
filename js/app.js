@@ -11,7 +11,7 @@ import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
-import { animate, fade, cancelAnims, reducedMotion, DUR } from './ui/motion.js';
+import { animate, fade, cancelAnims, reducedMotion, clipSupported, DUR } from './ui/motion.js';
 
 const TABS = [
   { id: 'home', label: '首页', icon: 'tab-home', title: '记账', aside: true }, // aside：大标题右侧的当月
@@ -78,7 +78,6 @@ function mountShell(root, store) {
   const stats = mountStats(screens.get('stats').querySelector('.screen-content'), store);
   mountSettings(screens.get('settings').querySelector('.screen-content'), store);
 
-  const clipOK = typeof CSS !== 'undefined' && CSS.supports('overflow-x', 'clip');
   const tabbar = mountTabBar(root, {
     tabs: TABS,
     selected: active,
@@ -101,7 +100,7 @@ function mountShell(root, store) {
       window.scrollTo(0, scrollPos.get(id) || 0);
       // v2.3：新分页淡入＋轻微横向滑动（只能横向：首页的 FLIP 量的是 top）。
       // 减弱动态、或不支援 overflow-x: clip（iOS < 16，滑动时会出现横向滚动）→ 只淡入
-      if (reducedMotion() || !clipOK) fade(next, 'in', { id: 'tab' });
+      if (reducedMotion() || !clipSupported()) fade(next, 'in', { id: 'tab' });
       else {
         animate(next, [{ opacity: 0, transform: `translateX(${dir * 16}px)` }, { opacity: 1, transform: 'none' }],
           { duration: DUR.tab, id: 'tab' });

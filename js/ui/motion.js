@@ -30,6 +30,13 @@ export const DUR = {
   fade: 200, float: 1200, barStagger: 55, barDelay: 120, digitStagger: 22,
 };
 
+/** 支不支援 overflow-x: clip（iOS 16 起）；不支援时横向滑动会短暂出现横向滚动，只用淡入淡出。 */
+let clipOK = null;
+export function clipSupported() {
+  if (clipOK === null) clipOK = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('overflow-x', 'clip');
+  return clipOK;
+}
+
 export function reducedMotion() {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

@@ -9,6 +9,11 @@ export function dayX(day, days) {
   return CHART.PL + ((day - 1) / Math.max(1, days - 1)) * (CHART.W - CHART.PL - CHART.PR);
 }
 
+/** 走势线揭开到哪里（占图宽的 %）：对到最后有值那天的 x，夹在 0–100。 */
+export function revealPercent(xLast, W) {
+  return Math.min(100, Math.max(0, (xLast / W) * 100));
+}
+
 const f1 = (n) => n.toFixed(1);
 
 /**
