@@ -675,13 +675,18 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   flex-direction: column;
   border-radius: 30px 30px 0 0;
   background: var(--drawer);
-  box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.12);
+  /* 第二层：往下延伸的实色（看不到），进场弹过头时底部不露缝（面板有 overflow:hidden，不能用伪元素） */
+  box-shadow: 0 40px 0 0 var(--drawer), 0 -2px 20px rgba(0, 0, 0, 0.12);   /* 先写的画在上面 */
   transform: translateY(100%);
   transition: transform 0.4s var(--ease-out);
   touch-action: auto;
   overflow: hidden;
 }
 .overlay-modal.is-visible .modal-sheet { transform: translateY(0); } /* 下拉中由 inline transform 覆盖 */
+/* v2.3 进场带一点弹性（面板高 1%，iPhone 上约 8px，不会冲进状态栏；iPad / 桌面很高的视窗可能超 1–3px）。
+   只在进场时（is-entering），退场与下拉回弹维持 ease-out。注意：.is-dragging 的优先级比这条低，
+   所以 sheet.js 在开始下拉时先拿掉 is-entering */
+.overlay-modal.is-visible .modal-sheet.is-entering { transition: transform 0.46s var(--spring-sheet); }
 .modal-sheet.is-dragging { transition: none; }
 
 /* 把手 + 标题列：可下拉的区域 */
@@ -717,6 +722,12 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 .modal-sheet-action.is-bold { font-weight: 600; }
 .modal-sheet-action:disabled { color: var(--ink-3); }
+/* 储存成功：文字换成 ✓（储存中按钮是 disabled，但 ✓ 要用正常字色） */
+.modal-sheet-action.is-saved { position: relative; }
+.modal-sheet-action.is-saved:disabled { color: var(--ink); }
+.modal-sheet-check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.modal-sheet-saved-text { display: inline-block; }   /* inline 盒不吃 transform，上移要 inline-block */
+.modal-sheet.is-saving .modal-sheet-body { pointer-events: none; }   /* ✓ 停顿期间：已存好，不能再改 */
 .modal-sheet-action:active:not(:disabled) { opacity: 0.5; }
 
 .modal-sheet-body {
@@ -947,7 +958,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 /* Reduce Motion：sheet 不滑动（只有遮罩淡入），不抖动 */
 @media (prefers-reduced-motion: reduce) {
-  .modal-sheet { transition: none; }
+  .modal-sheet, .overlay-modal.is-visible .modal-sheet.is-entering { transition: none; }
   .overlay-modal:not(.is-visible) .modal-sheet { transform: none; }
   .segmented::before, .cat-tile-icon { transition: none; }
   .is-shaking { animation: none; }

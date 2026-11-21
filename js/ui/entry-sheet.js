@@ -11,7 +11,9 @@ import { parseAmount, minorToDecimalString } from '../money.js';
 import { todayLocal, isValidDateString } from '../dates.js';
 import { ValidationError, NOTE_MAX } from '../model.js';
 import { uuid } from '../uuid.js';
-import { markJustAdded, takeJustAdded } from './motion.js';
+import {
+  markJustAdded, takeJustAdded, animate, fade, reducedMotion, DUR, EASE_OUT,
+} from './motion.js';
 
 const MAX_DAYS_AHEAD = 365;
 
@@ -107,12 +109,20 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
           state.byKind[state.kind] = catId;
           clearError(catField, catError);
           renderGrid();
+          popSelected(); // 只有使用者点选时轻弹（store 通知引起的重画不弹）
         },
       },
     },
     h('span', { class: 'cat-tile-icon' }, icon(iconName, 22)),
     h('span', { class: 'cat-tile-name' }, name),
     deleted ? h('span', { class: 'cat-tile-badge' }, '已删除') : null);
+  }
+
+  // 选分类：新的圆标 scale(0.8) → 1 轻弹一下（整批图格已重画，对新节点播）
+  function popSelected() {
+    if (reducedMotion()) return;
+    const el = grid.querySelector('[aria-pressed="true"] .cat-tile-icon');
+    if (el) animate(el, [{ transform: 'scale(0.8)' }, { transform: 'scale(1)' }], { duration: DUR.pop });
   }
 
   function renderGrid() {
@@ -288,6 +298,26 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     }
   }
 
+  // 储存成功：右上「储存」文字淡出上移、✓ 弹入；按钮的读屏名称维持「储存」
+  async function showSaved(btn) {
+    const label = btn.textContent;
+    const text = h('span', { class: 'modal-sheet-saved-text' }, label);
+    const ok = h('span', { class: 'modal-sheet-check', 'aria-hidden': 'true' }, icon('check', 22));
+    btn.setAttribute('aria-label', label);
+    btn.classList.add('is-saved');
+    btn.replaceChildren(text, ok);
+    text.style.opacity = '0';   // 最终值写在 style 上，动画只用 backwards
+    if (reducedMotion()) {
+      fade(ok, 'in', { delay: 100 }); // 文字直接消失，✓ 淡入（不缩放）
+    } else {
+      animate(text, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-12px)' }],
+        { duration: 180, easing: EASE_OUT });
+      animate(ok, [{ opacity: 0, transform: 'scale(0.4)' }, { opacity: 1, transform: 'scale(1)' }],
+        { duration: DUR.check, delay: 90 });
+    }
+    await new Promise((r) => { setTimeout(r, 90 + DUR.check + DUR.checkHold); }); // ✓ 有 90ms 延迟，完整出现后停约 0.35 秒
+  }
+
   async function save() {
     if (saving) return;
     clearAllErrors();
@@ -302,8 +332,9 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
         id, kind: c.kind, amountMinor: parseAmount(c.amountText), categoryId: c.categoryId,
         occurredOn: c.date, note: c.note,
       });
-      sheet.close();
     } catch (e) {
+      saving = false;
+      sheet.rightButton.disabled = false;
       if (!tx) takeJustAdded(id); // 没存成：清掉标记（重试时会再标记）
       const missing = !!c.categoryId && !store.categoryById(c.categoryId);
       const msg = e instanceof ValidationError ? messageFor(e.field, c, missing) : null;
@@ -312,10 +343,17 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
         console.error(e);
         messageDialog({ title: '储存失败', message: '请稍后再试一次。' });
       }
-    } finally {
-      saving = false;
-      sheet.rightButton.disabled = false;
+      return;
     }
+    // 已经存好：变 ✓ 停一下再关。这段时间 saving 仍为 true（不能下拉、再存或删除），面板内容不接受点按。
+    // ✓ 动画出错也只记录，一定关闭（不能当成储存失败）
+    sheet.panel.classList.add('is-saving');
+    try {
+      await showSaved(sheet.rightButton);
+    } catch (e) {
+      console.error(e);
+    }
+    sheet.close();
   }
 
   async function confirmDelete() {

@@ -2,8 +2,8 @@
 // 入栈（nav.js）：Esc → onDismiss。下拉 / 点背景 / Esc 都走 requestDismiss，
 // 由呼叫者的 onDismissRequest 决定要不要关闭（例如先确认「放弃这次修改？」）。
 import { h } from './dom.js';
-import { pushLayer } from './nav.js';
 import { trapFocus } from './dialogs.js';
+import { pushLayer, trackExit } from './nav.js';
 
 let seq = 0;
 
@@ -44,7 +44,7 @@ export function openSheet({
       rightButton));
   const body = h('div', { class: 'modal-sheet-body' }, content);
   const panel = h('div', {
-    class: 'modal-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${id}-title`,
+    class: 'modal-sheet is-entering', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${id}-title`,
   }, header, body);
   const overlay = h('div', { class: 'overlay overlay-modal' }, panel);
   trapFocus(overlay, panel);
@@ -72,14 +72,19 @@ export function openSheet({
   // 下拉关闭：只在把手 / 标题列上（不含按钮），输入框与可滚动的内容不受影响
   let drag = null;
   const setOffset = (y) => { panel.style.transform = y > 0 ? `translateY(${y}px)` : ''; };
+  // 进场的弹簧只用在进场：播完、开始下拉、或关闭时拿掉（之后的回弹维持 ease-out）
+  const endEntering = () => panel.classList.remove('is-entering');
+  panel.addEventListener('transitionend', (e) => { if (e.target === panel) endEntering(); });
+  setTimeout(endEntering, 700); // 后备
   header.addEventListener('pointerdown', (e) => {
     if (closed || e.button > 0 || e.target.closest('button, input')) return;
+    endEntering(); // 必须：.is-dragging 的优先级比进场规则低
     drag = { id: e.pointerId, y0: e.clientY, dy: 0, samples: [{ t: e.timeStamp, y: e.clientY }] };
     panel.classList.add('is-dragging');
     try { header.setPointerCapture(e.pointerId); } catch { /* 部分浏览器不支援 */ }
   });
   header.addEventListener('pointermove', (e) => {
-    if (!drag || e.pointerId !== drag.id) return;
+    if (closed || !drag || e.pointerId !== drag.id) return;
     drag.dy = e.clientY - drag.y0;
     drag.samples.push({ t: e.timeStamp, y: e.clientY });
     while (drag.samples.length > 2 && e.timeStamp - drag.samples[0].t > VELOCITY_WINDOW) drag.samples.shift();
@@ -117,10 +122,14 @@ export function openSheet({
         vv.removeEventListener('resize', onViewport);
         vv.removeEventListener('scroll', onViewport);
       }
+      // 登记退场：首页等它播完（overlay 被移除）才重画、播动画。
+      // 减弱动态也一样等（遮罩仍有 0.2s 淡出）：太早放行会让首页在焦点还原之前重画
+      const release = trackExit();
+      drag = null;   // 关闭中不再被下拉手势写回位移
       overlay.classList.remove('is-visible');
       panel.classList.remove('is-dragging');
       panel.style.transform = ''; // 从目前（可能已下拉一段）的位置滑下去
-      const remove = () => overlay.remove();
+      const remove = () => { overlay.remove(); release(); };
       overlay.addEventListener('transitionend', (e) => { if (e.target === overlay) remove(); });
       setTimeout(remove, 450); // 后备
       if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
