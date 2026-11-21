@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { css, blockAfter, light, mediaDark, attrDark } from './helpers/css-tokens.js';
+import { readFileSync, readdirSync } from 'node:fs';
+import { css, blockAfter, namesAndValues, light, mediaDark, attrDark } from './helpers/css-tokens.js';
 
 const root = new URL('../', import.meta.url);
 
@@ -123,4 +123,36 @@ test('manifest and theme-color use the sky colors', () => {
 test('app.js prepends the .sky layer', () => {
   const js = readFileSync(new URL('js/app.js', root), 'utf8');
   assert.match(js, /document\.body\.prepend\(h\('div', \{ class: 'sky'/);
+});
+
+test('--spring / --spring-sheet：基础值是后备，@supports linear() 区块等于 motion.js 算出的字串', async () => {
+  const { SPRING, SPRING_SHEET, SPRING_FALLBACK } = await import('../js/ui/motion.js');
+  const base = namesAndValues(blockAfter(css, ':root {', css.lastIndexOf(':root {', css.indexOf('--ease-out'))));
+  assert.equal(base['--spring'], SPRING_FALLBACK);
+  assert.equal(base['--spring-sheet'], 'var(--ease-out)');
+  const sup = blockAfter(css, '@supports (transition-timing-function: linear(0, 1))');
+  const v = namesAndValues(blockAfter(sup, ':root {'));
+  assert.equal(v['--spring'], SPRING);
+  assert.equal(v['--spring-sheet'], SPRING_SHEET);
+  assert.ok(css.indexOf('@supports (transition-timing-function: linear(0, 1))') > css.indexOf('--ease-out'),
+    '@supports 要放在第一个 :root 之后');
+});
+
+test('JS 也不能用 will-change', () => {
+  const dir = new URL('js/', root);
+  const walk = (u) => readdirSync(u, { withFileTypes: true }).flatMap((d) => (d.isDirectory()
+    ? walk(new URL(`${d.name}/`, u)) : d.name.endsWith('.js') ? [new URL(d.name, u)] : []));
+  for (const f of walk(dir)) assert.ok(!/will-?change/i.test(readFileSync(f, 'utf8')), f.pathname);
+});
+
+test('标签栏胶囊与图示的回弹用 var(--spring)', () => {
+  assert.match(blockAfter(css, '\n.tabbar-pill {'), /transition:[^;]*var\(--spring\)/);
+  assert.match(blockAfter(css, '\n.tabbar-item svg {'), /transition:[^;]*var\(--spring\)/);
+});
+
+test('数字滚轮：容器裁切、行高等于格高，非数字段保留空格', () => {
+  const roll = blockAfter(css, '\n.roll {');
+  assert.match(roll, /overflow:\s*clip/);
+  assert.match(roll, /line-height:\s*var\(--roll-h\)/);
+  assert.match(blockAfter(css, '\n.roll > span {'), /white-space:\s*pre/);
 });

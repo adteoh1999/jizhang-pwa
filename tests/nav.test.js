@@ -1,12 +1,15 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { pushLayer, popLayer, depth, onDepthChange } from '../js/ui/nav.js';
+import { pushLayer, popLayer, depth, onDepthChange, whenIdle, trackExit } from '../js/ui/nav.js';
 
 // nav.js 是模块级单例：每个测试后清空堆叠。
 // 有 onDismiss 的层 popLayer 不会关闭，所以设上限，避免无限循环（剩下的层由测试自己 close）
 afterEach(() => {
   for (let i = 0; i < 100 && depth() > 0; i += 1) popLayer();
   assert.equal(depth(), 0, '测试结束时仍有浮层未关闭');
+  let idle = false;
+  whenIdle(() => { idle = true; });
+  assert.ok(idle, '测试结束时仍有未 release 的退场');
 });
 
 test('Node 环境（没有 document）可以载入 nav.js', () => {
@@ -138,4 +141,65 @@ test('onDismiss：popLayer 交给 onDismiss 决定（不直接关闭）；close(
   }
   assert.equal(closed, 1);
   assert.equal(depth(), 0);
+});
+
+test('whenIdle：没有浮层时同步执行', () => {
+  let n = 0;
+  whenIdle(() => { n += 1; });
+  assert.equal(n, 1);
+});
+
+test('whenIdle：等浮层关闭且退场 release 后才执行，只执行一次', () => {
+  const h = pushLayer({ onClose: () => {} });
+  let n = 0;
+  whenIdle(() => { n += 1; });
+  const release = trackExit();
+  h.close();
+  assert.equal(n, 0, '还有退场动画没播完');
+  release();
+  release();
+  assert.equal(n, 1);
+});
+
+test('whenIdle：依加入顺序执行', () => {
+  const h = pushLayer({ onClose: () => {} });
+  const order = [];
+  whenIdle(() => order.push(1));
+  whenIdle(() => order.push(2));
+  h.close();
+  assert.deepEqual(order, [1, 2]);
+});
+
+test('whenIdle：在 onClose 里才登记退场（sheet.js 的真实顺序）→ release 后才执行', () => {
+  let release = null;
+  const h = pushLayer({ onClose: () => { release = trackExit(); } });
+  let n = 0;
+  whenIdle(() => { n += 1; });
+  h.close();
+  assert.equal(n, 0, '面板退场还没播完就执行了');
+  release();
+  assert.equal(n, 1);
+});
+
+test('whenIdle：回调里又开新浮层 → 队列剩下的等下一次闲置', () => {
+  const h = pushLayer({ onClose: () => {} });
+  const order = [];
+  let h2 = null;
+  whenIdle(() => { order.push(1); h2 = pushLayer({ onClose: () => {} }); });
+  whenIdle(() => order.push(2));
+  h.close();
+  assert.deepEqual(order, [1]);
+  h2.close();
+  assert.deepEqual(order, [1, 2]);
+});
+
+test('trackExit：没被 release 时，保险计时到了自动 release', async () => {
+  const h = pushLayer({ onClose: () => {} });
+  let n = 0;
+  whenIdle(() => { n += 1; });
+  trackExit({ timeout: 20 });
+  h.close();
+  assert.equal(n, 0);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(n, 1);
 });

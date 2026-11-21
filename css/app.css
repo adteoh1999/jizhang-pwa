@@ -175,9 +175,19 @@
   --safe-left: env(safe-area-inset-left, 0px);
 
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  /* v2.3 弹簧：这里是后备（iOS < 17.2 不支援 linear()）；支援时由下面的 @supports 换成真的弹簧。
+     数值由 js/ui/motion.js 的 springLinear() 算出，测试会检查两边一致 */
+  --spring: cubic-bezier(0.34, 1.35, 0.64, 1);
+  --spring-sheet: var(--ease-out);
 }
 @media (min-width: 414px) {
   :root { --margin: 20px; }
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --spring: linear(0, 0.0219, 0.0796, 0.162, 0.2597, 0.365, 0.4716, 0.5747, 0.6709, 0.7577, 0.8339, 0.8986, 0.9521, 0.9947, 1.0273, 1.0509, 1.0667, 1.0759, 1.0797, 1.0793, 1.0756, 1.0697, 1.0622, 1.0539, 1.0454, 1.037, 1.0291, 1.0218, 1.0154, 1.0099, 1.0053, 1.0016, 0.9987, 0.9965, 0.9951, 0.9941, 0.9937, 0.9936, 0.9938, 0.9942, 1);   /* 中：弹过头 8% */
+    --spring-sheet: linear(0, 0.0126, 0.0461, 0.0946, 0.1533, 0.2183, 0.2866, 0.3557, 0.4238, 0.4894, 0.5516, 0.6097, 0.6632, 0.712, 0.7561, 0.7954, 0.8302, 0.8608, 0.8874, 0.9103, 0.9298, 0.9464, 0.9603, 0.9718, 0.9812, 0.9888, 0.9948, 0.9996, 1.0031, 1.0058, 1.0077, 1.0089, 1.0096, 1.01, 1.01, 1.0097, 1.0093, 1.0088, 1.0081, 1.0075, 1);   /* 记一笔面板：约 1% */
+  }
 }
 
 /* ---------- 3. 全域 ---------- */
@@ -290,6 +300,16 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   white-space: nowrap;
 }
 
+/* 数字滚轮（js/ui/motion.js rollTo）：每位是一条 0–9 直条，用 translateY 滚动。
+   容器用 inline-flex 裁切：基线取自第一格，仍和旁边的「RM」对齐（inline-block 加裁切会让基线掉到底边）。
+   --roll-h 是一格的高度；容器自己设同样的行高，数字格与非数字段才同高、不会被裁到。
+   非数字段（「RM 」、逗号、••••）保留空格（单独一个空格的 flex 子项会被折叠） */
+.roll { --roll-h: 1.05em; display: inline-flex; align-items: baseline; height: var(--roll-h); line-height: var(--roll-h); overflow: hidden; overflow: clip; }
+.roll > span { white-space: pre; }
+.roll > .reel { display: block; height: var(--roll-h); }
+.roll-col { display: block; }
+.roll-col > span { display: block; height: var(--roll-h); line-height: var(--roll-h); }
+
 .screen {
   padding-left: calc(var(--margin) + var(--safe-left));
   padding-right: calc(var(--margin) + var(--safe-right));
@@ -345,7 +365,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   border-radius: 28px;
   background: var(--btn-bg);
   transform: translateX(calc(var(--i, 0) * 100%));
-  transition: transform 0.42s cubic-bezier(0.34, 1.45, 0.6, 1);
+  transition: transform 0.42s var(--spring);
 }
 
 .tabbar-item {
@@ -361,7 +381,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   transition: color 0.2s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.tabbar-item svg { stroke-width: 2.3; transition: transform 0.35s cubic-bezier(0.34, 1.6, 0.6, 1); }
+.tabbar-item svg { stroke-width: 2.3; transition: transform 0.35s var(--spring); }
 .tabbar-item[aria-selected="true"] { color: var(--btn-fg); }
 .tabbar-item[aria-selected="true"] svg { transform: scale(1.06); }
 .tabbar-item:active svg { transform: scale(0.88); }
