@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -180,4 +180,54 @@ test('CSS：大标题列允许换行（大字级时月份换到下一行，不�
   const i = css.indexOf('.large-title-row {');
   assert.ok(i >= 0);
   assert.match(css.slice(i, css.indexOf('}', i)), /flex-wrap:\s*wrap/);
+});
+
+test('floatText：收入 +RM、支出 U+2212 RM', () => {
+  assert.equal(floatText({ kind: 'income', amount_minor: 480000 }), '+RM 4,800.00');
+  assert.equal(floatText({ kind: 'expense', amount_minor: 3800 }), '\u2212RM 38.00');
+});
+
+test('CSS/JS：比例线填充固定 100% 宽、只用 transform 滑入，左侧有延伸补缝', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const fill = css.slice(css.indexOf('\n.home-meter-fill {'), css.indexOf('}', css.indexOf('\n.home-meter-fill {')));
+  assert.match(fill, /width:\s*100%/);
+  assert.match(fill, /position:\s*absolute/);
+  const ext = css.slice(css.indexOf('\n.home-meter-fill::before {'));
+  assert.ok(css.includes('\n.home-meter-fill::before {'), '缺左侧延伸');
+  assert.match(ext.slice(0, ext.indexOf('}')), /right:\s*100%/);
+  assert.ok(!/meterFill\.style\.width/.test(js), '不能再改 width');
+  assert.match(js, /slideX\(/);
+});
+
+test('CSS：收入 / 支出滚轮的格高等于原本的行高', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
+  assert.match(css, /\.home-flow-v \.roll \{[^}]*--roll-h:\s*1\.294em/);
+});
+
+test('home.js：重画时机只有一个来源（whenIdle），拖动结束也走 requestRender', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  assert.ok(!/depth\(\)\s*>\s*0\)\s*\{\s*\n\s*if \(!idleQueued/.test(js) && !/if \(depth\(\) > 0\) \{\s*\n\s*if \(!idleQueued\)/.test(js), 'requestRender 不能自己判断 depth');
+  assert.ok(!/renderPending && dragging === 0\) flushRender\(\)/.test(js), '拖动结束不能直接画');
+  assert.match(js, /if \(pendingReason === null\) return;/);
+});
+
+test('home.js：切换眼睛时停掉金额动画、移除飘字，但不碰眼睛按钮', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const body = js.slice(js.indexOf('function setHidden('), js.indexOf('function floatUp('));
+  assert.match(body, /\.home-float/);
+  assert.ok(!/cancelAnims\(summary, \{ subtree: true \}\)/.test(body), '整张卡一起取消会连眼睛按钮的过渡也取消');
+});
+
+test('CSS：飘字在标签那一行（眼睛左边），不压在结余数字上', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const f = css.slice(css.indexOf('\n.home-card > .home-float {'));
+  const body = f.slice(0, f.indexOf('}'));
+  assert.match(body, /top:\s*22px/);
+  assert.match(body, /right:\s*60px/);
 });

@@ -152,7 +152,8 @@ test('标签栏胶囊与图示的回弹用 var(--spring)', () => {
 
 test('数字滚轮：容器裁切、行高等于格高，非数字段保留空格', () => {
   const roll = blockAfter(css, '\n.roll {');
-  assert.match(roll, /overflow:\s*clip/);
+  assert.match(roll, /overflow-y:\s*clip/);   // 只裁上下
+  assert.match(roll, /overflow-x:\s*visible/);
   assert.match(roll, /line-height:\s*var\(--roll-h\)/);
   assert.match(blockAfter(css, '\n.roll > span {'), /white-space:\s*pre/);
 });

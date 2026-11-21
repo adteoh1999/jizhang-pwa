@@ -11,6 +11,7 @@ import { parseAmount, minorToDecimalString } from '../money.js';
 import { todayLocal, isValidDateString } from '../dates.js';
 import { ValidationError, NOTE_MAX } from '../model.js';
 import { uuid } from '../uuid.js';
+import { markJustAdded, takeJustAdded } from './motion.js';
 
 const MAX_DAYS_AHEAD = 365;
 
@@ -296,12 +297,14 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     saving = true;
     sheet.rightButton.disabled = true;
     try {
+      if (!tx) markJustAdded(id); // 新增（不是编辑）→ 首页画出这一列时飘字；储存前就标记，不依赖首页何时重画
       await store.saveTransaction({
         id, kind: c.kind, amountMinor: parseAmount(c.amountText), categoryId: c.categoryId,
         occurredOn: c.date, note: c.note,
       });
       sheet.close();
     } catch (e) {
+      if (!tx) takeJustAdded(id); // 没存成：清掉标记（重试时会再标记）
       const missing = !!c.categoryId && !store.categoryById(c.categoryId);
       const msg = e instanceof ValidationError ? messageFor(e.field, c, missing) : null;
       if (msg) showError(e.field, msg);

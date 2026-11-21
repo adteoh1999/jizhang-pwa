@@ -10,7 +10,10 @@ import { openEntrySheet } from './entry-sheet.js';
 import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
 import { messageDialog } from './dialogs.js';
-import { depth } from './nav.js';
+import { depth, whenIdle } from './nav.js';
+import {
+  rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeJustAdded, DUR,
+} from './motion.js';
 import { summarizeMonth, groupByDate, spendMeter } from '../stats.js';
 import { formatRM } from '../money.js';
 import { todayLocal, monthOf, formatDayHeader, formatMonthTitle } from '../dates.js';
@@ -92,6 +95,13 @@ export function cardView(s, hidden) {
   };
 }
 
+/** 记账后卡片上飘出的字：收入「+RM x」、支出「−RM x」（U+2212）。 */
+export function floatText(tx) {
+  return tx.kind === 'income'
+    ? formatRM(tx.amount_minor, { sign: 'always' })
+    : formatRM(-tx.amount_minor);
+}
+
 /** 眼睛按钮的读屏标签与图示：标签说「按了会怎样」。 */
 export function eyeButtonState(hidden) {
   return hidden ? { label: '显示金额', icon: 'eye-off' } : { label: '隐藏金额', icon: 'eye' };
@@ -109,7 +119,6 @@ export function countText(n) {
   return `共 ${n} 笔`;
 }
 
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function mountHome(root, store, { monthEl = null, storage = defaultStorage() } = {}) {
   let today = todayLocal();
@@ -177,7 +186,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   const list = h('div', { class: 'home-list' });
   const moreBtn = h('button', {
     type: 'button', class: 'home-more', hidden: true,
-    on: { click: () => { shown += PAGE; requestRender(); } },
+    on: { click: () => { shown += PAGE; requestRender('more'); } },
   }, '显示更多');
 
   // 账单抽屉：白底上圆角，阴影挂在 .home-drawer::before；最少撑到画面底部（CSS flex）
@@ -242,13 +251,33 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   let renderPending = false;
   let rendering = false;       // render() 正在搬动 DOM
   const activeDrags = new Set(); // 拖动中的列 record
-  function requestRender() {
+  // reason：'data' 资料变动（会动画）、'wake' 从背景回来、'more' 显示更多。多次合并时 'data' 优先。
+  // 有浮层（记一笔面板等）时延后到浮层关完、退场播完（whenIdle），动画才看得到。
+  let pendingReason = null;
+  let idleQueued = false;
+  function requestRender(reason = 'data') {
+    pendingReason = pendingReason === 'data' || reason === 'data' ? 'data' : (pendingReason || reason);
     if (dragging > 0) { renderPending = true; return; }
-    render();
+    if (idleQueued) return;
+    idleQueued = true;
+    // whenIdle 是唯一的判断来源：没有浮层、退场也播完 → 同步执行；否则排队
+    whenIdle(() => {
+      idleQueued = false;
+      if (pendingReason === null) return;   // 已经画过了
+      if (dragging > 0) { renderPending = true; return; }
+      flushRender();
+    });
+  }
+  function flushRender() {
+    const r = pendingReason || 'data';
+    pendingReason = null;
+    render(r);
   }
 
   // ---------- 结余卡（切换眼睛只重画这一块，不重排账单列表） ----------
-  function paintCard() {
+  let lastRatio = null;   // 比例线上一次的比例（滑入动画的起点）
+  let painted = false;    // 第一次画卡片不动画
+  function paintCard(anim = false) {
     const eye = eyeButtonState(hidden);
     if (eyeBtn.getAttribute('aria-label') !== eye.label) { // 状态变了才换图示，不必每次 render 重建 SVG
       eyeBtn.setAttribute('aria-label', eye.label);
@@ -258,19 +287,28 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const v = cardView(lastSummary, hidden);
     balSign.textContent = v.sign;
     balSign.hidden = !v.sign;
-    balInt.textContent = v.int;
-    balDec.textContent = v.dec;
+    // 数字滚轮：只有变的位数滚动（隐藏时 anim 一定是 false，直接显示 ••••）
+    rollTo(balInt, v.int, { animate: anim });
+    rollTo(balDec, v.dec, { animate: anim });
     balanceEl.className = `home-balance ${v.sizeCls}`.trim();
     balSr.textContent = v.balSr;
     for (const [f, d] of [[income, v.income], [expense, v.expense]]) {
-      f.vis.textContent = d.text;
+      rollTo(f.vis, d.text, { animate: anim });
       f.sr.textContent = d.sr;
       f.el.className = `home-flow-v ${d.cls}`.trim();
     }
     const m = v.meter;
     meterBar.hidden = m.barHidden;
     meterBar.setAttribute('aria-label', m.label);
-    meterFill.style.width = `${m.pct}%`;
+    // 比例线「滑入」：填充条固定 100% 宽，只改 translateX（不重排）；线隐藏时当作 0，之后从 0 滑入
+    const ratio = m.barHidden ? 0 : m.pct / 100;
+    cancelAnims(meterFill);
+    meterFill.style.transform = slideX(ratio);
+    if (anim && lastRatio !== null && lastRatio !== ratio && !m.barHidden) {
+      if (reducedMotion()) fade(meterFill, 'in');
+      else animate(meterFill, [{ transform: slideX(lastRatio) }, { transform: slideX(ratio) }], { duration: DUR.bar });
+    }
+    lastRatio = ratio;
     meterNote.textContent = m.note;
     if (m.noteRead) meterNote.removeAttribute('aria-hidden');
     else meterNote.setAttribute('aria-hidden', 'true');
@@ -279,10 +317,29 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   function setHidden(next) {
     hidden = next;
     writeHidden(storage, hidden);
-    paintCard();
+    // 正在跑的滚动、比例线、飘字立刻停掉：切换眼睛本身不做动画，也不能露出金额（眼睛按钮自己的按压回弹不动）
+    for (const el of [balanceEl, income.el, expense.el, meterFill]) cancelAnims(el, { subtree: true });
+    for (const f of summary.querySelectorAll('.home-float')) f.remove();
+    paintCard(false);
   }
 
-  function render() {
+  // 飘字：记账后卡片上飘出「+RM x / −RM x」再淡出（aria-hidden，读屏不重复读）
+  function floatUp(tx) {
+    for (const old of summary.querySelectorAll('.home-float')) old.remove(); // 连记两笔：不叠在一起
+    const el = h('span', { class: `home-float${tx.kind === 'income' ? ' is-income' : ''}`, 'aria-hidden': 'true' }, floatText(tx));
+    summary.append(el);
+    const kf = reducedMotion()
+      ? [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }]
+      : [{ opacity: 0, transform: 'translateY(10px) scale(0.94)' },
+        { opacity: 1, transform: 'translateY(-4px) scale(1)', offset: 0.25 },
+        { opacity: 1, transform: 'translateY(-12px)', offset: 0.7 },
+        { opacity: 0, transform: 'translateY(-24px)' }];
+    const a = animate(el, kf, { duration: DUR.float, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' });
+    if (a) a.finished.then(() => el.remove(), () => el.remove());
+    else el.remove();
+  }
+
+  function render(reason = 'data') {
     renderPending = false;
     today = todayLocal();
     const all = store.transactions();
@@ -290,7 +347,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const s = summarizeMonth(all, month);
     if (monthEl) monthEl.textContent = formatMonthTitle(month);
     lastSummary = s;
-    paintCard();
+    const anim = shouldAnimateCard({ first: !painted, hidden, reason });
+    painted = true;
+    paintCard(anim);
     countEl.textContent = countText(all.length);
 
     const scrollY = window.scrollY;
@@ -309,6 +368,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
     const groups = groupByDate(all);
     const seen = new Set();
+    const added = [];   // 这次新出现的列
     order = [];
     const frag = [];
     rendering = true; // 从这里开始列节点会被搬到新的 <ul>（append 时就离开旧位置）
@@ -320,7 +380,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
         budget -= items.length;
         const lis = items.map((tx) => {
           let rec = rows.get(tx.id);
-          if (!rec) { rec = buildRow(tx); rows.set(tx.id, rec); }
+          if (!rec) { rec = buildRow(tx); rows.set(tx.id, rec); added.push(tx); }
           fillRow(rec, tx);
           seen.add(tx.id);
           order.push(tx.id);
@@ -344,6 +404,11 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     }
     moreBtn.hidden = all.length <= shown;
 
+    // 刚记的一笔（日期在本月）→ 飘字；取走标记，之后不会再飘
+    for (const tx of added) {
+      if (takeJustAdded(tx.id) && anim && monthOf(tx.occurred_on) === month) floatUp(tx);
+    }
+
     // 保持滚动位置与焦点（重排列节点会让焦点掉到 body）
     if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
     if (hadFocus && document.contains(hadFocus)) {
@@ -355,9 +420,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   }
 
   // ---------- 滑开 / 关闭 ----------
-  function setOffset(rec, x, animate) {
+  function setOffset(rec, x, withTransition) {
     rec.offset = x;
-    const anim = animate && !reducedMotion();
+    const anim = withTransition && !reducedMotion();
     rec.content.classList.toggle('is-animating', anim);
     rec.del.classList.toggle('is-animating', anim);
     rec.content.style.transform = x ? `translateX(${x}px)` : '';
@@ -447,7 +512,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
       } else {
         closeRow(rec);
       }
-      if (renderPending && dragging === 0) render();
+      if (renderPending && dragging === 0) { renderPending = false; requestRender(pendingReason || 'data'); }
     }
     rec.finishDrag = (cancelled) => finish(g, cancelled);
     rec.dragPointerId = () => (g ? g.pid : null);
@@ -539,9 +604,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   });
 
   // ---------- 更新时机 ----------
-  store.subscribe(requestRender);
+  store.subscribe(() => requestRender('data'));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && todayLocal() !== today) requestRender();
+    if (document.visibilityState === 'visible' && todayLocal() !== today) requestRender('wake');
   });
 
   render();

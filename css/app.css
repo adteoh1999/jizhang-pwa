@@ -302,9 +302,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 /* 数字滚轮（js/ui/motion.js rollTo）：每位是一条 0–9 直条，用 translateY 滚动。
    容器用 inline-flex 裁切：基线取自第一格，仍和旁边的「RM」对齐（inline-block 加裁切会让基线掉到底边）。
-   --roll-h 是一格的高度；容器自己设同样的行高，数字格与非数字段才同高、不会被裁到。
+   --roll-h 是一格的高度；容器自己设同样的行高（之后若被 font 简写盖掉也没关系，靠基线对齐）。
+   只裁上下：左右不裁，负字距时最后一位的墨迹不会被切掉。
    非数字段（「RM 」、逗号、••••）保留空格（单独一个空格的 flex 子项会被折叠） */
-.roll { --roll-h: 1.05em; display: inline-flex; align-items: baseline; height: var(--roll-h); line-height: var(--roll-h); overflow: hidden; overflow: clip; }
+.roll { --roll-h: 1.05em; display: inline-flex; align-items: baseline; height: var(--roll-h); line-height: var(--roll-h); overflow: hidden; overflow-x: visible; overflow-y: clip; }
 .roll > span { white-space: pre; }
 .roll > .reel { display: block; height: var(--roll-h); }
 .roll-col { display: block; }
@@ -1089,7 +1090,23 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font-variant-numeric: tabular-nums;
   white-space: nowrap;           /* 「RM」与数字不断开 */
 }
-.home-flow-v.is-small { font-size: 0.8824rem; }   /* 缩一级（subhead 字级） */
+.home-flow-v.is-small { font-size: 0.8824rem; }
+.home-flow-v .roll { --roll-h: 1.294em; }   /* 滚轮格高＝原本的行高，卡片高度不变 */
+/* 记账飘字：在「本月结余」那一行、眼睛左边，往上飘（不压在结余数字上）；动画结束就移除（.home-card > * 的 position 要压过） */
+.home-card > .home-float {
+  position: absolute;
+  top: 22px;
+  right: 60px;
+  z-index: 2;
+  font: var(--font-headline);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+}
+.home-card > .home-float.is-income { color: var(--income); }   /* 缩一级（subhead 字级） */
 /* 窄屏：粗体金额较宽，一般金额（到 RM 999,999.99）也缩一级，收入、支出才能并排；百万以上会上下堆叠（flex-wrap） */
 @media (max-width: 359px) {
   .home-flow-v { font-size: 0.8824rem; }
@@ -1098,16 +1115,30 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、同色 */
 .home-meter { display: grid; gap: 7px; margin-top: 16px; }
 .home-meter-bar {
+  position: relative;
   height: 4px;
   border-radius: 2px;
   background: var(--track);
   overflow: hidden;
 }
+/* 比例线「滑入」（v2.3）：填充条固定 100% 宽，用 translateX 往左藏（只走合成，圆角不被压扁）。
+   只留右侧圆角（左侧由轨道的圆角裁切）；::before 往左延伸同色，弹过头时左边不露缝 */
 .home-meter-fill {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border-radius: 0 2px 2px 0;
   background: var(--ink);
+  transform: translateX(-100%);
+}
+.home-meter-fill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 100%;
+  background: inherit;
 }
 .home-meter-note {
   font: var(--font-caption);
