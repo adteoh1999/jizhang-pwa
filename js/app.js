@@ -61,7 +61,6 @@ function mountShell(root, store) {
       'data-screen': t.id, id: `screen-${t.id}`, role: 'tabpanel', 'aria-labelledby': `tab-${t.id}`,
       class: 'screen', hidden: t.id !== active,
     },
-    h('header', { class: 'nav-bar' }),
     t.aside
       ? h('div', { class: 'large-title-row' },
         h('h1', { class: 'large-title' }, t.title), h('span', { class: 'large-title-aside' }))

@@ -24,7 +24,27 @@ test('every literal-colour light token also exists in both dark blocks', () => {
 
 test('html rule has no background (body background must propagate under .sky)', () => {
   assert.ok(!/background/.test(blockAfter(css, '\nhtml {')));
-  assert.match(blockAfter(css, '\nbody {'), /background:\s*var\(--sky-low\)/);
+  // body 底色＝天空顶端色：iOS 26 取样页面底色给状态栏上色，必须与天空顶端、theme-color 同色
+  assert.match(blockAfter(css, '\nbody {'), /background:\s*var\(--sky-top\)/);
+});
+
+test('empty 44px nav-bar is gone (titles sit right under the status bar)', () => {
+  assert.ok(!/\.nav-bar\b/.test(css));
+  assert.ok(!/'nav-bar'/.test(readFileSync(new URL('js/app.js', root), 'utf8')));
+});
+
+test('sub-page top matches the status bar (sky-top)', () => {
+  assert.match(blockAfter(css, '\n.nav-page {'), /background-color:\s*var\(--sky-top\)/);
+});
+
+test('reduced transparency keeps sky-top at the top and hides the fade band', () => {
+  assert.match(css, /\.sky \{ background-image: linear-gradient\(var\(--sky-top\), var\(--sky-mid\) 64px\); \}/);
+  assert.match(css, /\.sky::before \{ display: none; \}/);
+});
+
+test('status bar seam: .sky carries sky-top as background-color and a top fade band', () => {
+  assert.match(blockAfter(css, '\n.sky {'), /background-color:\s*var\(--sky-top\)/);
+  assert.match(blockAfter(css, '\n.sky::before {'), /linear-gradient\(var\(--sky-top\), transparent\)/);
 });
 
 test('spec colors are used verbatim', () => {
@@ -74,7 +94,7 @@ test('no forbidden perf patterns', () => {
 
 test('manifest and theme-color use the sky colors', () => {
   const man = JSON.parse(readFileSync(new URL('manifest.webmanifest', root), 'utf8'));
-  assert.equal(man.background_color, '#E6ECF1');
+  assert.equal(man.background_color, '#D5E0EA');   // 启动画面＝天空顶端色，与状态栏、body 相同
   assert.equal(man.theme_color, '#D5E0EA');
   const html = readFileSync(new URL('index.html', root), 'utf8');
   assert.match(html, /<meta name="theme-color" content="#D5E0EA" media="\(prefers-color-scheme: light\)">/);
