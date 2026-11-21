@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   springLinear, SPRING, SPRING_SHEET, slideX, digitPlan, shouldAnimateCard,
-  markJustAdded, takeJustAdded, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns,
+  markJustAdded, takeJustAdded, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns, animate, flipPlan,
 } from '../js/ui/motion.js';
 
 test('springLinear：41 个点、首 0 尾 1、最大值 ≈ 1+p', () => {
@@ -89,4 +89,25 @@ test('digitPlan：小数位逐位对齐（.05 → .50）', () => {
 test('rollRuns：连续的非数字字元合成一段，数字各自一段', () => {
   assert.deepEqual(rollRuns(digitPlan('', 'RM 1,2')).map((r) => (r.digit ? r.to : r.text)), ['RM ', 1, ',', 2]);
   assert.deepEqual(rollRuns(digitPlan('', '••••')).map((r) => r.text), ['••••']);
+});
+
+test('animate：浏览器的 animate 抛错时回传 null（动画是装饰，不能弄坏功能）', () => {
+  const el = { animate() { throw new TypeError('bad easing'); } };
+  assert.equal(animate(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 100 }), null);
+  assert.equal(animate(null, [], { duration: 1 }), null);
+});
+
+test('flipPlan：留下的元素位移、新元素进场、巢状只算相对位移、父进场子不动、画面外与 skip 不动', () => {
+  // items：依文件顺序；parent = 最近的 [data-flip] 祖先在 items 里的索引（没有 = -1）
+  const items = [
+    { key: 'd1', top: 100, parent: -1 },   // 日期区块往下移 50
+    { key: 't1', top: 130, parent: 0 },    // 列：画面上移 60 → 相对父 10
+    { key: 'd2', top: 300, parent: -1 },   // 新日期区块
+    { key: 't2', top: 330, parent: 2 },    // 新区块里的新列：不另外动
+    { key: 't3', top: 2000, parent: -1 },  // 画面外
+    { key: 't4', top: 400, parent: -1, skip: true }, // 正在滑出
+  ];
+  const before = new Map([['d1', 50], ['t1', 70], ['t3', 1900], ['t4', 380]]);
+  const plan = flipPlan(items, before, { vh: 800, isEnter: () => true });
+  assert.deepEqual([...plan.entries()], [[0, { dy: -50 }], [1, { dy: -10 }], [2, { enter: true, dy: 0 }]]);
 });

@@ -175,8 +175,8 @@ export function mountTrendChart(container, { onChangeText } = {}) {
   // ---------- 键盘 / VoiceOver（WebKit 的 increment / decrement 会送方向键） ----------
   svg.addEventListener('keydown', (e) => {
     if (!lastDay) return;
-    stopReveal();   // 揭开中按键：标记马上出现
     const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+    if (step || e.key === 'Home' || e.key === 'End') stopReveal();   // 揭开中按键：标记马上出现（Tab 经过不停）
     if (step) place(sel + step);
     else if (e.key === 'Home') place(1);
     else if (e.key === 'End') place(lastDay);

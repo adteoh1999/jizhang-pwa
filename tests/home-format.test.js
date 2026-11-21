@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -268,4 +268,17 @@ test('home.js：滑出中的列不能再打开编辑；首页隐藏时不做 FLI
   assert.match(js, /list\.closest\('\[hidden\]'\)/);
   const out = js.slice(js.indexOf('function slideOut('), js.indexOf('function deleteRow('));
   assert.match(out, /setTimeout\(/);
+});
+
+test('mergeReason：多次变动合并，data 优先', () => {
+  assert.equal(mergeReason(null, 'wake'), 'wake');
+  assert.equal(mergeReason('wake', 'data'), 'data');
+  assert.equal(mergeReason('data', 'more'), 'data');
+  assert.equal(mergeReason('more', 'wake'), 'more');
+});
+
+test('rowTapAllowed：有还没画上去的变动时，不能点列（会拿到旧资料）', () => {
+  assert.equal(rowTapAllowed(null), true);
+  assert.equal(rowTapAllowed('data'), false);
+  assert.equal(rowTapAllowed('wake'), false);
 });

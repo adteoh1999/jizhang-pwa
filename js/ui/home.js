@@ -108,6 +108,16 @@ export function flipEnterable(reason, first) {
   return !first && reason === 'data';
 }
 
+/** 重画原因合并：'data'（资料变动，会动画）优先，其余保留先来的。 */
+export function mergeReason(pending, reason) {
+  return pending === 'data' || reason === 'data' ? 'data' : (pending || reason);
+}
+
+/** 有还没画上去的变动（面板正在退场、首页延后重画）时不处理点列：列上还是旧资料。 */
+export function rowTapAllowed(pendingReason) {
+  return pendingReason === null;
+}
+
 /** 眼睛按钮的读屏标签与图示：标签说「按了会怎样」。 */
 export function eyeButtonState(hidden) {
   return hidden ? { label: '显示金额', icon: 'eye-off' } : { label: '隐藏金额', icon: 'eye' };
@@ -262,7 +272,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   let pendingReason = null;
   let idleQueued = false;
   function requestRender(reason = 'data') {
-    pendingReason = pendingReason === 'data' || reason === 'data' ? 'data' : (pendingReason || reason);
+    pendingReason = mergeReason(pendingReason, reason);
     if (dragging > 0) { renderPending = true; return; }
     if (idleQueued) return;
     idleQueued = true;
@@ -308,7 +318,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     meterBar.setAttribute('aria-label', m.label);
     // 比例线「滑入」：填充条固定 100% 宽，只改 translateX（不重排）；线隐藏时当作 0，之后从 0 滑入
     const ratio = m.barHidden ? 0 : m.pct / 100;
-    cancelAnims(meterFill);
+    if (!anim || ratio !== lastRatio) cancelAnims(meterFill);   // 比例没变就让正在滑的线滑完
     meterFill.style.transform = slideX(ratio);
     if (anim && lastRatio !== null && lastRatio !== ratio && !m.barHidden) {
       if (reducedMotion()) fade(meterFill, 'in');
@@ -431,7 +441,10 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     if (before) {
       // 只有这次新出现的列（新增、撤销）与新的日期区块才滑入；不在「之前」的其他列（例如第 201 笔补上来）不算
       const addedKeys = new Set(added.map((tx) => `t${tx.id}`));
-      playFlip(list, before, { isEnter: (key) => key.startsWith('d') || addedKeys.has(key) });
+      playFlip(list, before, {
+        isEnter: (key) => key.startsWith('d') || addedKeys.has(key),
+        skip: (el) => !!(rows.get(el.dataset.id) || {}).deleting,   // 正在滑出的列不要被补位动画盖掉
+      });
     }
   }
 
@@ -469,6 +482,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   function onRowClick(rec) {
     if (rec.deleting) return;               // 正在滑出 / 删除中
+    if (!rowTapAllowed(pendingReason)) return; // 面板刚关、首页还没重画：列上是旧资料
     const now = performance.now();
     if (now < rec.suppressClickUntil) return;                // 刚拖动过
     if (closingGesture || now < swallowClickUntil) return;   // 这一下是用来关闭别列的
@@ -478,6 +492,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   // 左滑删除：整列先往左滑出＋淡出，播完才真的删除；之后 render 移除节点，下面的列由 FLIP 补位
   function slideOut(el) {
+    cancelAnims(el, { id: 'flip' });   // 补位中按删除：直接从定位处滑出
     const a = reducedMotion()
       ? fade(el, 'out')
       : animate(el, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0 }],
@@ -493,6 +508,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   function deleteRow(rec) {
     if (rec.deleting) return;
+    if (!rowTapAllowed(pendingReason)) { closeRow(rec); return; } // 还没重画：这一笔可能已经被删或改了
     rec.deleting = true;
     if (openRow === rec) openRow = null;   // 滑出中点别处不要再把内容收回来
     const { id } = rec;

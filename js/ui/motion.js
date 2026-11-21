@@ -60,9 +60,14 @@ function linearSupported() {
 /** element.animate 的包装：不支援时回传 null；预设弹簧、fill backwards（延迟期间就停在起点）。id：用来只取消自己的动画。 */
 export function animate(el, keyframes, { duration, easing = SPRING, delay = 0, fill = 'backwards', id = '' } = {}) {
   if (!el || typeof el.animate !== 'function') return null;
-  const a = el.animate(keyframes, { duration, easing: pickEasing(easing, linearSupported()), delay, fill });
-  if (id) a.id = id;
-  return a;
+  try {
+    const a = el.animate(keyframes, { duration, easing: pickEasing(easing, linearSupported()), delay, fill });
+    if (id) a.id = id;
+    return a;
+  } catch (e) {
+    console.error(e);   // 动画只是装饰：出错就不播，功能照常
+    return null;
+  }
 }
 
 /** 取消元素上的动画（只取消 id 相符的；不给 id 就全部）。不支援 getAnimations 时不做事。 */
@@ -188,33 +193,44 @@ export function snapshotTops(root) {
  * 巢状（日期区块里的列）：子元素只做「相对父元素」的位移；父元素在进场时子元素不另外动画。
  * 只动画面里看得到的元素。减弱动态：不位移，新元素淡入。
  */
-export function playFlip(root, before, { isEnter = () => false } = {}) {
+export function playFlip(root, before, { isEnter = () => false, skip = () => false } = {}) {
   cancelAnims(root, { id: 'flip', subtree: true });   // 一次取完再取消，不和量位置交错
   const els = [...root.querySelectorAll('[data-flip]')];
-  const vh = window.innerHeight;
-  const tops = els.map((el) => el.getBoundingClientRect().top);   // 只排版一次
-  const rm = reducedMotion();
-  const plan = new Map();   // el → { dy } 或 { enter: true }
-  els.forEach((el, i) => {
-    const key = el.dataset.flip;
+  const index = new Map(els.map((el, i) => [el, i]));
+  const items = els.map((el) => {
     const anc = el.parentElement && el.parentElement.closest('[data-flip]');
-    const a = anc && root.contains(anc) ? plan.get(anc) : null;
-    if (a && a.enter) return;   // 父元素整块进场
-    if (tops[i] < -80 || tops[i] > vh) return;
-    if (before.has(key)) {
-      const dy = before.get(key) - tops[i] - (a ? a.dy : 0);
-      plan.set(el, { dy });
-    } else if (isEnter(key)) {
-      plan.set(el, { enter: true, dy: 0 });
-    }
+    return {
+      key: el.dataset.flip,
+      top: el.getBoundingClientRect().top,   // 只排版一次
+      parent: anc && index.has(anc) ? index.get(anc) : -1,
+      skip: skip(el),
+    };
   });
-  for (const [el, p] of plan) {
+  const rm = reducedMotion();
+  for (const [i, p] of flipPlan(items, before, { vh: window.innerHeight, isEnter })) {
+    const el = els[i];
     if (p.enter) {
-      const a = rm ? fade(el, 'in')
-        : animate(el, [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.rowIn, delay: 40 });
-      if (a) a.id = 'flip';
+      if (rm) fade(el, 'in', { id: 'flip' });
+      else animate(el, [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.rowIn, delay: 40, id: 'flip' });
     } else if (!rm && Math.abs(p.dy) >= 0.5) {
       animate(el, [{ transform: `translateY(${p.dy}px)` }, { transform: 'none' }], { duration: DUR.rowMove, id: 'flip' });
     }
   }
+}
+
+/**
+ * FLIP 规划（纯函数）。items 依文件顺序：{ key, top（之后的位置）, parent（最近的 flip 祖先索引，没有 = -1）, skip }。
+ * 回传 Map(索引 → { dy }（相对父元素的位移）或 { enter: true, dy: 0 })。
+ * 父元素进场时子元素不另外动；画面外（top < -80 或 > vh）与 skip（例如正在滑出）的不动。
+ */
+export function flipPlan(items, before, { vh, isEnter }) {
+  const plan = new Map();
+  items.forEach((it, i) => {
+    const a = it.parent >= 0 ? plan.get(it.parent) : null;
+    if (a && a.enter) return;
+    if (it.skip || it.top < -80 || it.top > vh) return;
+    if (before.has(it.key)) plan.set(i, { dy: before.get(it.key) - it.top - (a ? a.dy : 0) });
+    else if (isEnter(it.key)) plan.set(i, { enter: true, dy: 0 });
+  });
+  return plan;
 }
