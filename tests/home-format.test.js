@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -230,4 +230,42 @@ test('CSS：飘字在标签那一行（眼睛左边），不压在结余数字�
   const body = f.slice(0, f.indexOf('}'));
   assert.match(body, /top:\s*22px/);
   assert.match(body, /right:\s*60px/);
+});
+
+test('flipEnterable：只有「资料变动」的新列会滑入；显示更多、从背景回来、首次不会', () => {
+  assert.equal(flipEnterable('data', false), true);
+  assert.equal(flipEnterable('more', false), false);
+  assert.equal(flipEnterable('wake', false), false);
+  assert.equal(flipEnterable('data', true), false);
+});
+
+test('home.js：列与日期区块带 data-flip，render 前后量位置；左滑删除先滑出才删', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  assert.match(js, /'data-flip': `t\$\{tx\.id\}`/);
+  assert.match(js, /'data-flip': `d\$\{g\.date\}`/);
+  assert.match(js, /snapshotTops\(list\)/);
+  assert.match(js, /playFlip\(list,/);
+  const del = js.slice(js.indexOf('function deleteRow('), js.indexOf('function attachSwipe('));
+  assert.ok(del.indexOf('slideOut') >= 0 && del.indexOf('store.deleteTransaction') >= 0);
+  assert.ok(del.indexOf('slideOut') < del.indexOf('store.deleteTransaction'), '要先滑出再删除');
+  assert.match(del, /if \(rec\.deleting\) return;/);
+  assert.match(del, /cancelAnims\(rec\.el, \{ id: 'row-out' \}\)/);
+  // 删除成功就把旧 rec 从 rows 拿掉：之后撤销一定建新节点（旧节点停在透明）
+  assert.match(del, /if \(rows\.get\(id\) === rec\) rows\.delete\(id\);/);
+  const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
+  assert.ok(render.indexOf('snapshotTops(list)') < render.indexOf('list.replaceChildren(...frag)'));
+  assert.ok(render.indexOf('window.scrollTo(0, scrollY)') < render.indexOf('playFlip(list,'));
+  // 只有这次新出现的列（或新的日期区块）才滑入
+  assert.match(render, /addedKeys\.has\(key\)/);
+});
+
+test('home.js：滑出中的列不能再打开编辑；首页隐藏时不做 FLIP；滑出有保险计时', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const click = js.slice(js.indexOf('function onRowClick('), js.indexOf('function onRowClick(') + 300);
+  assert.match(click, /if \(rec\.deleting\) return;/);
+  assert.match(js, /list\.closest\('\[hidden\]'\)/);
+  const out = js.slice(js.indexOf('function slideOut('), js.indexOf('function deleteRow('));
+  assert.match(out, /setTimeout\(/);
 });

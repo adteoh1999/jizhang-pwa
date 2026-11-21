@@ -182,8 +182,8 @@ export function snapshotTops(root) {
  * 只动画面里看得到的元素。减弱动态：不位移，新元素淡入。
  */
 export function playFlip(root, before, { isEnter = () => false } = {}) {
+  cancelAnims(root, { id: 'flip', subtree: true });   // 一次取完再取消，不和量位置交错
   const els = [...root.querySelectorAll('[data-flip]')];
-  for (const el of els) cancelAnims(el, { id: 'flip' });
   const vh = window.innerHeight;
   const tops = els.map((el) => el.getBoundingClientRect().top);   // 只排版一次
   const rm = reducedMotion();

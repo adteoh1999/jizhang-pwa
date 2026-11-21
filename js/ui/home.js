@@ -13,6 +13,7 @@ import { messageDialog } from './dialogs.js';
 import { depth, whenIdle } from './nav.js';
 import {
   rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeJustAdded, DUR,
+  EASE_OUT, snapshotTops, playFlip,
 } from './motion.js';
 import { summarizeMonth, groupByDate, spendMeter } from '../stats.js';
 import { formatRM } from '../money.js';
@@ -100,6 +101,11 @@ export function floatText(tx) {
   return tx.kind === 'income'
     ? formatRM(tx.amount_minor, { sign: 'always' })
     : formatRM(-tx.amount_minor);
+}
+
+/** 列表重画后，新出现的列要不要从上方滑入：只有资料变动（不是首次、显示更多、从背景回来）。 */
+export function flipEnterable(reason, first) {
+  return !first && reason === 'data';
 }
 
 /** 眼睛按钮的读屏标签与图示：标签说「按了会怎样」。 */
@@ -216,7 +222,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
         focus: () => { if (!rec.dragging) openRowTo(rec); },
       },
     }, '删除');
-    rec.el = h('li', { class: 'home-row', 'data-id': tx.id }, rec.content, rec.del);
+    rec.el = h('li', { class: 'home-row', 'data-id': tx.id, 'data-flip': `t${tx.id}` }, rec.content, rec.del);
     rec.el.addEventListener('focusout', (e) => {
       if (rendering) return; // 重排列节点时 Chrome 也会发 focusout（relatedTarget=null），不算焦点离开
       if (openRow === rec && !rec.el.contains(e.relatedTarget)) closeRow(rec);
@@ -347,7 +353,8 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const s = summarizeMonth(all, month);
     if (monthEl) monthEl.textContent = formatMonthTitle(month);
     lastSummary = s;
-    const anim = shouldAnimateCard({ first: !painted, hidden, reason });
+    const first = !painted;
+    const anim = shouldAnimateCard({ first, hidden, reason });
     painted = true;
     paintCard(anim);
     countEl.textContent = countText(all.length);
@@ -371,6 +378,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const added = [];   // 这次新出现的列
     order = [];
     const frag = [];
+    // FLIP：资料变动时先量每一列与日期区块的位置（含进行中的位移），重画后从旧位置补位
+    // 首页不在画面上（切到别的分页）时不做：量到的位置都是 0
+    const before = flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
     rendering = true; // 从这里开始列节点会被搬到新的 <ul>（append 时就离开旧位置）
     try {
       let budget = shown;
@@ -386,7 +396,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
           order.push(tx.id);
           return rec.el;
         });
-        frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today) },
+        frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today), 'data-flip': `d${g.date}` },
           h('h2', { class: 'home-day-header' },
             h('span', null, formatDayHeader(g.date, today)),
             h('span', { class: 'home-day-net' }, formatRM(g.net, { sign: 'always' }))),
@@ -416,6 +426,12 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     } else if (focusIdx !== -1 && order.length) {
       // 有焦点的那列被删掉 → 焦点移到原位置的下一列（键盘 / VoiceOver 不会掉回页首）
       rows.get(order[Math.min(focusIdx, order.length - 1)]).content.focus({ preventScroll: true });
+    }
+    // 「之后」的位置要在还原 scrollY 之后量
+    if (before) {
+      // 只有这次新出现的列（新增、撤销）与新的日期区块才滑入；不在「之前」的其他列（例如第 201 笔补上来）不算
+      const addedKeys = new Set(added.map((tx) => `t${tx.id}`));
+      playFlip(list, before, { isEnter: (key) => key.startsWith('d') || addedKeys.has(key) });
     }
   }
 
@@ -452,6 +468,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   }
 
   function onRowClick(rec) {
+    if (rec.deleting) return;               // 正在滑出 / 删除中
     const now = performance.now();
     if (now < rec.suppressClickUntil) return;                // 刚拖动过
     if (closingGesture || now < swallowClickUntil) return;   // 这一下是用来关闭别列的
@@ -459,11 +476,29 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     openEntrySheet(store, { transaction: rec.tx, onAddCategory }); // 同步呼叫
   }
 
+  // 左滑删除：整列先往左滑出＋淡出，播完才真的删除；之后 render 移除节点，下面的列由 FLIP 补位
+  function slideOut(el) {
+    const a = reducedMotion()
+      ? fade(el, 'out')
+      : animate(el, [{ transform: 'none', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0 }],
+        { duration: DUR.rowOut, easing: EASE_OUT, fill: 'forwards' });
+    if (!a) return Promise.resolve();
+    a.id = 'row-out';
+    // 被取消也照样删除；保险计时：App 进背景时动画会停，删除不能因此卡住
+    return new Promise((resolve) => {
+      const t = setTimeout(resolve, DUR.rowOut + 150);
+      a.finished.then(() => {}, () => {}).then(() => { clearTimeout(t); resolve(); });
+    });
+  }
+
   function deleteRow(rec) {
     if (rec.deleting) return;
     rec.deleting = true;
+    if (openRow === rec) openRow = null;   // 滑出中点别处不要再把内容收回来
     const { id } = rec;
-    store.deleteTransaction(id).then(() => {
+    slideOut(rec.el).then(() => store.deleteTransaction(id)).then(() => {
+      // 旧 rec 从 rows 拿掉：重画被延后时按撤销，这一笔一定建新节点滑入（旧节点停在透明、也不能操作）
+      if (rows.get(id) === rec) rows.delete(id);
       showToast('已删除', {
         actionLabel: '撤销',
         onAction: () => {
@@ -476,6 +511,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     }, (e) => {
       console.error(e);
       rec.deleting = false;
+      cancelAnims(rec.el, { id: 'row-out' });   // 列回到原位
       // 焦点若在（即将被收起的）删除按钮上，先移回列内容
       if (document.activeElement === rec.del) rec.content.focus({ preventScroll: true });
       closeRow(rec);
