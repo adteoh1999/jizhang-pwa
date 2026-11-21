@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -56,13 +57,121 @@ test('rowIconAttr：有效分类 → iconKey；已删除 / 未分类 → null', 
   assert.equal(rowIconAttr(undefined), null);
 });
 
-test('CSS：增加对比度 / 降低透明度时拿掉结余卡光晕', async () => {
+test('CSS：增加对比度 / 降低透明度时拿掉光球与反光边，卡片改不透明，且写在结余卡规则之后', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
-  const i = css.indexOf('@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {');
+  const marker = '@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {\n  .home-card-wrap::before';
+  const i = css.indexOf(marker);
   assert.ok(i >= 0);
   const block = css.slice(i, css.indexOf('\n}', i));
-  assert.match(block, /\.home-card::before\s*\{\s*display:\s*none;/);
+  assert.match(block, /\.home-card-wrap::before,\s*\.home-card::before\s*\{\s*display:\s*none;/);
+  assert.match(block, /\.home-card \{ background: var\(--glass\); border: 1px solid var\(--glass-edge\); \}/);
+  assert.ok(i > css.indexOf('\n.home-card {'), '后备规则要在 .home-card 之后才压得过');
+});
+
+test('CSS：窄屏缩级写在同优先级的基础规则之后（靠文件顺序压过）', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
+  const narrow = [...css.matchAll(/@media \(max-width: 359px\) \{/g)].map((m) => m.index);
+  assert.equal(narrow.length, 2);
+  // 基础规则要存在，而且「最后一次出现」也在媒体查询之前（防止以后有人在后面再写一条同名基础规则）
+  const after = (rule, i) => assert.ok(css.indexOf(rule) >= 0 && css.lastIndexOf(rule) < i, rule);
+  after('\n.home-balance.is-xlong .home-balance-dec {', narrow[0]);   // 顶格＝基础规则（媒体查询里的有缩进）
+  after('\n.home-balance-sign {', narrow[0]);
+  after('\n.home-balance-cur {', narrow[0]);
+  after('\n.home-balance-int {', narrow[0]);
+  after('\n.home-balance-dec {', narrow[0]);
+  after('\n.home-flow-v.is-small {', narrow[1]);
+  after('\n.home-flow-v {', narrow[1]);
+  assert.match(css.slice(narrow[0], css.indexOf('\n}', narrow[0])), /\.home-balance\.is-long \.home-balance-int/);
+  assert.match(css.slice(narrow[1], css.indexOf('\n}', narrow[1])), /\.home-flow-v \{/);
+});
+
+test('CSS：结余卡不用模糊；旧的彩虹光晕与让开逻辑都拿掉', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const gone of ['--halo-', '--glow-dx', 'cqw', '.home-card.is-long']) assert.ok(!css.includes(gone), gone);
+  const card = css.slice(css.indexOf('\n.home-card {'), css.indexOf('.home-card-label'));
+  assert.ok(!/backdrop-filter|filter:/.test(card));
+  assert.match(css, /\.screen\[data-screen="home"\] \{ isolation: isolate; \}/);
+  // 包装层不能自己建层叠上下文，否则光球会盖到大标题与「记一笔」上（只检查基础规则，媒体查询里的覆盖不在范围内）
+  const wrap = css.slice(css.indexOf('\n.home-card-wrap {'), css.indexOf('\n.home-card-wrap::before'));
+  assert.ok(!/isolation|z-index|transform|opacity|filter|contain|will-change|mask|clip-path|mix-blend-mode|perspective/.test(wrap));
+  assert.ok(!/position:\s*(fixed|sticky)/.test(wrap));
+});
+
+// ---------- 眼睛：隐藏金额 ----------
+function memStorage(init = {}) {
+  const m = new Map(Object.entries(init));
+  return {
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => { m.set(k, String(v)); },
+    removeItem: (k) => { m.delete(k); },
+    map: m,
+  };
+}
+const throwing = {
+  getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); },
+};
+
+test('readHidden / writeHidden：存 \'1\'，显示时删掉键；读写失败当作显示、不抛错', () => {
+  const st = memStorage();
+  assert.equal(readHidden(st), false);
+  writeHidden(st, true);
+  assert.equal(st.map.get(HIDE_KEY), '1');
+  assert.equal(readHidden(st), true);
+  writeHidden(st, false);
+  assert.equal(st.map.has(HIDE_KEY), false);
+  assert.equal(readHidden(memStorage({ [HIDE_KEY]: 'yes' })), false);
+  assert.equal(readHidden(null), false);
+  assert.equal(readHidden(throwing), false);
+  assert.doesNotThrow(() => writeHidden(throwing, true));
+  assert.doesNotThrow(() => writeHidden(null, true));
+});
+
+test('cardView 显示：与原本格式相同', () => {
+  const v = cardView({ balance: -1234567, income: 100000000, expense: 101234567 }, false);
+  assert.equal(v.sign, '\u2212');
+  assert.equal(v.int, '12,345');
+  assert.equal(v.dec, '.67');
+  assert.equal(v.sizeCls, 'is-long');
+  assert.equal(v.balSr, '\u2212RM 12,345.67');
+  assert.deepEqual(v.income, { text: 'RM 1,000,000.00', sr: 'RM 1,000,000.00', cls: 'is-small' });
+  assert.equal(v.expense.text, 'RM 1,012,345.67');
+});
+
+test('cardView 隐藏：数字、负号、缩级都不留，读屏读「已隐藏」', () => {
+  const big = cardView({ balance: -999999999900, income: 100000000, expense: 101234567 }, true);
+  const small = cardView({ balance: 500, income: 500, expense: 0 }, true);
+  assert.deepEqual(big, small, '金额大小与正负都看不出来');
+  assert.equal(big.sign, '');
+  assert.equal(big.int, MASK);
+  assert.equal(big.dec, '');
+  assert.equal(big.sizeCls, '');
+  assert.equal(big.balSr, '已隐藏');
+  for (const f of [big.income, big.expense]) assert.deepEqual(f, { text: `RM ${MASK}`, sr: '已隐藏', cls: '' });
+  const { pct, ...meterRest } = big.meter;   // 线宽固定 0（下面另外检查）
+  assert.equal(pct, 0);
+  assert.ok(!/\d/.test(JSON.stringify({ ...big, meter: meterRest })), '不能有任何数字');
+  // 比例线：没收入 / 超支 / 一般 三种情况隐藏后完全一样（看不出结余正负）
+  const none = cardView({ balance: 0, income: 0, expense: 0 }, true);
+  const over = cardView({ balance: -500, income: 100, expense: 600 }, true);
+  assert.deepEqual(none.meter, big.meter);
+  assert.deepEqual(over.meter, big.meter);
+  assert.deepEqual(big.meter, { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false });
+});
+
+test('cardView 显示：比例线与原本相同（线条读出时文字不重复读）', () => {
+  assert.deepEqual(cardView({ balance: 3200, income: 10000, expense: 6800 }, false).meter,
+    { barHidden: false, pct: 68, label: '已花掉收入的 68%', note: '已花掉收入的 68%', noteRead: false });
+  assert.deepEqual(cardView({ balance: 0, income: 0, expense: 0 }, false).meter,
+    { barHidden: true, pct: 0, label: '本月还没有收入', note: '本月还没有收入', noteRead: true });
+  assert.equal(cardView({ balance: -500, income: 100, expense: 600 }, false).meter.note, '支出已超过收入');
+});
+
+test('eyeButtonState：标签说「按了会怎样」', () => {
+  assert.deepEqual(eyeButtonState(false), { label: '隐藏金额', icon: 'eye' });
+  assert.deepEqual(eyeButtonState(true), { label: '显示金额', icon: 'eye-off' });
 });
 
 test('CSS：大标题列允许换行（大字级时月份换到下一行，不挤压「记账」）', async () => {

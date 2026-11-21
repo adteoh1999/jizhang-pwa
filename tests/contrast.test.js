@@ -1,18 +1,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { light, attrDark } from './helpers/css-tokens.js';
+import { css, blockAfter, light, attrDark } from './helpers/css-tokens.js';
 
-// [前景 token, 背景 token, 最低值]
+// 不透明底：[前景 token, 背景 token, 最低值]
 const PAIRS = [
-  ['--ink-2', '--drawer', 4.5], ['--ink-2', '--sky-top', 4.5], ['--income', '--drawer', 4.5],
-  ['--income', '--sky-mid', 4.5], ['--tab-off', '--drawer', 3], ['--btn-fg', '--btn-bg', 7],
-  ['--red-text', '--drawer', 4.5],
+  ['--ink-2', '--drawer', 4.5], ['--income', '--drawer', 4.5],
+  ['--tab-off', '--drawer', 3], ['--btn-fg', '--btn-bg', 7], ['--red-text', '--drawer', 4.5],
+  // 直接压在整页晨雾上的次要字（统计页、设置页）：渐变的四个色都要过
+  ['--ink-2', '--sky-top', 4.5], ['--ink-2', '--sky-mid', 4.5],
+  ['--ink-2', '--sky-low', 4.5], ['--ink-2', '--sky-bottom', 4.5],
 ];
+
+// 半透明叠层：[前景, [最底的不透明底, 往上叠的半透明层…], 最低值]
+// 统计页玻璃卡（.glass-card）压在晨雾上；晨雾每一段都测
+const STACKS = ['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) => [
+  ['--income', [sky, '--glass'], 4.5],
+  ['--ink-2', [sky, '--glass'], 4.5],
+]);
 
 const tokens = { light, dark: { ...light, ...attrDark } };
 
 function resolve(theme, name, depth = 0) {
-  let v = tokens[theme][name];
+  const v = tokens[theme][name];
   assert.ok(v !== undefined && depth < 10, `token ${name} (${theme})`);
   const m = v.match(/^var\((--[\w-]+)\)$/);
   return m ? resolve(theme, m[1], depth + 1) : v;
@@ -27,23 +36,114 @@ function parse(v) {
   assert.ok(a >= 0 && a <= 1 && !/%/.test(m[1]), `alpha out of range in ${v}`);
   return { rgb: p.slice(0, 3), a };
 }
+const color = (theme, name) => parse(resolve(theme, name));
+const over = (bg, rgb, a) => bg.map((c, i) => rgb[i] * a + c * (1 - a)); // 半透明叠到底上
 const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
 const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-
-function ratio(theme, fgName, bgName) {
-  const bg = parse(resolve(theme, bgName));
-  assert.equal(bg.a, 1, `${bgName} must be opaque`);
-  const fg = parse(resolve(theme, fgName));
-  const rgb = fg.rgb.map((c, i) => c * fg.a + bg.rgb[i] * (1 - fg.a)); // 合成到背景上
-  const [a, b] = [lum(rgb), lum(bg.rgb)];
+function contrast(fg, bg) {
+  const rgb = over(bg, fg.rgb, fg.a);
+  const [a, b] = [lum(rgb), lum(bg)];
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+function stackBg(theme, [base, ...layers]) {
+  const b = color(theme, base);
+  assert.equal(b.a, 1, `${base} must be opaque`);
+  return layers.reduce((bg, n) => { const c = color(theme, n); return over(bg, c.rgb, c.a); }, b.rgb);
 }
 
 for (const theme of ['light', 'dark']) {
   for (const [fg, bg, min] of PAIRS) {
     test(`${theme} ${fg} on ${bg} >= ${min}`, () => {
-      const r = ratio(theme, fg, bg);
+      const r = contrast(color(theme, fg), stackBg(theme, [bg]));
+      assert.ok(r >= min, `${r.toFixed(2)} < ${min}`);
+    });
+  }
+  for (const [fg, layers, min] of STACKS) {
+    test(`${theme} ${fg} on ${layers.join(' + ')} >= ${min}`, () => {
+      const r = contrast(color(theme, fg), stackBg(theme, layers));
       assert.ok(r >= min, `${r.toFixed(2)} < ${min}`);
     });
   }
 }
+
+// ---------- 结余卡：晨雾 → 光球 → 玻璃 → 文字 ----------
+// 光球直接从 CSS 读（.home-card-wrap::before），在卡片上每 4px 取一点，算最差的对比度。
+const ORB_BLOCK = blockAfter(css, '\n.home-card-wrap::before {');
+const LAYER_TOP = Number(ORB_BLOCK.match(/\btop:\s*(-?\d+)px/)[1]);       // 光球层在卡片上方伸出多少（负值）
+const LAYER_H = Number(ORB_BLOCK.match(/\bheight:\s*(\d+)px/)[1]);
+const ORBS = [...ORB_BLOCK.matchAll(
+  /radial-gradient\((\d+)px (\d+)px at calc\(var\(--mx\) \+ \(100% - 2 \* var\(--mx\)\) \* ([\d.]+)\) (\d+)px, var\((--orb-\d)\), transparent 70%\)/g,
+)].map((m) => ({ rx: +m[1], ry: +m[2], fx: +m[3], cy: +m[4], token: m[5] }));
+
+test('orb layer: 4 orbs parsed from CSS', () => {
+  assert.equal(ORBS.length, 4);
+  assert.match(ORB_BLOCK, /z-index:\s*-1/);
+  assert.match(ORB_BLOCK, /pointer-events:\s*none/);
+});
+
+test('orbs fade out inside the layer (no hard edges) and never rise above the card by more than the layer top', () => {
+  assert.ok(LAYER_TOP >= -56, `layer reaches ${-LAYER_TOP}px above the card (status bar risk)`);
+  for (const o of ORBS) {
+    assert.ok(o.cy - 0.7 * o.ry >= 0, `${o.token} clipped at the top`);
+    assert.ok(o.cy + 0.7 * o.ry <= LAYER_H, `${o.token} clipped at the bottom`);
+  }
+});
+
+// 卡片宽：iPhone SE（320）、一般（375）扣掉左右 16px 边距；Pro Max（430）扣掉左右 20px
+const CARD_WIDTHS = [288, 343, 390];
+// 卡片高度会随字级、换行变大：纵向取样到光球层底，宁可多算
+
+/** 光球层里的最差对比度。yFrom..yTo 以卡片顶端为 0；glassLayers 为 [null]＝没有玻璃垫底（卡片上方的月份字）。 */
+function worstOnOrbs(theme, fgName, { yFrom, yTo, glassLayers }) {
+  const fg = color(theme, fgName);
+  const orbs = ORBS.map((o) => ({ ...o, c: color(theme, o.token) }));
+  let worst = Infinity;
+  for (const sky of ['--sky-top', '--sky-mid', '--sky-low']) {   // 小屏幕时卡片下缘接近渐变 58%
+    for (const glass of glassLayers) {
+      const g = glass && color(theme, glass);
+      for (const W of CARD_WIDTHS) {
+        for (let x = 0; x <= W; x += 4) {
+          for (let y = yFrom; y <= yTo; y += 4) {
+            let bg = color(theme, sky).rgb;
+            // CSS 背景：先写的在上面 → 由最后一个往上叠
+            for (const o of [...orbs].reverse()) {
+              const d = Math.hypot((x - o.fx * W) / o.rx, (y + -LAYER_TOP - o.cy) / o.ry);
+              if (d < 0.7) bg = over(bg, o.c.rgb, o.c.a * (1 - d / 0.7));
+            }
+            if (g) bg = over(bg, g.rgb, g.a);
+            worst = Math.min(worst, contrast(fg, bg));
+          }
+        }
+      }
+    }
+  }
+  return worst;
+}
+
+for (const theme of ['light', 'dark']) {
+  for (const fg of ['--ink', '--card-ink-2']) {
+    test(`${theme} ${fg} on the balance card (mist + orbs + glass) >= 4.5`, () => {
+      const r = worstOnOrbs(theme, fg, {
+        yFrom: 0, yTo: LAYER_H + LAYER_TOP, glassLayers: ['--card-glass-1', '--card-glass-2'], // 玻璃是渐层，两端都测
+      });
+      assert.ok(r >= 4.5, `${r.toFixed(2)} < 4.5`);
+    });
+  }
+  // 光球层往上伸到大标题列：右边的月份字（--ink-2）直接压在光球上，没有玻璃
+  test(`${theme} --ink-2 above the card (mist + orbs, no glass) >= 4.5`, () => {
+    const r = worstOnOrbs(theme, '--ink-2', { yFrom: LAYER_TOP, yTo: 0, glassLayers: [null] });
+    assert.ok(r >= 4.5, `${r.toFixed(2)} < 4.5`);
+  });
+}
+
+// 只看基础 .screen 规则：以后若在媒体查询或 .screen[data-screen="home"] 改 padding，要一起改光球层与这个测试
+const grab = (src, re, what) => { const m = src.match(re); assert.ok(m, `missing ${what}`); return m[1].trim(); };
+test('orb layer reaches exactly the screen edges (no horizontal scroll)', () => {
+  const pad = blockAfter(css, '\n.screen {');
+  const padL = grab(pad, /padding-left:\s*([^;]+);/, '.screen padding-left');
+  const padR = grab(pad, /padding-right:\s*([^;]+);/, '.screen padding-right');
+  assert.match(ORB_BLOCK, /--mx:\s*calc\(var\(--margin\) \+ var\(--safe-left\)\);/);
+  assert.equal(padL, 'calc(var(--margin) + var(--safe-left))');
+  assert.equal(grab(ORB_BLOCK, /\bleft:\s*([^;]+);/, 'orb left'), 'calc(-1 * var(--mx))');
+  assert.equal(grab(ORB_BLOCK, /\bright:\s*([^;]+);/, 'orb right'), `calc(-1 * (${padR.replace(/^calc\((.*)\)$/, '$1')}))`);
+});

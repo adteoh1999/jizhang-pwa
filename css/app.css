@@ -29,13 +29,11 @@
 :root {
   color-scheme: light;
 
-  --sky-top: #D5E0EA;
-  --sky-mid: #E6ECF1;
-  --sky-low: #F1F3F5;
-  --sky-hi: rgba(255, 255, 255, 0.55);
-  --sky-tint: rgba(190, 210, 232, 0.6);
-  --cloud: rgba(255, 255, 255, 0.9);
-  --cloud-soft: rgba(255, 255, 255, 0.6);
+  /* 整页「晨雾」渐变：浅蓝 → 薄荷绿（0% / 30% / 65% / 100%） */
+  --sky-top: #CFE3EF;
+  --sky-mid: #D4EAEE;
+  --sky-low: #D9F0E8;
+  --sky-bottom: #E4F6EE;
   --ink: #0A0A0B;
   --ink-2: rgba(10, 12, 18, 0.65);
   --ink-3: rgba(10, 12, 18, 0.32);
@@ -51,14 +49,24 @@
   --income: #157A35;
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
-  --halo-opacity: 0.95;
   --glass-sheen: rgba(255, 255, 255, 0.18);
-  --halo-pink: rgba(255, 92, 150, 0.9);
-  --halo-orange: rgba(255, 165, 70, 0.9);
-  --halo-yellow: rgba(255, 226, 90, 0.8);
-  --halo-blue: rgba(80, 170, 255, 0.85);
-  --halo-violet: rgba(160, 120, 255, 0.75);
-  --halo-mint: rgba(110, 230, 180, 0.55);
+  /* 结余卡后面的光球（静态 radial-gradient）。深色版：光球透明度 ×0.5、卡片左上玻璃 .10、次要字 .95，
+     是为了让压在光球上的字仍 ≥4.5:1（tests/contrast.test.js 锁住）。深色余量很小（约 4.6），
+     调亮光球、玻璃或调暗次要字都必须先跑测试 */
+  --orb-1: rgba(110, 185, 255, 0.62);
+  --orb-2: rgba(100, 220, 180, 0.58);
+  --orb-3: rgba(90, 205, 215, 0.5);
+  --orb-4: rgba(150, 200, 250, 0.45);
+  /* 结余卡玻璃：半透明底、渐层反光边（左上亮 → 右下暗）、内阴影＋投影 */
+  --card-glass-1: rgba(255, 255, 255, 0.78);
+  --card-glass-2: rgba(255, 255, 255, 0.48);
+  --card-rim-1: rgba(255, 255, 255, 1);
+  --card-rim-2: rgba(255, 255, 255, 0.35);
+  --card-rim-3: rgba(255, 255, 255, 0.08);
+  --card-rim-4: rgba(80, 90, 140, 0.4);
+  --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(60, 70, 120, 0.3),
+    0 24px 44px -20px rgba(70, 60, 140, 0.42), 0 4px 12px -6px rgba(40, 50, 90, 0.16);
+  --card-ink-2: rgba(10, 12, 18, 0.65);   /* 卡片上的次要字（深色版较亮，压在光球上仍 ≥4.5:1） */
   --tab-glass: rgba(255, 255, 255, 0.72);
   --tab-off: rgba(10, 12, 18, 0.6);
 
@@ -67,7 +75,7 @@
   --ink-sel: rgba(10, 12, 18, 0.16);
   --press-bg: #F1F1F3;
   --separator: rgba(10, 12, 18, 0.14);
-  --bar-material: rgba(213, 224, 234, 0.94);   /* ≈ sky-top：子页面导航条与状态栏同色 */
+  --bar-material: rgba(207, 227, 239, 0.94);   /* ≈ sky-top：子页面导航条与状态栏同色 */
   --alert-material: rgba(242, 242, 242, 0.86);
   --sheet-material: rgba(242, 242, 242, 0.86);
   --sheet-cancel-bg: #FFFFFF;
@@ -86,24 +94,26 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --sky-top: #1A2330; --sky-mid: #121820; --sky-low: #0C1015;
-    --sky-hi: rgba(120, 150, 190, 0.18); --sky-tint: rgba(60, 80, 110, 0.35);
-    --cloud: rgba(150, 175, 210, 0.13); --cloud-soft: rgba(150, 175, 210, 0.08);
+    --sky-top: #132230; --sky-mid: #11232A; --sky-low: #0F2222; --sky-bottom: #0B1A17;
     --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
     --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
     --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
     --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #4CD07A; --red: rgb(255, 66, 69);
-    --track: rgba(255, 255, 255, 0.14); --halo-opacity: 0.7;
+    --track: rgba(255, 255, 255, 0.14);
     --glass-sheen: rgba(255, 255, 255, 0.18);
-    --halo-pink: rgba(255, 92, 150, 0.9); --halo-orange: rgba(255, 165, 70, 0.9);
-    --halo-yellow: rgba(255, 226, 90, 0.8); --halo-blue: rgba(80, 170, 255, 0.85);
-    --halo-violet: rgba(160, 120, 255, 0.75); --halo-mint: rgba(110, 230, 180, 0.55);
+    --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
+    --orb-3: rgba(90, 205, 215, 0.25); --orb-4: rgba(150, 200, 250, 0.225);
+    --card-glass-1: rgba(255, 255, 255, 0.1); --card-glass-2: rgba(255, 255, 255, 0.05);
+    --card-rim-1: rgba(255, 255, 255, 0.55); --card-rim-2: rgba(255, 255, 255, 0.12);
+    --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
+    --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
+    --card-ink-2: rgba(235, 240, 248, 0.95);
     --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
     --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
     --press-bg: #242830; --separator: rgba(255, 255, 255, 0.16);
-    --bar-material: rgba(26, 35, 48, 0.94);
+    --bar-material: rgba(19, 34, 48, 0.94);
     --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
     --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
     --seg-track: rgba(118, 118, 128, 0.24);
@@ -112,24 +122,26 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --sky-top: #1A2330; --sky-mid: #121820; --sky-low: #0C1015;
-  --sky-hi: rgba(120, 150, 190, 0.18); --sky-tint: rgba(60, 80, 110, 0.35);
-  --cloud: rgba(150, 175, 210, 0.13); --cloud-soft: rgba(150, 175, 210, 0.08);
+  --sky-top: #132230; --sky-mid: #11232A; --sky-low: #0F2222; --sky-bottom: #0B1A17;
   --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
   --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
   --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
   --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #4CD07A; --red: rgb(255, 66, 69);
-  --track: rgba(255, 255, 255, 0.14); --halo-opacity: 0.7;
+  --track: rgba(255, 255, 255, 0.14);
   --glass-sheen: rgba(255, 255, 255, 0.18);
-  --halo-pink: rgba(255, 92, 150, 0.9); --halo-orange: rgba(255, 165, 70, 0.9);
-  --halo-yellow: rgba(255, 226, 90, 0.8); --halo-blue: rgba(80, 170, 255, 0.85);
-  --halo-violet: rgba(160, 120, 255, 0.75); --halo-mint: rgba(110, 230, 180, 0.55);
+  --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
+  --orb-3: rgba(90, 205, 215, 0.25); --orb-4: rgba(150, 200, 250, 0.225);
+  --card-glass-1: rgba(255, 255, 255, 0.1); --card-glass-2: rgba(255, 255, 255, 0.05);
+  --card-rim-1: rgba(255, 255, 255, 0.55); --card-rim-2: rgba(255, 255, 255, 0.12);
+  --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
+  --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
+  --card-ink-2: rgba(235, 240, 248, 0.95);
   --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
   --fill: rgba(120, 120, 128, 0.36);
   --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
   --press-bg: #242830; --separator: rgba(255, 255, 255, 0.16);
-  --bar-material: rgba(26, 35, 48, 0.94);
+  --bar-material: rgba(19, 34, 48, 0.94);
   --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
   --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
   --seg-track: rgba(118, 118, 128, 0.24);
@@ -224,36 +236,23 @@ button:disabled { cursor: default; }
   z-index: -1;
   contain: strict;
   pointer-events: none;
-  /* 给 iOS 26 状态栏取样用。.sky 与 body 都是 sky-top：任一个被取样都同色，两行都不能删 */
+}
+/* 整页「晨雾」：一条连续的线性渐变，从状态栏后面一路到底，没有云、没有色块。
+   所有贴顶、满宽的全屏层（.sky、子页面、阻挡画面）共用这一条，顶端都是 sky-top。
+   background-color 给 iOS 26 状态栏取样用（它取样底色，不是渐变图）：与 body、theme-color 同色，不能删 */
+.sky,
+.nav-page,
+.overlay.overlay-blocking {   /* 两个 class：要压过后面 .overlay 的 background: var(--dim) */
   background-color: var(--sky-top);
-  background-image:
-    radial-gradient(55% 9% at 22% 7%, var(--cloud), transparent),
-    radial-gradient(40% 7% at 38% 10%, var(--cloud-soft), transparent),
-    radial-gradient(60% 10% at 88% 24%, var(--cloud), transparent),
-    radial-gradient(45% 8% at 70% 27%, var(--cloud-soft), transparent),
-    radial-gradient(70% 12% at 10% 40%, var(--cloud-soft), transparent),
-    radial-gradient(50% 8% at 92% 52%, var(--cloud-soft), transparent),
-    radial-gradient(120% 60% at 15% 0%, var(--sky-hi), transparent 60%),
-    radial-gradient(90% 50% at 100% 18%, var(--sky-tint), transparent 70%),
-    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 42%, var(--sky-low) 100%);
+  background-image: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 30%, var(--sky-low) 65%, var(--sky-bottom) 100%);
 }
-/* 顶端 64px 由纯天空顶色渐变到透明：盖住贴顶的高光与云，状态栏（纯色 #sky-top）和天空接缝看不出来 */
-.sky::before {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 64px;
-  background: linear-gradient(var(--sky-top), transparent);
-}
+/* 增加对比度 / 降低透明度：各种材质改不透明（结余卡的光球与玻璃在 §15 另外处理） */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  .sky { background-image: linear-gradient(var(--sky-top), var(--sky-mid) 64px); }   /* 保留顶端同色，底色仍给状态栏取样 */
-  .sky::before { display: none; }
-  .home-card::before { display: none; }   /* 拿掉光晕 */
-  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #D5E0EA; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
-  :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #1A2330; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
+  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #CFE3EF; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
+  :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #132230; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark), (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #1A2330; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
+  :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #132230; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
 }
 
 h1, h2, p { margin: 0; }
@@ -592,8 +591,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 
 /* ---------- 10b. 资料库已更新（不可关闭的阻挡画面） ---------- */
-/* 阻挡画面：天空底（不透明，盖住后面不可操作的内容）+ 黑色胶囊按钮 */
-.overlay-blocking { z-index: 300; opacity: 1; background: var(--sky-mid); }
+/* 阻挡画面：晨雾底（不透明，盖住后面不可操作的内容）+ 黑色胶囊按钮 */
+.overlay-blocking { z-index: 300; opacity: 1; }   /* 底色：整页晨雾渐变（与 .sky 共用，见 §3 .sky 规则），不透明 */
 .overlay-blocking .alert-buttons { box-shadow: none; padding: 0 16px 16px; }
 .overlay-blocking .alert-button { border-radius: 999px; background: var(--btn-bg); color: var(--btn-fg); }
 .overlay-blocking .alert-button:active:not(:disabled) { background: var(--btn-bg); opacity: 0.7; }
@@ -939,46 +938,74 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    - [hig-patterns] 删除不跳确认框，改用「撤销」toast；左滑露出红色「删除」（80pt）。
    - 列表是 inset grouped：12pt 圆角卡片、内缩分隔线、组标题用 footnote 次要色。
    ===================================================================== */
-/* ---------- 结余卡：假玻璃（无 backdrop-filter），光晕被卡片裁切 ---------- */
+/* ---------- 结余卡「晨雾」：光球在卡片后面，卡片是半透明玻璃（无 backdrop-filter） ----------
+   效能：光球与玻璃全是静态渐变和阴影，没有模糊、没有动画，只在重绘时算一次。
+   层叠：首页 .screen 自成层叠上下文；光球是包装层的 ::before（z-index:-1），
+   所以在大标题、卡片、「记一笔」按钮、抽屉下面，在 .sky 上面。包装层自己不能建层叠上下文。 */
+.screen[data-screen="home"] { isolation: isolate; }
+.home-card-wrap { position: relative; margin-top: 10px; }
+.home-card-wrap::before {
+  /* 光球层：左右伸到屏幕边（不超出，避免横向滚动），上方只伸出 56px（不碰状态栏），高度固定。
+     光球位置：横向＝卡片宽度的比例，纵向＝离卡片顶端的固定 px（卡片变高也不会往上漂）。
+     每个光球在 70% 半径处已完全透明；纵向都在图层内淡完（测试会检查），横向超出的部分被屏幕边切掉，看不出来。
+     left / right 必须等于 .screen 的左右 padding（测试会检查），否则会横向滚动。 */
+  --mx: calc(var(--margin) + var(--safe-left));
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: -56px;
+  height: 390px;
+  left: calc(-1 * var(--mx));
+  right: calc(-1 * (var(--margin) + var(--safe-right)));
+  background:
+    radial-gradient(240px 170px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.874) 119px, var(--orb-1), transparent 70%),
+    radial-gradient(260px 200px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.18) 234px, var(--orb-2), transparent 70%),
+    radial-gradient(200px 170px at calc(var(--mx) + (100% - 2 * var(--mx)) * 1.036) 267px, var(--orb-3), transparent 70%),
+    radial-gradient(220px 170px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.126) 151px, var(--orb-4), transparent 70%);
+}
 .home-card {
   position: relative;
   isolation: isolate;
-  container-type: inline-size;   /* 让光晕用 cqw 依卡片宽度定位 */
-  overflow: hidden;              /* 旧浏览器后备 */
-  overflow: clip;
-  margin-top: 6px;
   padding: 22px 22px 20px;
   border-radius: 30px;
-  background: linear-gradient(155deg, var(--glass-sheen), transparent 45%), var(--glass);
-  border: 1px solid var(--glass-edge);
-  box-shadow: inset 0 1px 0 var(--glass-edge), 0 18px 40px -18px var(--glass-shade);
+  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
+  box-shadow: var(--card-shadow);   /* 上缘内亮线、下缘内阴影（玻璃厚度）＋两层投影（浮起来） */
 }
-.home-card::before { /* 光晕：六团静态 radial-gradient，只在右上角，不做动画 */
-  content: "";
-  position: absolute;
-  z-index: 0;
-  pointer-events: none;
-  top: -96px;
-  right: -110px;
-  /* 卡片变窄（cqw，内容宽 312px 为基准）、字级放大（rem > 17px）或数字变长（--glow-dx/dy）时，
-     光晕再往右上移，不压到结余数字 */
-  top: calc(-96px - var(--glow-dy, 0px));
-  right: calc(-110px - var(--glow-dx, 0px) - max(0px, 312px - 100cqw) - max(0px, 1rem - 17px) * 6);
-  width: 300px;
-  height: 220px;
-  background:
-    radial-gradient(26% 30% at 34% 52%, var(--halo-pink), transparent),
-    radial-gradient(24% 28% at 52% 34%, var(--halo-orange), transparent),
-    radial-gradient(20% 22% at 46% 18%, var(--halo-yellow), transparent),
-    radial-gradient(26% 30% at 60% 60%, var(--halo-blue), transparent),
-    radial-gradient(22% 24% at 42% 72%, var(--halo-violet), transparent),
-    radial-gradient(18% 20% at 58% 46%, var(--halo-mint), transparent);
-  opacity: var(--halo-opacity);
+/* 渐层反光边：1.3px 的框，左上亮 → 右下暗；用 mask 挖空中间 */
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .home-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    padding: 1.3px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
 }
-.home-card.is-long { --glow-dx: 40px; --glow-dy: 24px; }
-.home-card.is-xlong { --glow-dx: 70px; --glow-dy: 40px; }
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .home-card { border: 1px solid var(--card-rim-2); }   /* 不支援 mask 时：普通细边 */
+}
 .home-card > * { position: relative; z-index: 1; }
-.home-card-label { font: var(--font-subhead); color: var(--ink-2); }
+/* 眼睛按钮：右上角 44×44 点击区（.home-card > .home-eye 优先级高于 .home-card > *，position 不会被盖掉） */
+.home-card > .home-eye {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  color: var(--card-ink-2);   /* 次要控件：比金额轻一级（非文字 ≥3:1） */
+}
+.home-card-label { padding-right: 36px; font: var(--font-subhead); color: var(--card-ink-2); }
 .home-balance {
   margin-top: 6px;
   display: flex;
@@ -987,21 +1014,39 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   column-gap: 8px;
   font-variant-numeric: tabular-nums;
 }
-.home-balance-cur { font: 500 1.1765rem/1 var(--font-family); color: var(--ink-2); }   /* 20 */
+/* 金额加粗、加深：在玻璃上要清楚。字级用 rem＋上限：一般结余可随大字放大到 64px；
+   is-long（≥RM 10,000）与窄屏的上限等于预设大小，只会缩小、不会放大——为了长数字一定放得下一行（实测过 320/375/430 × 字级 17–23）。
+   上限不要随手调大，改了要重新实测 */
+.home-balance-cur { font: 700 min(1.1765rem, 22px)/1 var(--font-family); color: var(--ink); }   /* 20；上限让大字级时长数字仍放得下一行 */
+.home-balance-sign { font: 700 min(1.1765rem, 22px)/1 var(--font-family); color: var(--ink); margin-right: -6px; }
 .home-balance-int {
-  font: 300 min(calc(1rem * 2.9), 64px)/1.05 var(--font-family);                      /* ≈50 */
+  font: 750 min(calc(1rem * 2.94), 64px)/1.05 var(--font-family);                    /* ≈50 */
   letter-spacing: -0.03em;
   white-space: nowrap;
 }
 .home-balance-dec {
   margin-left: -6px;
-  font: 300 min(calc(1rem * 1.65), 36px)/1 var(--font-family);                        /* ≈28 */
-  color: var(--ink-2);
+  font: 700 min(calc(1rem * 1.41), 30px)/1 var(--font-family);                       /* ≈24 */
+  color: var(--ink);
 }
-.home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 2.1), 46px); }
-.home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.3), 28px); }
-.home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.6), 36px); }
-.home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 1.1), 24px); }
+/* 粗体比细体宽：长数字缩级比旧版多缩一点 */
+.home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 2.35), 40px); }  /* ≈40；上限 40：375 宽大字级时 9 字元仍一行 */
+.home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.18), 22px); }  /* ≈20 */
+.home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.88), 36px); } /* ≈32 */
+.home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 1.06), 22px); } /* ≈18 */
+/* 窄屏（iPhone SE 320 宽，卡片内容约 244px）：长数字再缩一级，小数才不会单独掉到下一行。
+   上限贴近预设字级的大小：320 宽的人常开大字，上限放松一点就又会掉行（「RM」、负号也一起设上限）。
+   必须写在上面同优先级的规则之后（靠文件顺序压过，测试会检查） */
+@media (max-width: 359px) {
+  .home-balance-cur,
+  .home-balance-sign { font-size: min(1.1765rem, 21px); }
+  .home-balance-int { font-size: min(calc(1rem * 2.94), 50px); }                       /* ≈50 */
+  .home-balance-dec { font-size: min(calc(1rem * 1.41), 24px); }                       /* ≈24 */
+  .home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 2), 34px); }     /* ≈34：9 字元整行约 236px */
+  .home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.12), 19px); }  /* ≈19 */
+  .home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.65), 29px); } /* ≈28 */
+  .home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 0.94), 17px); } /* ≈16 */
+}
 
 .home-flow {
   display: flex;
@@ -1015,16 +1060,20 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   align-items: center;
   gap: 4px;
   font: var(--font-footnote);
-  color: var(--ink-2);
+  color: var(--card-ink-2);
 }
 .home-flow-k svg { flex: none; }
 .home-flow-v {
   font: var(--font-body);
-  font-weight: 500;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;           /* 「RM」与数字不断开 */
 }
 .home-flow-v.is-small { font-size: 0.8824rem; }   /* 缩一级（subhead 字级） */
+/* 窄屏：粗体金额较宽，一般金额（到 RM 999,999.99）也缩一级，收入、支出才能并排；百万以上会上下堆叠（flex-wrap） */
+@media (max-width: 359px) {
+  .home-flow-v { font-size: 0.8824rem; }
+}
 
 /* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、同色 */
 .home-meter { display: grid; gap: 7px; margin-top: 16px; }
@@ -1042,8 +1091,19 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 .home-meter-note {
   font: var(--font-caption);
-  color: var(--ink-2);
+  color: var(--card-ink-2);
   font-variant-numeric: tabular-nums;
+}
+
+/* 增加对比度 / 降低透明度：拿掉光球与渐层反光边，卡片改成不透明＋实线边
+   （放在结余卡规则之后，才压得过上面的 background） */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .home-card-wrap::before,
+  .home-card::before { display: none; }
+  .home-card { background: var(--glass); border: 1px solid var(--glass-edge); }
+}
+@media (prefers-contrast: more) {
+  .home-card { border-color: var(--ink-2); }
 }
 
 /* ---------- 主按钮：黑色胶囊 ---------- */
@@ -1447,7 +1507,6 @@ button.inset-row:active { background: var(--press-bg); }
 .inset-row-label { flex: 1; min-width: 0; }
 .inset-row-detail { flex: none; color: var(--secondary-label); font-variant-numeric: tabular-nums; }
 .inset-row-chevron { flex: none; display: flex; color: var(--ink-3); }
-.home-balance-sign { font: 500 1.1765rem/1 var(--font-family); color: var(--ink-2); margin-right: -6px; }
 
 /* =====================================================================
    17. Categories page 分类管理子画面 — js/ui/categories-page.js
@@ -1461,9 +1520,8 @@ button.inset-row:active { background: var(--press-bg); }
   z-index: 100;               /* 与其他浮层同层，后开的在上面（DOM 顺序） */
   display: flex;
   flex-direction: column;
-  /* 顶端 sky-top（与状态栏、导航条同色；iOS 26 会取样这个固定层的 background-color），往下渐变回 sky-low */
-  background-color: var(--sky-top);
-  background-image: linear-gradient(var(--sky-top), var(--sky-low) 240px);
+  /* 底色：整页晨雾渐变，顶端 sky-top（与状态栏、导航条同色；iOS 26 会取样这个固定层的 background-color）。
+     规则与 .sky 共用（§3 .sky 规则），这里不再另写 */
   box-shadow: -2px 0 20px rgba(0, 0, 0, 0.12);
   transform: translateX(100%);
   transition: transform 0.35s var(--ease-out);

@@ -1,4 +1,4 @@
-// 首页：本月结余卡（光晕 + 比例线）、黑色「记一笔」、账单抽屉（按日期分组，左滑删除 + 撤销）。
+// 首页：本月结余卡（晨雾玻璃 + 眼睛隐藏金额 + 比例线）、黑色「记一笔」、账单抽屉（按日期分组，左滑删除 + 撤销）。
 // 注意：entry-sheet.js 必须静态导入，openEntrySheet 必须在点击事件里同步呼叫（不能先 await），
 // iOS 才会在金额框 focus() 时弹出键盘。
 //
@@ -40,6 +40,63 @@ export function flowSizeClass(minor) {
   return formatRM(minor, { sign: 'none' }).length >= 13 ? 'is-small' : '';
 }
 
+// ---------- 眼睛：隐藏金额 ----------
+// 状态只存在这台装置（localStorage），不上传；读写失败（私密模式、被停用）一律当作「显示」。
+export const HIDE_KEY = 'jizhang.hideAmounts';
+export const MASK = '\u2022\u2022\u2022\u2022'; // ••••
+
+/** 读隐藏状态。storage 由呼叫端传入（Node 测试不碰 localStorage）。 */
+export function readHidden(storage) {
+  try { return storage?.getItem(HIDE_KEY) === '1'; } catch { return false; }
+}
+
+/** 存隐藏状态：隐藏 → '1'；显示 → 删掉这个键。 */
+export function writeHidden(storage, hidden) {
+  try {
+    if (hidden) storage?.setItem(HIDE_KEY, '1');
+    else storage?.removeItem(HIDE_KEY);
+  } catch { /* 存不了就只在这次开启时有效 */ }
+}
+
+/** 拿到 localStorage；取用本身就可能 throw（Safari 停用网站资料时）。 */
+function defaultStorage() {
+  try { return globalThis.localStorage ?? null; } catch { return null; }
+}
+
+/**
+ * 结余卡要显示的内容（纯函数）。
+ * 隐藏时：数字都换成 ••••，负号、缩级 class 也拿掉（不能从大小或正负看出金额），读屏读「已隐藏」。
+ * 比例线也藏：线宽 0、文字一律「已花掉收入的 ••%」（「支出已超过收入」「还没有收入」本身就会透露结余正负）。
+ * meter：barHidden 线条是否隐藏、pct 线宽、label 线条读屏文字、note 线下文字、noteRead 文字是否给读屏读。
+ */
+export function cardView(s, hidden) {
+  if (hidden) {
+    const flow = { text: `RM ${MASK}`, sr: '已隐藏', cls: '' };
+    return {
+      sign: '', int: MASK, dec: '', sizeCls: '', balSr: '已隐藏', income: flow, expense: { ...flow },
+      meter: { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false },
+    };
+  }
+  const m = spendMeter(s.income, s.expense);
+  const text = meterText(m);
+  const bp = balanceParts(s.balance);
+  const flow = (v) => {
+    const text = formatRM(v, { sign: 'none' });
+    return { text, sr: text, cls: flowSizeClass(v) };
+  };
+  return {
+    sign: bp.sign, int: bp.int, dec: bp.dec, sizeCls: balanceSizeClass(s.balance),
+    balSr: formatRM(s.balance), income: flow(s.income), expense: flow(s.expense),
+    // 线条显示时由它（role=img）读出，文字不重复读；线条隐藏（没有收入）时由文字读出
+    meter: { barHidden: m.state === 'none', pct: m.pct, label: text, note: text, noteRead: m.state === 'none' },
+  };
+}
+
+/** 眼睛按钮的读屏标签与图示：标签说「按了会怎样」。 */
+export function eyeButtonState(hidden) {
+  return hidden ? { label: '显示金额', icon: 'eye-off' } : { label: '隐藏金额', icon: 'eye' };
+}
+
 /** 比例线文案（输入 spendMeter 的结果）。 */
 export function meterText(m) {
   if (m.state === 'none') return '本月还没有收入';
@@ -54,7 +111,7 @@ export function countText(n) {
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export function mountHome(root, store, { monthEl = null } = {}) {
+export function mountHome(root, store, { monthEl = null, storage = defaultStorage() } = {}) {
   let today = todayLocal();
   let shown = PAGE;
   let openRow = null;          // 目前滑开的列 record
@@ -73,27 +130,42 @@ export function mountHome(root, store, { monthEl = null } = {}) {
   });
 
   // ---------- 静态骨架 ----------
-  // 结余卡：光晕是 .home-card::before（静态渐层，被卡片裁切）
-  // 视觉上拆成三段（aria-hidden），读屏读完整金额（.sr-only）
+  // 结余卡：光球是 .home-card-wrap::before（静态渐层，在卡片后面）；卡片本身是半透明玻璃
+  // 视觉上拆成三段（aria-hidden），读屏读完整金额（.sr-only）；隐藏金额时读屏读「已隐藏」
+  // 隐藏状态在第一次 render 之前就读好，启动时金额不会先闪一下
+  let hidden = readHidden(storage);
+  let lastSummary = null;
   const balSr = h('span', { class: 'sr-only' });
   const balInt = h('span', { class: 'home-balance-int', 'aria-hidden': 'true' });
   const balDec = h('span', { class: 'home-balance-dec', 'aria-hidden': 'true' });
   const balSign = h('span', { class: 'home-balance-sign', 'aria-hidden': 'true' });
   const balanceEl = h('p', { class: 'home-balance' },
     balSr, balSign, h('span', { class: 'home-balance-cur', 'aria-hidden': 'true' }, 'RM'), balInt, balDec);
-  const incomeEl = h('span', { class: 'home-flow-v' });
-  const expenseEl = h('span', { class: 'home-flow-v' });
+  // 收入 / 支出：看得到的字 aria-hidden，读屏读 .sr-only（隐藏时不会读成一串圆点）
+  const flowValue = () => {
+    const vis = h('span', { 'aria-hidden': 'true' });
+    const sr = h('span', { class: 'sr-only' });
+    return { el: h('span', { class: 'home-flow-v' }, vis, sr), vis, sr };
+  };
+  const income = flowValue();
+  const expense = flowValue();
   const flowCol = (name, label, valueEl) => h('div', { class: 'home-flow-item' },
     h('span', { class: 'home-flow-k' }, icon(name, 12), label), valueEl);
   const meterFill = h('i', { class: 'home-meter-fill' });
   const meterBar = h('div', { class: 'home-meter-bar', role: 'img' }, meterFill);
   const meterNote = h('span', { class: 'home-meter-note' });
+  // 眼睛：切换 aria-label（「隐藏金额 / 显示金额」），不另加 aria-pressed（两个一起读会混乱）
+  const eyeBtn = h('button', {
+    type: 'button', class: 'home-eye pressable',
+    on: { click: () => setHidden(!hidden) },
+  });
   const summary = h('section', { class: 'home-card', 'aria-labelledby': 'home-card-label' },
     h('h2', { class: 'home-card-label', id: 'home-card-label' }, '本月结余'),
+    eyeBtn,
     balanceEl,
     h('div', { class: 'home-flow' },
-      flowCol('arrow-up', '收入', incomeEl),
-      flowCol('arrow-down', '支出', expenseEl)),
+      flowCol('arrow-up', '收入', income.el),
+      flowCol('arrow-down', '支出', expense.el)),
     h('div', { class: 'home-meter' }, meterBar, meterNote));
 
   const addBtn = h('button', {
@@ -114,7 +186,8 @@ export function mountHome(root, store, { monthEl = null } = {}) {
       h('h2', { class: 'home-drawer-title', id: 'home-drawer-title' }, '账单'), countEl),
     list, moreBtn);
 
-  root.replaceChildren(summary, addBtn, drawer);
+  const cardWrap = h('div', { class: 'home-card-wrap' }, summary);
+  root.replaceChildren(cardWrap, addBtn, drawer);
 
   // ---------- 列 ----------
   function rowSig(tx, cat) {
@@ -174,6 +247,41 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     render();
   }
 
+  // ---------- 结余卡（切换眼睛只重画这一块，不重排账单列表） ----------
+  function paintCard() {
+    const eye = eyeButtonState(hidden);
+    if (eyeBtn.getAttribute('aria-label') !== eye.label) { // 状态变了才换图示，不必每次 render 重建 SVG
+      eyeBtn.setAttribute('aria-label', eye.label);
+      eyeBtn.replaceChildren(icon(eye.icon, 22));
+    }
+    if (!lastSummary) return;
+    const v = cardView(lastSummary, hidden);
+    balSign.textContent = v.sign;
+    balSign.hidden = !v.sign;
+    balInt.textContent = v.int;
+    balDec.textContent = v.dec;
+    balanceEl.className = `home-balance ${v.sizeCls}`.trim();
+    balSr.textContent = v.balSr;
+    for (const [f, d] of [[income, v.income], [expense, v.expense]]) {
+      f.vis.textContent = d.text;
+      f.sr.textContent = d.sr;
+      f.el.className = `home-flow-v ${d.cls}`.trim();
+    }
+    const m = v.meter;
+    meterBar.hidden = m.barHidden;
+    meterBar.setAttribute('aria-label', m.label);
+    meterFill.style.width = `${m.pct}%`;
+    meterNote.textContent = m.note;
+    if (m.noteRead) meterNote.removeAttribute('aria-hidden');
+    else meterNote.setAttribute('aria-hidden', 'true');
+  }
+
+  function setHidden(next) {
+    hidden = next;
+    writeHidden(storage, hidden);
+    paintCard();
+  }
+
   function render() {
     renderPending = false;
     today = todayLocal();
@@ -181,28 +289,8 @@ export function mountHome(root, store, { monthEl = null } = {}) {
     const month = monthOf(today);
     const s = summarizeMonth(all, month);
     if (monthEl) monthEl.textContent = formatMonthTitle(month);
-    const bp = balanceParts(s.balance);
-    balSign.textContent = bp.sign;
-    balSign.hidden = !bp.sign;
-    balInt.textContent = bp.int;
-    balDec.textContent = bp.dec;
-    const sizeCls = balanceSizeClass(s.balance);
-    balanceEl.className = `home-balance ${sizeCls}`.trim();
-    summary.className = `home-card ${sizeCls}`.trim(); // 长数字时光晕再让开（CSS）
-    balSr.textContent = formatRM(s.balance);
-    incomeEl.textContent = formatRM(s.income, { sign: 'none' });
-    incomeEl.className = `home-flow-v ${flowSizeClass(s.income)}`.trim();
-    expenseEl.textContent = formatRM(s.expense, { sign: 'none' });
-    expenseEl.className = `home-flow-v ${flowSizeClass(s.expense)}`.trim();
-    const m = spendMeter(s.income, s.expense);
-    const text = meterText(m);
-    meterBar.hidden = m.state === 'none';
-    meterBar.setAttribute('aria-label', text);
-    meterFill.style.width = `${m.pct}%`;
-    meterNote.textContent = text;
-    // 线条显示时由它（role=img）读出，文字不重复读；线条隐藏时由文字读出
-    if (m.state === 'none') meterNote.removeAttribute('aria-hidden');
-    else meterNote.setAttribute('aria-hidden', 'true');
+    lastSummary = s;
+    paintCard();
     countEl.textContent = countText(all.length);
 
     const scrollY = window.scrollY;
