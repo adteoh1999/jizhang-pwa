@@ -104,4 +104,8 @@ export function mountStats(root, store) {
   window.addEventListener('pageshow', onWake);
 
   render();
+
+  // 进入统计页（app.js 切分页时呼叫）：v2.3 Task 6 播走势线画出与分类条长出
+  function enter() {}
+  return { enter };
 }

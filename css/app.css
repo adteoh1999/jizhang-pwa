@@ -285,7 +285,7 @@ h1, h2, p { margin: 0; }
 /* 有 toast 时多留出 toast 的高度，最后一行可以滚到 toast 之上 */
 body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12px + var(--hit) + 16px); }
 /* 首页是 flex column：抽屉 flex 撑满剩下的高度（不量测 DOM） */
-.screens { flex: 1 0 auto; display: flex; flex-direction: column; }
+.screens { flex: 1 0 auto; display: flex; flex-direction: column; overflow-x: clip; }   /* 切分页时新分页从旁边滑入 16px，不能出现横向滚动 */
 .screen[data-screen="home"],
 .screen[data-screen="home"] > .screen-content,
 .screen[data-screen="stats"],

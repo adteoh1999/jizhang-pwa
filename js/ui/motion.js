@@ -65,9 +65,9 @@ export function cancelAnims(el, { id = '', subtree = false } = {}) {
 }
 
 /** 淡入 / 淡出（减弱动态时的替代）。淡出会停在 0（呼叫者负责之后移除或 cancel）。 */
-export function fade(el, dir, { duration = DUR.fade, delay = 0 } = {}) {
+export function fade(el, dir, { duration = DUR.fade, delay = 0, id = '' } = {}) {
   const kf = dir === 'in' ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }];
-  return animate(el, kf, { duration, delay, easing: 'ease', fill: dir === 'in' ? 'backwards' : 'forwards' });
+  return animate(el, kf, { duration, delay, id, easing: 'ease', fill: dir === 'in' ? 'backwards' : 'forwards' });
 }
 
 /** 比例条「滑入」做法：填充条固定 100% 宽，往左藏 (1 − ratio)。minPx：有值时最少露出的宽度。 */

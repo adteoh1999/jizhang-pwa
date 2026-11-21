@@ -35,6 +35,7 @@ export function mountTabBar(root, { tabs, onSelect, selected = tabs[0].id }) {
   // 左右方向键在分页之间移动（tablist 惯例）
   bar.addEventListener('keydown', (e) => {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.repeat) return; // 按住不放不要一直切（每次切都会重播淡入，画面会闪）
     const ids = tabs.map((t) => t.id);
     const cur = ids.indexOf(document.activeElement?.dataset?.tab);
     if (cur === -1) return;

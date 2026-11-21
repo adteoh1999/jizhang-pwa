@@ -192,3 +192,23 @@ test('记一笔：顺序与停顿期间的保护', () => {
   assert.ok(!/if \(reducedMotion\(\)\) release\(\)/.test(sheet), '减弱动态不能提早放行（焦点还原之前）');
   assert.ok(sheet.indexOf('overlay.remove(); release();') > 0);
 });
+
+test('切换分页：.screens 横向裁切；app.js 对新分页淡入滑动，切到统计页呼叫 enter()', () => {
+  assert.match(blockAfter(css, '\n.screens {'), /overflow-x:\s*clip/);
+  const app = readFileSync(new URL('js/app.js', root), 'utf8');
+  assert.match(app, /translateX\(\$\{dir \* 16\}px\)/);
+  assert.match(app, /duration: DUR\.tab/);
+  assert.match(app, /id: 'tab'/);
+  assert.match(app, /stats\.enter\(\)/);
+  const stats = readFileSync(new URL('js/ui/stats-view.js', root), 'utf8');
+  assert.match(stats, /return \{ enter/);
+});
+
+test('切换分页：动画本身带 id、减弱动态或不支援 overflow clip 时只淡入；方向键按住不重复切', () => {
+  const app = readFileSync(new URL('js/app.js', root), 'utf8');
+  assert.match(app, /fade\(next, 'in', \{ id: 'tab' \}\)/);
+  assert.match(app, /CSS\.supports\('overflow-x', 'clip'\)/);
+  assert.ok(!/matchMedia\('\(prefers-reduced-motion/.test(app), '统一用 reducedMotion()');
+  const tabbar = readFileSync(new URL('js/ui/tabbar.js', root), 'utf8');
+  assert.match(tabbar, /e\.repeat/);
+});

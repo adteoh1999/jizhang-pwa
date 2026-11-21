@@ -11,6 +11,7 @@ import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
+import { animate, fade, cancelAnims, reducedMotion, DUR } from './ui/motion.js';
 
 const TABS = [
   { id: 'home', label: '首页', icon: 'tab-home', title: '记账', aside: true }, // aside：大标题右侧的当月
@@ -74,24 +75,38 @@ function mountShell(root, store) {
   root.replaceChildren(shell);
   const home = screens.get('home');
   mountHome(home.querySelector('.screen-content'), store, { monthEl: home.querySelector('.large-title-aside') });
-  mountStats(screens.get('stats').querySelector('.screen-content'), store);
+  const stats = mountStats(screens.get('stats').querySelector('.screen-content'), store);
   mountSettings(screens.get('settings').querySelector('.screen-content'), store);
 
+  const clipOK = typeof CSS !== 'undefined' && CSS.supports('overflow-x', 'clip');
   const tabbar = mountTabBar(root, {
     tabs: TABS,
     selected: active,
     onSelect(id) {
       if (id === active) {
         // 再按一次目前的分页：滚回顶端（iOS 惯例）
-        window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
         return;
       }
       scrollPos.set(active, window.scrollY);
+      const ids = TABS.map((t) => t.id);
+      const dir = ids.indexOf(id) > ids.indexOf(active) ? 1 : -1;   // 往右的分页从右边来
+      // 只取消分页切换自己的动画（id 'tab'），不碰列表删除滑出等其他动画
+      for (const s of screens.values()) cancelAnims(s, { id: 'tab' });
       screens.get(active).hidden = true;
-      screens.get(id).hidden = false;
+      const next = screens.get(id);
+      next.hidden = false;
       active = id;
       tabbar.setSelected(id);
       window.scrollTo(0, scrollPos.get(id) || 0);
+      // v2.3：新分页淡入＋轻微横向滑动（只能横向：首页的 FLIP 量的是 top）。
+      // 减弱动态、或不支援 overflow-x: clip（iOS < 16，滑动时会出现横向滚动）→ 只淡入
+      if (reducedMotion() || !clipOK) fade(next, 'in', { id: 'tab' });
+      else {
+        animate(next, [{ opacity: 0, transform: `translateX(${dir * 16}px)` }, { opacity: 1, transform: 'none' }],
+          { duration: DUR.tab, id: 'tab' });
+      }
+      if (id === 'stats') stats.enter();
     },
   });
 
