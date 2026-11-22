@@ -127,9 +127,9 @@ export function enterTargets(added, newDays) {
 }
 
 /**
- * 把 current（key 顺序）变成 next 要做的最少操作（纯函数）。
+ * 把 current（key 顺序）变成 next 的操作（纯函数）。
  * remove：current 有、next 没有；moves：依 next 顺序，位置上不是它时 [key, beforeKey|null]（null = 放最后）。
- * 已在正确位置的不动：顶端插入一个 → 只有一个 move。
+ * 已在正确位置的不动；顶端或中间插入只动一个（一个 key 往下搬过 N 个邻居会变 N 次，实际几乎遇不到）。
  */
 export function reconcile(current, next) {
   const want = new Set(next);
@@ -156,6 +156,15 @@ export function syncChildren(container, next, elOf) {
   const { remove, moves } = reconcile(live.map((el) => el.dataset.flip), next);
   for (const k of remove) elOf(k).remove();
   for (const [k, before] of moves) container.insertBefore(elOf(k), before === null ? null : elOf(before));
+}
+
+/**
+ * 「之前」的位置里拿掉已不在 rows 的列（删除后重画被延后、又按撤销时，DOM 里还留着透明旧列）：
+ * 不拿掉的话，复原的新列会被当成「没动」而直接出现，不会滑入。日期区块（d…）保留。
+ */
+export function pruneBefore(before, hasRow) {
+  for (const k of [...before.keys()]) if (k.startsWith('t') && !hasRow(k.slice(1))) before.delete(k);
+  return before;
 }
 
 /** 这次画出、上一次没有的日期区块（判断新区块；不能靠「之前量到的位置」）。 */
@@ -484,6 +493,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     // 首页不在画面上（切到别的分页）时不做：量到的位置都是 0
     // 本机刚存（v2.3.1）：不量位置、不补位（重的工作不要和数字滚动挤在一起），只让新的一笔进场
     const before = !local.size && flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
+    if (before) pruneBefore(before, (id) => rows.has(id));
     const days = new Set();
     const dayEls = new Map();   // 日期区块 key → section（进场直接拿节点，不用 id 拼选择器）
     rendering = true; // 从这里开始会搬动列节点（insertBefore 时就离开旧位置，焦点可能掉）

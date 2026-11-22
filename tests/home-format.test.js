@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets, newDayKeys, reconcile, syncChildren,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets, newDayKeys, reconcile, syncChildren, pruneBefore,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -384,7 +384,7 @@ function applyOps(current, { remove, moves }) {
     const i = a.indexOf(key);
     if (i >= 0) a.splice(i, 1);
     if (before === null) a.push(key);
-    else a.splice(a.indexOf(before), 0, key);
+    else { const j = a.indexOf(before); assert.ok(j >= 0, `before ${before} 不在容器里`); a.splice(j, 0, key); }
   }
   return a;
 }
@@ -424,6 +424,12 @@ test('home.js：列表按日期区块重用节点，不再整个重建', async (
   const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
   const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
   assert.ok(!/list\.replaceChildren\(\.\.\.frag\)/.test(render), '不能整个重建');
+  const iEmpty = render.indexOf('if (all.length === 0)');
+  const emptyEnd = render.indexOf('return;', iEmpty);
+  assert.equal((render.match(/list\.replaceChildren\(/g) || []).length, 1, '只有空列表分支会 replaceChildren');
+  assert.ok(render.indexOf('list.replaceChildren(') < emptyEnd);
+  assert.match(render, /if \(!d\) \{ d = buildDay\(/, '日期区块只在没有时才建');
+  assert.equal((render.match(/buildDay\(/g) || []).length, 1);
   assert.ok((render.match(/syncChildren\(/g) || []).length >= 2, '日期区块与区块内的列都用 syncChildren（reconcile）');
   const iOn = render.indexOf('rendering = true;');
   const iOff = render.indexOf('rendering = false;');
@@ -441,6 +447,7 @@ function fakeBox(els = []) {
   const box = { children: [], insertBefore(el, ref) {
     el.remove();
     const i = ref === null ? box.children.length : box.children.indexOf(ref);
+    assert.ok(i >= 0, 'insertBefore 的 ref 不是子节点（真 DOM 会抛 NotFoundError）');
     box.children.splice(i, 0, el); el.parent = box;
   } };
   for (const el of els) box.insertBefore(el, null);
@@ -469,4 +476,30 @@ test('syncChildren：没有 key 的节点（空列表提示）会被拿掉；列
   syncChildren(u1, [], (k) => ({ tx: x }[k]));       // 旧区块后处理：不能把 x 从新区块拿掉
   assert.deepEqual(u2.children, [x]);
   assert.deepEqual(u1.children, []);
+});
+
+test('reconcile 穷举：4 个 key 的所有子集排列，套用后都等于 next', () => {
+  const keys = ['a', 'b', 'c', 'd'];
+  const perms = (arr) => (arr.length <= 1 ? [arr] : arr.flatMap((x, i) => perms([...arr.slice(0, i), ...arr.slice(i + 1)]).map((p) => [x, ...p])));
+  const subsets = [];
+  for (let m = 0; m < 16; m++) subsets.push(keys.filter((_, i) => m & (1 << i)));
+  const all = subsets.flatMap(perms);
+  for (const cur of perms(keys)) for (const next of all) {
+    assert.deepEqual(applyOps(cur, reconcile(cur, next)), next, `${cur} → ${next}`);
+  }
+});
+
+test('pruneBefore：拿掉已不在 rows 的列（透明旧列），日期区块保留', () => {
+  const before = new Map([['ta', 1], ['tb', 2], ['d2026-11-22', 0]]);
+  pruneBefore(before, (id) => id === 'a');
+  assert.deepEqual([...before.keys()], ['ta', 'd2026-11-22']);
+});
+
+test('home.js：量完位置就修剪旧列', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
+  const iSnap = render.indexOf('snapshotTops(list)');
+  const iPrune = render.indexOf('pruneBefore(before');
+  assert.ok(iSnap >= 0 && iPrune > iSnap && iPrune < render.indexOf('rendering = true;'), '量完、搬动之前修剪');
 });
