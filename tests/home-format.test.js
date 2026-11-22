@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets, newDayKeys,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -330,16 +330,23 @@ test('home.js：本机刚存 → 不量位置、不补位，只让新的一笔�
   const { readFileSync } = await import('node:fs');
   const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
   const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
-  const iTake = render.indexOf('takeSavedForList()');
+  const iTake = render.indexOf('const local = takeSavedForList();');
   const iEmpty = render.indexOf('if (all.length === 0)');
-  assert.ok(iTake >= 0 && iEmpty > iTake, 'takeSavedForList 无条件、在空列表提前 return 之前');
+  assert.ok(iTake >= 0 && iEmpty > iTake, 'takeSavedForList 在空列表提前 return 之前');
+  assert.ok(!/\bif \(/.test(render.slice(0, iTake)), 'takeSavedForList 之前没有任何 if（无条件）');
   assert.match(render, /const before = !local\.size && flipEnterable\(reason, first\)/);
-  assert.match(render, /enterTargets\(/);
-  const iEnter = render.indexOf('enterTargets(');
-  const enterPart = render.slice(iEnter - 300, iEnter + 600);
-  assert.match(enterPart, /list\.closest\('\[hidden\]'\)/, '首页不在画面上不播');
-  assert.match(enterPart, /reducedMotion\(\)[^\n]*fade\(/, '减弱动态只淡入');
-  assert.match(render, /lastDays/, '新区块和上一次画出的日期比，不靠 before');
+  const iBranch = render.indexOf('} else if (local.size');
+  assert.ok(iBranch >= 0, '本机刚存的进场分支');
+  const branch = render.slice(iBranch);
+  assert.match(branch, /^\} else if \(local\.size && flipEnterable\(reason, first\) && !list\.closest\('\[hidden\]'\)\)/, '首页不在画面上不播');
+  assert.match(branch, /enterTargets\(/);
+  assert.match(branch, /playEnter\(/, '进场用共用的 playEnter（含减弱动态、取消旧动画）');
+  assert.ok(!/querySelector\(/.test(branch), '不用 id 拼选择器');
+  // 新区块：和上一次画出的日期比；每次 render 都更新（不在本机刚存的分支里），空列表时重设
+  const iNew = render.indexOf('newDayKeys(days, lastDays)');
+  const iSet = render.indexOf('lastDays = days;');
+  assert.ok(iNew >= 0 && iSet > iNew && iSet < iBranch, '先算新区块再更新 lastDays，且在分支之外');
+  assert.ok(render.slice(iEmpty, render.indexOf('return;', iEmpty)).includes('lastDays = new Set()'), '空列表时重设');
 });
 
 test('home.js：点到旧列先补画，再确认还是同一列', async () => {
@@ -351,9 +358,19 @@ test('home.js：点到旧列先补画，再确认还是同一列', async () => {
     const body = js.slice(i, js.indexOf('\n  }\n', i));
     const iFlush = body.indexOf('flushRender()');
     assert.ok(iFlush >= 0, `${name} 要先补画`);
+    const iTap = body.indexOf('rowTapAllowed(');
+    const iDel = body.indexOf('if (rec.deleting) return;');
+    assert.ok(iTap > iFlush, `${name}：补画要在 rowTapAllowed 之前（否则补画永远跑不到）`);
+    assert.ok(iDel >= 0 && iDel < iFlush, `${name}：删除中先挡掉`);
     assert.match(body.slice(0, iFlush), /pendingReason !== null && dragging === 0/);
     assert.match(body.slice(iFlush), /rows\.get\(rec\.id\) !== rec\) return/);
   }
   const click = js.slice(js.indexOf('function onRowClick('), js.indexOf('function slideOut('));
   assert.ok(!/await/.test(click), 'openEntrySheet 必须同步呼叫');
+});
+
+test('newDayKeys：这次有、上一次没有的日期区块', () => {
+  assert.deepEqual([...newDayKeys(new Set(['d1', 'd2']), new Set(['d2']))], ['d1']);
+  assert.equal(newDayKeys(new Set(['d1']), new Set(['d1'])).size, 0);
+  assert.deepEqual([...newDayKeys(new Set(['d1']), new Set())], ['d1']);
 });

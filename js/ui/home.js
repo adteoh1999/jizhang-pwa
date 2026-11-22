@@ -13,7 +13,7 @@ import { messageDialog } from './dialogs.js';
 import { depth, whenIdle, onDepthChange, isIdle } from './nav.js';
 import {
   rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeFloats, takeSavedForList, DUR,
-  EASE_OUT, snapshotTops, playFlip,
+  EASE_OUT, snapshotTops, playFlip, playEnter,
 } from './motion.js';
 import { summarizeMonth, groupByDate, spendMeter } from '../stats.js';
 import { formatRM } from '../money.js';
@@ -124,6 +124,11 @@ export function enterTargets(added, newDays) {
     if (!out.includes(key)) out.push(key);
   }
   return out;
+}
+
+/** 这次画出、上一次没有的日期区块（判断新区块；不能靠「之前量到的位置」）。 */
+export function newDayKeys(days, lastDays) {
+  return new Set([...days].filter((d) => !lastDays.has(d)));
 }
 
 /** 结余卡要不要先画（v2.3.1）：没有浮层、又有还没画上去的变动 → 卡片马上画，列表照旧等退场播完。 */
@@ -284,6 +289,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   let dragging = 0;            // 正在拖动的列数；拖动中不重排 DOM（会让 pointer capture 失效）
   let renderPending = false;
   let rendering = false;       // render() 正在搬动 DOM
+  let lastDays = new Set();    // 上一次画出的日期区块 key（判断新区块）
   const activeDrags = new Set(); // 拖动中的列 record
   // reason：'data' 资料变动（会动画）、'wake' 从背景回来、'more' 显示更多。多次合并时 'data' 优先。
   // 有浮层（记一笔面板等）时延后到浮层关完、退场播完（whenIdle），动画才看得到。
@@ -320,7 +326,6 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   // ---------- 结余卡（切换眼睛只重画这一块，不重排账单列表） ----------
   let lastRatio = null;   // 比例线上一次的比例（滑入动画的起点）
   let painted = false;    // 第一次画卡片不动画
-  let lastDays = new Set(); // 上一次画出的日期区块 key（判断新区块）
   // 重新算本月摘要并画卡片；资料变动时滚数字、飘字（本机刚新增的那笔）。不动 pendingReason（列表可能还没画）。
   // 列表画时会再呼叫一次：rollTo 字串相同直接返回、比例没变不取消，不会重播。回传全部交易给 render 用。
   function updateCard(reason) {
@@ -436,6 +441,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     // 本机刚存（v2.3.1）：不量位置、不补位（重的工作不要和数字滚动挤在一起），只让新的一笔进场
     const before = !local.size && flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
     const days = new Set();
+    const dayEls = new Map();   // 日期区块 key → section（进场直接拿节点，不用 id 拼选择器）
     rendering = true; // 从这里开始列节点会被搬到新的 <ul>（append 时就离开旧位置）
     try {
       let budget = shown;
@@ -451,12 +457,14 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
           order.push(tx.id);
           return rec.el;
         });
-        days.add(`d${g.date}`);
-        frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today), 'data-flip': `d${g.date}` },
+        const section = h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today), 'data-flip': `d${g.date}` },
           h('h2', { class: 'home-day-header' },
             h('span', null, formatDayHeader(g.date, today)),
             h('span', { class: 'home-day-net' }, formatRM(g.net, { sign: 'always' }))),
-          h('ul', { class: 'home-group', role: 'list' }, lis)));
+          h('ul', { class: 'home-group', role: 'list' }, lis));
+        days.add(`d${g.date}`);
+        dayEls.set(`d${g.date}`, section);
+        frag.push(section);
       }
       for (const id of [...rows.keys()]) {
         if (!seen.has(id)) {
@@ -469,7 +477,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
       rendering = false;
     }
     moreBtn.hidden = all.length <= shown;
-    const newDays = new Set([...days].filter((d) => !lastDays.has(d)));   // 和上一次画出的日期比（不能靠 before）
+    const newDays = newDayKeys(days, lastDays);
     lastDays = days;
 
     // 保持滚动位置与焦点（重排列节点会让焦点掉到 body）
@@ -489,12 +497,11 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
         skip: (el) => !!(rows.get(el.dataset.id) || {}).deleting,   // 正在滑出的列不要被补位动画盖掉
       });
     } else if (local.size && flipEnterable(reason, first) && !list.closest('[hidden]')) {
+      // 不补位就不用等别的列让位：进场不加延迟（补位时 playFlip 会晚 40ms）
       const mine = added.filter((tx) => local.has(tx.id)).map((tx) => ({ rowKey: `t${tx.id}`, dayKey: `d${tx.occurred_on}` }));
       for (const key of enterTargets(mine, newDays)) {
-        const el = list.querySelector(`[data-flip="${key}"]`);
-        if (!el) continue;
-        if (reducedMotion()) fade(el, 'in', { id: 'flip' });
-        else animate(el, [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.rowIn, id: 'flip' });
+        const el = key.startsWith('d') ? dayEls.get(key) : (rows.get(key.slice(1)) || {}).el;
+        if (el) playEnter(el);
       }
     }
   }

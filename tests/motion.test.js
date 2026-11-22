@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   springLinear, SPRING, slideX, digitPlan, shouldAnimateCard,
-  markSaved, unmarkSaved, takeFloats, takeSavedForList, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns, animate, flipPlan,
+  markSaved, unmarkSaved, takeFloats, takeSavedForList, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns, animate, flipPlan, playEnter,
 } from '../js/ui/motion.js';
 
 test('springLinear：41 个点、首 0 尾 1、最大值 ≈ 1+p', () => {
@@ -136,4 +136,15 @@ test('数字滚轮用 EASE_OUT（弹簧会让 0→9 冲过头露出下一格）'
   const roll = js.slice(js.indexOf('export function rollTo('), js.indexOf('// ---------- FLIP'));
   assert.match(roll, /duration: DUR\.roll, delay: r\.rank \* DUR\.digitStagger, easing: EASE_OUT/);
   assert.ok(!/SPRING_SHEET/.test(js), 'SPRING_SHEET 已删除');
+});
+
+test('playEnter：Node 没有 animate 时不出错；playFlip 与首页共用它', async () => {
+  assert.equal(playEnter({}), null);
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/motion.js', import.meta.url), 'utf8');
+  const pe = js.slice(js.indexOf('export function playEnter('), js.indexOf('export function playFlip('));
+  assert.match(pe, /cancelAnims\(el, \{ id: 'flip' \}\)/, '先取消旧的进场 / 补位');
+  assert.match(pe, /reducedMotion\(\)/);
+  const pf = js.slice(js.indexOf('export function playFlip('), js.indexOf('export function flipPlan('));
+  assert.match(pf, /playEnter\(el, \{ delay: 40 \}\)/);
 });

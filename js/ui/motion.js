@@ -199,6 +199,17 @@ export function snapshotTops(root) {
 }
 
 /**
+ * 新出现的列 / 日期区块进场：先取消它身上旧的进场或补位（id='flip'），再从上方淡入滑下；减弱动态只淡入。
+ * 补位（playFlip）与「本机刚存」的进场共用，回传动画（不支援时 null）。
+ */
+export function playEnter(el, { delay = 0 } = {}) {
+  cancelAnims(el, { id: 'flip' });
+  if (reducedMotion()) return fade(el, 'in', { delay, id: 'flip' });
+  return animate(el, [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }],
+    { duration: DUR.rowIn, delay, id: 'flip' });
+}
+
+/**
  * 重画后呼叫：留下来的元素从旧位置 translateY 动画回原位；新出现且 isEnter(key) 的元素从上方淡入滑入。
  * 两段式：先取消上一次的 FLIP 动画（只取消 id='flip'，不碰删除滑出等别人的动画），全部量完再全部写。
  * 巢状（日期区块里的列）：子元素只做「相对父元素」的位移；父元素在进场时子元素不另外动画。
@@ -221,8 +232,7 @@ export function playFlip(root, before, { isEnter = () => false, skip = () => fal
   for (const [i, p] of flipPlan(items, before, { vh: window.innerHeight, isEnter })) {
     const el = els[i];
     if (p.enter) {
-      if (rm) fade(el, 'in', { id: 'flip' });
-      else animate(el, [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.rowIn, delay: 40, id: 'flip' });
+      playEnter(el, { delay: 40 });   // 补位时晚一点进场：先让别的列让位
     } else if (!rm && Math.abs(p.dy) >= 0.5) {
       animate(el, [{ transform: `translateY(${p.dy}px)` }, { transform: 'none' }], { duration: DUR.rowMove, id: 'flip' });
     }
