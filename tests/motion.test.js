@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   springLinear, SPRING, slideX, digitPlan, shouldAnimateCard,
-  markJustAdded, takeJustAdded, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns, animate, flipPlan,
+  markSaved, unmarkSaved, takeFloats, takeSavedForList, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns, animate, flipPlan,
 } from '../js/ui/motion.js';
 
 test('springLinear：41 个点、首 0 尾 1、最大值 ≈ 1+p', () => {
@@ -55,11 +55,31 @@ test('shouldAnimateCard：只有资料变动、非首次、非隐藏才动画', 
   ]) assert.equal(shouldAnimateCard(c), false, JSON.stringify(c));
 });
 
-test('markJustAdded / takeJustAdded：取一次就清掉', () => {
-  markJustAdded('a');
-  assert.equal(takeJustAdded('a'), true);
-  assert.equal(takeJustAdded('a'), false);
-  assert.equal(takeJustAdded('b'), false);
+test('markSaved / takeFloats / takeSavedForList：新增才飘、取一次就清', () => {
+  takeSavedForList(); takeFloats();   // 清掉其他测试留下的
+  markSaved('a', true);
+  markSaved('b', false);
+  assert.deepEqual(takeFloats(), ['a']);
+  assert.deepEqual(takeFloats(), []);
+  assert.deepEqual([...takeSavedForList()].sort(), ['a', 'b']);
+  assert.equal(takeSavedForList().size, 0);
+});
+
+test('连记两笔各飘一次（第一笔的列表还没画）', () => {
+  takeSavedForList(); takeFloats();
+  markSaved('a', true);
+  assert.deepEqual(takeFloats(), ['a']);
+  markSaved('b', true);
+  assert.deepEqual(takeFloats(), ['b']);
+  assert.deepEqual([...takeSavedForList()].sort(), ['a', 'b']);
+});
+
+test('unmarkSaved：没存成就清掉标记', () => {
+  takeSavedForList(); takeFloats();
+  markSaved('a', true);
+  unmarkSaved('a');
+  assert.deepEqual(takeFloats(), []);
+  assert.equal(takeSavedForList().has('a'), false);
 });
 
 test('reducedMotion：Node 没有 matchMedia 时为 false', () => {

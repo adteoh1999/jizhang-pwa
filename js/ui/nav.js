@@ -86,6 +86,8 @@ export function popLayer() {
 }
 
 export const depth = () => stack.length;
+/** 没有浮层、退场也播完（whenIdle 会马上执行）。 */
+export const isIdle = () => stack.length === 0 && exits === 0;
 
 export function onDepthChange(fn) {
   listeners.add(fn);

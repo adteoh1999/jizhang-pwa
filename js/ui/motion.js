@@ -113,10 +113,21 @@ export function shouldAnimateCard({ first, hidden, reason }) {
   return !first && !hidden && reason === 'data';
 }
 
-// 「用户刚新增的一笔」：记一笔储存后标记，首页画出这一列时取走（决定要不要飘字）
-const justAdded = new Set();
-export function markJustAdded(id) { justAdded.add(id); }
-export function takeJustAdded(id) { return justAdded.delete(id); }
+// 「本机刚存」：记一笔储存前标记（新增与编辑都标）。
+// 卡片先画时用 takeFloats 取飘字（只有新增、每笔一次）；列表画时用 takeSavedForList 取全部并清空（决定不补位）。
+const saved = new Map();   // id → { isNew, floated }
+export function markSaved(id, isNew) { saved.set(id, { isNew: !!isNew, floated: false }); }
+export function unmarkSaved(id) { saved.delete(id); }
+export function takeFloats() {
+  const out = [];
+  for (const [id, v] of saved) if (v.isNew && !v.floated) { v.floated = true; out.push(id); }
+  return out;
+}
+export function takeSavedForList() {
+  const ids = new Set(saved.keys());
+  saved.clear();
+  return ids;
+}
 
 // ---------- 数字滚轮 ----------
 const rolled = new WeakMap(); // 元素 → 目前（目标）字串

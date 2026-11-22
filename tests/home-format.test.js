@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -205,6 +205,32 @@ test('CSS：收入 / 支出滚轮的格高等于原本的行高', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
   assert.match(css, /\.home-flow-v \.roll \{[^}]*--roll-h:\s*1\.294em/);
+});
+
+test('paintCardEarly：没有浮层且有待画变动才先画卡片', () => {
+  assert.equal(paintCardEarly({ depth: 0, pendingReason: 'data' }), true);
+  assert.equal(paintCardEarly({ depth: 1, pendingReason: 'data' }), false);
+  assert.equal(paintCardEarly({ depth: 0, pendingReason: null }), false);
+});
+
+test('home.js：卡片可以在浮层关掉时先画，列表只在 whenIdle 里画', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const i = js.indexOf('onDepthChange(');
+  assert.ok(i >= 0, '要监听 onDepthChange');
+  const cb = js.slice(i, js.indexOf('\n  });', i));
+  assert.match(cb, /paintCardEarly\(/);
+  assert.match(cb, /updateCard\(/);
+  assert.ok(!/flushRender\(|render\(/.test(cb.replace(/updateCard\(/g, '')), 'onDepthChange 里不能画列表');
+  const rr = js.slice(js.indexOf('function requestRender('), js.indexOf('function flushRender('));
+  assert.match(rr, /updateCard\(/);
+  assert.match(rr, /whenIdle\(\(\) => \{[\s\S]*flushRender\(\);/);
+  // 隐藏金额：updateCard 用 shouldAnimateCard 决定动不动；只有要动才取飘字
+  const uc = js.slice(js.indexOf('function updateCard('), js.indexOf('function paintCard('));
+  assert.ok(uc.length > 0, '要有 updateCard（写在 paintCard 前面）');
+  assert.match(uc, /shouldAnimateCard\(/);
+  assert.match(uc, /if \(anim\)[^\n]*takeFloats\(\)/);
+  assert.ok(!/takeJustAdded|markJustAdded/.test(js), '旧标记已移除');
 });
 
 test('home.js：重画时机只有一个来源（whenIdle），拖动结束也走 requestRender', async () => {

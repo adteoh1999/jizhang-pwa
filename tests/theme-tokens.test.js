@@ -236,3 +236,13 @@ test('切换分页：动画本身带 id、减弱动态或不支援 overflow clip
   const tabbar = readFileSync(new URL('js/ui/tabbar.js', root), 'utf8');
   assert.match(tabbar, /e\.repeat/);
 });
+
+test('entry-sheet：新增与编辑都标记「本机刚存」，没存成就清掉', () => {
+  const entry = readFileSync(new URL('js/ui/entry-sheet.js', root), 'utf8');
+  const save = entry.slice(entry.indexOf('async function save('), entry.indexOf('async function confirmDelete('));
+  const iMark = save.indexOf('markSaved(id, !tx)');
+  const iSave = save.indexOf('saveTransaction(');
+  assert.ok(iMark >= 0 && iSave > iMark, '储存前标记（新增与编辑都标）');
+  const iCatch = save.indexOf('catch (e)');
+  assert.ok(iCatch > iSave && save.indexOf('unmarkSaved(id)', iCatch) > iCatch, '没存成要清掉');
+});

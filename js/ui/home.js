@@ -10,9 +10,9 @@ import { openEntrySheet } from './entry-sheet.js';
 import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
 import { messageDialog } from './dialogs.js';
-import { depth, whenIdle } from './nav.js';
+import { depth, whenIdle, onDepthChange, isIdle } from './nav.js';
 import {
-  rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeJustAdded, DUR,
+  rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeFloats, DUR,
   EASE_OUT, snapshotTops, playFlip,
 } from './motion.js';
 import { summarizeMonth, groupByDate, spendMeter } from '../stats.js';
@@ -111,6 +111,11 @@ export function flipEnterable(reason, first) {
 /** 重画原因合并：'data'（资料变动，会动画）优先，其余保留先来的。 */
 export function mergeReason(pending, reason) {
   return pending === 'data' || reason === 'data' ? 'data' : (pending || reason);
+}
+
+/** 结余卡要不要先画（v2.3.1）：没有浮层、又有还没画上去的变动 → 卡片马上画，列表照旧等退场播完。 */
+export function paintCardEarly({ depth: d, pendingReason }) {
+  return d === 0 && pendingReason !== null;
 }
 
 /** 有还没画上去的变动（面板正在退场、首页延后重画）时不处理点列：列上还是旧资料。 */
@@ -273,6 +278,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   let idleQueued = false;
   function requestRender(reason = 'data') {
     pendingReason = mergeReason(pendingReason, reason);
+    // 浮层已关、只剩退场在播：卡片先画（数字马上滚），列表等 whenIdle。
+    // 完全闲置时 whenIdle 会马上整页画（含卡片），这里不必先画
+    if (!isIdle() && paintCardEarly({ depth: depth(), pendingReason })) updateCard(pendingReason);
     if (dragging > 0) { renderPending = true; return; }
     if (idleQueued) return;
     idleQueued = true;
@@ -289,10 +297,31 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     pendingReason = null;
     render(r);
   }
+  // 最上层浮层一关（例如记一笔存好）：卡片马上画；列表仍等退场播完（whenIdle）
+  onDepthChange((d) => {
+    if (paintCardEarly({ depth: d, pendingReason })) updateCard(pendingReason);
+  });
 
   // ---------- 结余卡（切换眼睛只重画这一块，不重排账单列表） ----------
   let lastRatio = null;   // 比例线上一次的比例（滑入动画的起点）
   let painted = false;    // 第一次画卡片不动画
+  // 重新算本月摘要并画卡片；资料变动时滚数字、飘字（本机刚新增的那笔）。不动 pendingReason（列表可能还没画）。
+  // 列表画时会再呼叫一次：rollTo 字串相同直接返回、比例没变不取消，不会重播。回传全部交易给 render 用。
+  function updateCard(reason) {
+    today = todayLocal();
+    const all = store.transactions();
+    const month = monthOf(today);
+    lastSummary = summarizeMonth(all, month);
+    if (monthEl) monthEl.textContent = formatMonthTitle(month);
+    const anim = shouldAnimateCard({ first: !painted, hidden, reason });
+    painted = true;
+    paintCard(anim);
+    if (anim) for (const id of takeFloats()) {
+      const tx = all.find((t) => t.id === id);
+      if (tx && monthOf(tx.occurred_on) === month) floatUp(tx); // 记在别的月份不飘
+    }
+    return all;
+  }
   function paintCard(anim = false) {
     const eye = eyeButtonState(hidden);
     if (eyeBtn.getAttribute('aria-label') !== eye.label) { // 状态变了才换图示，不必每次 render 重建 SVG
@@ -357,16 +386,8 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   function render(reason = 'data') {
     renderPending = false;
-    today = todayLocal();
-    const all = store.transactions();
-    const month = monthOf(today);
-    const s = summarizeMonth(all, month);
-    if (monthEl) monthEl.textContent = formatMonthTitle(month);
-    lastSummary = s;
     const first = !painted;
-    const anim = shouldAnimateCard({ first, hidden, reason });
-    painted = true;
-    paintCard(anim);
+    const all = updateCard(reason);
     countEl.textContent = countText(all.length);
 
     const scrollY = window.scrollY;
@@ -423,11 +444,6 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
       rendering = false;
     }
     moreBtn.hidden = all.length <= shown;
-
-    // 刚记的一笔（日期在本月）→ 飘字；取走标记，之后不会再飘
-    for (const tx of added) {
-      if (takeJustAdded(tx.id) && anim && monthOf(tx.occurred_on) === month) floatUp(tx);
-    }
 
     // 保持滚动位置与焦点（重排列节点会让焦点掉到 body）
     if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
