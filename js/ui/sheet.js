@@ -75,7 +75,7 @@ export function openSheet({
   // 进场的弹簧只用在进场：播完、开始下拉、或关闭时拿掉（之后的回弹维持 ease-out）
   const endEntering = () => panel.classList.remove('is-entering');
   panel.addEventListener('transitionend', (e) => { if (e.target === panel) endEntering(); });
-  setTimeout(endEntering, 700); // 后备
+  setTimeout(endEntering, 450); // 后备
   header.addEventListener('pointerdown', (e) => {
     if (closed || e.button > 0 || e.target.closest('button, input')) return;
     endEntering(); // 必须：.is-dragging 的优先级比进场规则低
@@ -131,7 +131,7 @@ export function openSheet({
       panel.style.transform = ''; // 从目前（可能已下拉一段）的位置滑下去
       const remove = () => { overlay.remove(); release(); };
       overlay.addEventListener('transitionend', (e) => { if (e.target === overlay) remove(); });
-      setTimeout(remove, 450); // 后备
+      setTimeout(remove, 350); // 后备
       if (opener && typeof opener.focus === 'function' && document.contains(opener)) {
         opener.focus({ preventScroll: true });
       }

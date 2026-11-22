@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  springLinear, SPRING, SPRING_SHEET, slideX, digitPlan, shouldAnimateCard,
+  springLinear, SPRING, slideX, digitPlan, shouldAnimateCard,
   markJustAdded, takeJustAdded, reducedMotion, DUR, pickEasing, SPRING_FALLBACK, EASE_OUT, rollRuns, animate, flipPlan,
 } from '../js/ui/motion.js';
 
@@ -15,8 +15,7 @@ test('springLinear：41 个点、首 0 尾 1、最大值 ≈ 1+p', () => {
     assert.equal(pts[40], 1);
     assert.ok(Math.abs(Math.max(...pts) - (1 + p)) < 0.003, `max ${Math.max(...pts)}`);
   }
-  assert.equal(SPRING, springLinear(0.08));
-  assert.equal(SPRING_SHEET, springLinear(0.01));
+  assert.equal(SPRING, springLinear(0.04));
 });
 
 test('slideX：滑入做法的 transform', () => {
@@ -69,16 +68,15 @@ test('reducedMotion：Node 没有 matchMedia 时为 false', () => {
 
 test('DUR：spec 的时长', () => {
   assert.deepEqual(DUR, {
-    roll: 420, bar: 420, rowMove: 360, rowIn: 380, rowOut: 260, sheetIn: 460, pop: 360,
-    check: 380, checkHold: 350, tab: 320, draw: 420, dot: 340, monthOut: 160, monthIn: 340,
-    fade: 200, float: 1200, barStagger: 55, barDelay: 120, digitStagger: 22,
+    roll: 250, bar: 250, rowMove: 220, rowIn: 200, rowOut: 180, pop: 180,
+    check: 380, checkHold: 350, tab: 200, draw: 250, dot: 180, monthOut: 100, monthIn: 200,
+    fade: 200, float: 800, barStagger: 20, barDelay: 40, digitStagger: 12,
   });
 });
 
-test('pickEasing：支援 linear() 就用原曲线；不支援时面板 → EASE_OUT、其他弹簧 → 后备', () => {
+test('pickEasing：支援 linear() 就用原曲线；不支援时弹簧 → 后备', () => {
   assert.equal(pickEasing(SPRING, true), SPRING);
   assert.equal(pickEasing(SPRING, false), SPRING_FALLBACK);
-  assert.equal(pickEasing(SPRING_SHEET, false), EASE_OUT);
   assert.equal(pickEasing('ease', false), 'ease');
 });
 
@@ -110,4 +108,12 @@ test('flipPlan：留下的元素位移、新元素进场、巢状只算相对位
   const before = new Map([['d1', 50], ['t1', 70], ['t3', 1900], ['t4', 380]]);
   const plan = flipPlan(items, before, { vh: 800, isEnter: () => true });
   assert.deepEqual([...plan.entries()], [[0, { dy: -50 }], [1, { dy: -10 }], [2, { enter: true, dy: 0 }]]);
+});
+
+test('数字滚轮用 EASE_OUT（弹簧会让 0→9 冲过头露出下一格）', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/motion.js', import.meta.url), 'utf8');
+  const roll = js.slice(js.indexOf('export function rollTo('), js.indexOf('// ---------- FLIP'));
+  assert.match(roll, /duration: DUR\.roll, delay: r\.rank \* DUR\.digitStagger, easing: EASE_OUT/);
+  assert.ok(!/SPRING_SHEET/.test(js), 'SPRING_SHEET 已删除');
 });

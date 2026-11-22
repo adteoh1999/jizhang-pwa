@@ -18,16 +18,16 @@ export function springLinear(p) {
   return `linear(${pts.join(', ')})`;
 }
 
-export const SPRING = springLinear(0.08);          // 「中」：用户在预览挑的
-export const SPRING_SHEET = springLinear(0.01);    // 记一笔面板：移动距离大，弹过头控制在约 8px
+export const SPRING = springLinear(0.04);          // v2.3.1：弹性减半（v2.3 是 8%）
 export const SPRING_FALLBACK = 'cubic-bezier(0.34, 1.35, 0.64, 1)'; // 不支援 linear()（iOS < 17.2）
 export const EASE_OUT = 'cubic-bezier(0.32, 0.72, 0, 1)';            // 同 CSS --ease-out：退场用
 export const EASE_DRAW = 'cubic-bezier(0.3, 0, 0.2, 1)';             // 走势线画出
 
+// v2.3.1：用户实测嫌慢 → 大部分 0.15–0.25 秒，飘字 0.8 秒
 export const DUR = {
-  roll: 420, bar: 420, rowMove: 360, rowIn: 380, rowOut: 260, sheetIn: 460, pop: 360,
-  check: 380, checkHold: 350, tab: 320, draw: 420, dot: 340, monthOut: 160, monthIn: 340,
-  fade: 200, float: 1200, barStagger: 55, barDelay: 120, digitStagger: 22,
+  roll: 250, bar: 250, rowMove: 220, rowIn: 200, rowOut: 180, pop: 180,
+  check: 380, checkHold: 350, tab: 200, draw: 250, dot: 180, monthOut: 100, monthIn: 200,
+  fade: 200, float: 800, barStagger: 20, barDelay: 40, digitStagger: 12,
 };
 
 /** 支不支援 overflow-x: clip（iOS 16 起）；不支援时横向滑动会短暂出现横向滚动，只用淡入淡出。 */
@@ -41,10 +41,10 @@ export function reducedMotion() {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-/** 曲线选择（纯函数）：支援 linear() 就用原曲线；不支援时面板弹簧 → EASE_OUT，其他弹簧 → 后备。 */
+/** 曲线选择（纯函数）：支援 linear() 就用原曲线；不支援时弹簧 → 后备。 */
 export function pickEasing(easing, linearSupported) {
   if (linearSupported || !easing.startsWith('linear(')) return easing;
-  return easing === SPRING_SHEET ? EASE_OUT : SPRING_FALLBACK;
+  return SPRING_FALLBACK;
 }
 
 // 与 CSS 的 @supports 用同一个判断来源
@@ -136,7 +136,7 @@ export function rollRuns(plan) {
 /**
  * 把 el 的内容设成 str；animate 时只有变的位数从旧数字滚到新数字。
  * 容器要已经 aria-hidden（读屏读 .sr-only）。动画中又呼叫：旧节点整批换掉（旧动画随之消失），
- * 从上一次的「目标值」接着滚（不是画面上滚到一半的位置；只有 0.42 秒内连续变动才看得出差别）。
+ * 从上一次的「目标值」接着滚（不是画面上滚到一半的位置；只有滚动期间（约 0.3 秒）内连续变动才看得出差别）。
  */
 export function rollTo(el, str, { animate: anim = false } = {}) {
   const old = rolled.get(el) ?? '';
@@ -175,7 +175,7 @@ export function rollTo(el, str, { animate: anim = false } = {}) {
   }
   for (const [col, r] of moving) {
     animate(col, [{ transform: `translateY(${-r.from * 10}%)` }, { transform: `translateY(${-r.to * 10}%)` }],
-      { duration: DUR.roll, delay: r.rank * DUR.digitStagger });
+      { duration: DUR.roll, delay: r.rank * DUR.digitStagger, easing: EASE_OUT });
   }
 }
 

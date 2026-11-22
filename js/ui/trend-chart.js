@@ -233,7 +233,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
     for (const el of [reveal, revealIn, mDot, single, mLine, tip]) cancelAnims(el);
   }
 
-  function playReveal({ delay = 80 } = {}) {
+  function playReveal({ delay = 40 } = {}) {
     if (box.hidden || !lastDay) return;
     const parts = [mDot, single, mLine, tip];
     stopReveal();
@@ -254,7 +254,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
       { duration: DUR.draw, delay, easing: EASE_DRAW });
     animate(revealIn, [{ transform: 'translateX(100%)' }, { transform: `translateX(${(100 - p).toFixed(2)}%)` }],
       { duration: DUR.draw, delay, easing: EASE_DRAW });
-    const after = delay + DUR.draw - 60;
+    const after = delay + DUR.draw - 40;
     for (const el of [mDot, single]) {
       animate(el, [{ opacity: 0, transform: 'scale(0.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: DUR.dot, delay: after });
     }

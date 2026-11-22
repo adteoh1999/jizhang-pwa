@@ -133,7 +133,7 @@ export function mountStats(root, store) {
     cancelAnims(body);   // 进场途中再点：先跳回原位再退场（160ms 内看不出）
     const out = !slide
       ? fade(body, 'out', { duration: DUR.monthOut })
-      : animate(body, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateX(${-delta * 28}px)` }],
+      : animate(body, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateX(${-delta * 16}px)` }],
         { duration: DUR.monthOut, easing: EASE_OUT, fill: 'forwards' });
     const done = () => {
       if (!switching || seq !== switchSeq) return;
@@ -142,7 +142,7 @@ export function mountStats(root, store) {
       cancelAnims(body);   // 拿掉停在透明的退场
       if (!slide) fade(body, 'in');
       else {
-        animate(body, [{ opacity: 0, transform: `translateX(${switchDir * 28}px)` }, { opacity: 1, transform: 'none' }],
+        animate(body, [{ opacity: 0, transform: `translateX(${switchDir * 16}px)` }, { opacity: 1, transform: 'none' }],
           { duration: DUR.monthIn });
       }
     };
@@ -159,7 +159,7 @@ export function mountStats(root, store) {
       if (reducedMotion()) fade(bar, 'in', { delay: DUR.barDelay });
       else {
         animate(bar, [{ transform: 'translateX(-100%)' }, { transform: bar.dataset.to }],
-          { duration: DUR.bar, delay: DUR.barDelay + Math.min(i, 8) * DUR.barStagger });   // 分类很多时不要等太久
+          { duration: DUR.bar, delay: DUR.barDelay + Math.min(i, 5) * DUR.barStagger });   // 分类很多时不要等太久
       }
     });
   }

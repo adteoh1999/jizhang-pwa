@@ -111,8 +111,12 @@ test('走势图揭开层：内距放在里层（两层同宽，位移才相等�
   const sv = readFileSync(new URL('../js/ui/stats-view.js', import.meta.url), 'utf8');
   assert.match(sv, /const seq = \+\+switchSeq;/);
   assert.match(sv, /clipSupported\(\)/);
-  assert.match(sv, /Math\.min\(i, 8\)/);
+  assert.match(sv, /Math\.min\(i, 5\)/);
+  assert.match(sv, /translateX\(\$\{-delta \* 16\}px\)/);
+  assert.match(sv, /translateX\(\$\{switchDir \* 16\}px\)/);
   const tc = readFileSync(new URL('../js/ui/trend-chart.js', import.meta.url), 'utf8');
   assert.match(tc, /function stopReveal\(/);
+  assert.match(tc, /function playReveal\(\{ delay = 40 \} = \{\}\)/);
+  assert.match(tc, /const after = delay \+ DUR\.draw - 40;/);
   assert.ok((tc.match(/stopReveal\(\)/g) || []).length >= 3, 'update（换月）、拖动、键盘都要停掉揭开');
 });

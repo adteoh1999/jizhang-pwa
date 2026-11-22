@@ -178,15 +178,16 @@
   /* v2.3 弹簧：这里是后备（iOS < 17.2 不支援 linear()）；支援时由下面的 @supports 换成真的弹簧。
      数值由 js/ui/motion.js 的 springLinear() 算出，测试会检查两边一致 */
   --spring: cubic-bezier(0.34, 1.35, 0.64, 1);
-  --spring-sheet: var(--ease-out);
+  /* 记一笔面板进场（v2.3.1：不回弹，比 --ease-out 不那么前倾，避免「跳出来再拖尾」）；做成变量方便真机调 */
+  --sheet-in-dur: 0.32s;
+  --sheet-in-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @media (min-width: 414px) {
   :root { --margin: 20px; }
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
-    --spring: linear(0, 0.0219, 0.0796, 0.162, 0.2597, 0.365, 0.4716, 0.5747, 0.6709, 0.7577, 0.8339, 0.8986, 0.9521, 0.9947, 1.0273, 1.0509, 1.0667, 1.0759, 1.0797, 1.0793, 1.0756, 1.0697, 1.0622, 1.0539, 1.0454, 1.037, 1.0291, 1.0218, 1.0154, 1.0099, 1.0053, 1.0016, 0.9987, 0.9965, 0.9951, 0.9941, 0.9937, 0.9936, 0.9938, 0.9942, 1);   /* 中：弹过头 8% */
-    --spring-sheet: linear(0, 0.0126, 0.0461, 0.0946, 0.1533, 0.2183, 0.2866, 0.3557, 0.4238, 0.4894, 0.5516, 0.6097, 0.6632, 0.712, 0.7561, 0.7954, 0.8302, 0.8608, 0.8874, 0.9103, 0.9298, 0.9464, 0.9603, 0.9718, 0.9812, 0.9888, 0.9948, 0.9996, 1.0031, 1.0058, 1.0077, 1.0089, 1.0096, 1.01, 1.01, 1.0097, 1.0093, 1.0088, 1.0081, 1.0075, 1);   /* 记一笔面板：约 1% */
+    --spring: linear(0, 0.0168, 0.0612, 0.1252, 0.2019, 0.2858, 0.3726, 0.4587, 0.5415, 0.6191, 0.6903, 0.7544, 0.811, 0.86, 0.9018, 0.9367, 0.9652, 0.988, 1.0057, 1.0189, 1.0284, 1.0347, 1.0383, 1.0399, 1.0398, 1.0384, 1.0361, 1.0332, 1.03, 1.0265, 1.0231, 1.0197, 1.0165, 1.0135, 1.0108, 1.0085, 1.0064, 1.0046, 1.0031, 1.0018, 1);   /* 弹过头 4%（v2.3.1） */
   }
 }
 
@@ -366,7 +367,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   border-radius: 28px;
   background: var(--btn-bg);
   transform: translateX(calc(var(--i, 0) * 100%));
-  transition: transform 0.42s var(--spring);
+  transition: transform 0.25s var(--spring);
 }
 
 .tabbar-item {
@@ -382,7 +383,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   transition: color 0.2s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.tabbar-item svg { stroke-width: 2.3; transition: transform 0.35s var(--spring); }
+.tabbar-item svg { stroke-width: 2.3; transition: transform 0.2s var(--spring); }
 .tabbar-item[aria-selected="true"] { color: var(--btn-fg); }
 .tabbar-item[aria-selected="true"] svg { transform: scale(1.06); }
 .tabbar-item:active svg { transform: scale(0.88); }
@@ -438,7 +439,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   z-index: 100;
   background: var(--dim);
   opacity: 0;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.2s ease;
   overscroll-behavior: contain;
   touch-action: none;
 }
@@ -525,7 +526,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   flex-direction: column;
   gap: 8px;
   transform: translateY(110%);
-  transition: transform 0.35s var(--ease-out);
+  transition: transform 0.25s var(--ease-out);
   touch-action: auto;
 }
 .overlay-sheet.is-visible .action-sheet { transform: translateY(0); }
@@ -590,7 +591,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   box-shadow: 0 6px 24px var(--glass-shade);
   opacity: 0;
   transform: translateY(12px);
-  transition: opacity 0.25s ease, transform 0.3s var(--ease-out);
+  transition: opacity 0.2s ease, transform 0.2s var(--ease-out);
 }
 .toast.is-visible { opacity: 1; transform: translateY(0); }
 .toast-message { flex: 1; padding: 6px 0; font-weight: 400; }
@@ -675,18 +676,16 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   flex-direction: column;
   border-radius: 30px 30px 0 0;
   background: var(--drawer);
-  /* 第二层：往下延伸的实色（看不到），进场弹过头时底部不露缝（面板有 overflow:hidden，不能用伪元素） */
-  box-shadow: 0 40px 0 0 var(--drawer), 0 -2px 20px rgba(0, 0, 0, 0.12);   /* 先写的画在上面 */
+  box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.12);
   transform: translateY(100%);
-  transition: transform 0.4s var(--ease-out);
+  transition: transform 0.25s var(--ease-out);
   touch-action: auto;
   overflow: hidden;
 }
 .overlay-modal.is-visible .modal-sheet { transform: translateY(0); } /* 下拉中由 inline transform 覆盖 */
-/* v2.3 进场带一点弹性（面板高 1%，iPhone 上约 8px，不会冲进状态栏；iPad / 桌面很高的视窗可能超 1–3px）。
-   只在进场时（is-entering），退场与下拉回弹维持 ease-out。注意：.is-dragging 的优先级比这条低，
-   所以 sheet.js 在开始下拉时先拿掉 is-entering */
-.overlay-modal.is-visible .modal-sheet.is-entering { transition: transform 0.46s var(--spring-sheet); }
+/* 进场曲线（v2.3.1 不回弹）。只在进场时（is-entering），退场与下拉回弹维持 ease-out。
+   注意：.is-dragging 的优先级比这条低，所以 sheet.js 在开始下拉时先拿掉 is-entering */
+.overlay-modal.is-visible .modal-sheet.is-entering { transition: transform var(--sheet-in-dur) var(--sheet-in-ease); }
 .modal-sheet.is-dragging { transition: none; }
 
 /* 把手 + 标题列：可下拉的区域 */
@@ -1321,8 +1320,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 没滑开时不接受点按（键盘 / VoiceOver 仍可到达；聚焦时列会滑开） */
 .home-row:not(.is-revealed) .home-row-delete { pointer-events: none; }
 .home-row-delete:focus-visible { outline: 2px solid var(--on-red); outline-offset: -4px; }
-.home-row-content.is-animating { transition: transform 0.3s var(--ease-out); }
-.home-row-delete.is-animating { transition: width 0.3s var(--ease-out); }
+.home-row-content.is-animating { transition: transform 0.2s var(--ease-out); }
+.home-row-delete.is-animating { transition: width 0.2s var(--ease-out); }
 
 .home-more {
   display: block;
@@ -1608,7 +1607,7 @@ button.inset-row:active { background: var(--press-bg); }
      规则与 .sky 共用（§3 .sky 规则），这里不再另写 */
   box-shadow: -2px 0 20px rgba(0, 0, 0, 0.12);
   transform: translateX(100%);
-  transition: transform 0.35s var(--ease-out);
+  transition: transform 0.25s var(--ease-out);
 }
 .nav-page.is-visible { transform: translateX(0); }
 .nav-page-bar {

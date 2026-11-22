@@ -125,15 +125,16 @@ test('app.js prepends the .sky layer', () => {
   assert.match(js, /document\.body\.prepend\(h\('div', \{ class: 'sky'/);
 });
 
-test('--spring / --spring-sheet：基础值是后备，@supports linear() 区块等于 motion.js 算出的字串', async () => {
-  const { SPRING, SPRING_SHEET, SPRING_FALLBACK } = await import('../js/ui/motion.js');
+test('--spring：基础值是后备，@supports linear() 区块等于 motion.js 算出的字串；没有 --spring-sheet', async () => {
+  const { SPRING, SPRING_FALLBACK } = await import('../js/ui/motion.js');
   const base = namesAndValues(blockAfter(css, ':root {', css.lastIndexOf(':root {', css.indexOf('--ease-out'))));
   assert.equal(base['--spring'], SPRING_FALLBACK);
-  assert.equal(base['--spring-sheet'], 'var(--ease-out)');
+  assert.ok(!css.includes('--spring-sheet'), '--spring-sheet 已删除');
+  assert.equal(base['--sheet-in-dur'], '0.32s');
+  assert.equal(base['--sheet-in-ease'], 'cubic-bezier(0.2, 0.8, 0.2, 1)');
   const sup = blockAfter(css, '@supports (transition-timing-function: linear(0, 1))');
   const v = namesAndValues(blockAfter(sup, ':root {'));
   assert.equal(v['--spring'], SPRING);
-  assert.equal(v['--spring-sheet'], SPRING_SHEET);
   assert.ok(css.indexOf('@supports (transition-timing-function: linear(0, 1))') > css.indexOf('--ease-out'),
     '@supports 要放在第一个 :root 之后');
 });
@@ -145,9 +146,22 @@ test('JS 也不能用 will-change', () => {
   for (const f of walk(dir)) assert.ok(!/will-?change/i.test(readFileSync(f, 'utf8')), f.pathname);
 });
 
-test('标签栏胶囊与图示的回弹用 var(--spring)', () => {
-  assert.match(blockAfter(css, '\n.tabbar-pill {'), /transition:[^;]*var\(--spring\)/);
-  assert.match(blockAfter(css, '\n.tabbar-item svg {'), /transition:[^;]*var\(--spring\)/);
+test('标签栏胶囊 0.25s、图示 0.2s，回弹用 var(--spring)', () => {
+  assert.match(blockAfter(css, '\n.tabbar-pill {'), /transition:\s*transform 0\.25s var\(--spring\)/);
+  assert.match(blockAfter(css, '\n.tabbar-item svg {'), /transition:\s*transform 0\.2s var\(--spring\)/);
+});
+
+test('v2.3.1 时长：面板退场 0.25s、遮罩 0.2s、toast 0.2s、action sheet 0.25s、子页面 0.25s、列左滑 0.2s', () => {
+  assert.match(blockAfter(css, '\n.modal-sheet {'), /transition:\s*transform 0\.25s var\(--ease-out\)/);
+  assert.match(blockAfter(css, '\n.overlay {'), /transition:\s*opacity 0\.2s ease/);
+  assert.match(blockAfter(css, '\n.toast {'), /transition:\s*opacity 0\.2s ease, transform 0\.2s var\(--ease-out\)/);
+  assert.match(blockAfter(css, '\n.action-sheet {'), /transition:\s*transform 0\.25s var\(--ease-out\)/);
+  assert.match(blockAfter(css, '\n.nav-page {'), /transition:\s*transform 0\.25s var\(--ease-out\)/);
+  assert.match(css, /\.home-row-content\.is-animating \{ transition: transform 0\.2s var\(--ease-out\); \}/);
+  assert.match(css, /\.home-row-delete\.is-animating \{ transition: width 0\.2s var\(--ease-out\); \}/);
+  const sheet = readFileSync(new URL('js/ui/sheet.js', root), 'utf8');
+  assert.match(sheet, /setTimeout\(endEntering, 450\)/);
+  assert.match(sheet, /setTimeout\(remove, 350\)/);
 });
 
 test('数字滚轮：容器裁切、行高等于格高，非数字段保留空格', () => {
@@ -158,12 +172,12 @@ test('数字滚轮：容器裁切、行高等于格高，非数字段保留空�
   assert.match(blockAfter(css, '\n.roll > span {'), /white-space:\s*pre/);
 });
 
-test('记一笔面板：进场用 --spring-sheet 0.46s（只在 is-entering），减弱动态用同一个选择器关掉，底部有实色延伸', () => {
+test('记一笔面板：进场用 --sheet-in-dur / --sheet-in-ease（只在 is-entering），减弱动态用同一个选择器关掉，不再有实色延伸', () => {
   const SEL = '.overlay-modal.is-visible .modal-sheet.is-entering {';
-  assert.match(blockAfter(css, '\n' + SEL), /transition:\s*transform 0\.46s var\(--spring-sheet\)/);
+  assert.match(blockAfter(css, '\n' + SEL), /transition:\s*transform var\(--sheet-in-dur\) var\(--sheet-in-ease\)/);
   const rm = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)/g)].map((m) => blockAfter(css, '@media (prefers-reduced-motion: reduce)', m.index));
   assert.ok(rm.some((b) => b.includes(SEL.slice(0, -2)) && /transition:\s*none/.test(b.slice(b.indexOf(SEL.slice(0, -2))))), '减弱动态要盖过进场规则');
-  assert.match(blockAfter(css, '\n.modal-sheet {'), /box-shadow:[^;]*0 40px 0 0 var\(--drawer\)/);
+  assert.ok(!/0 40px 0 0 var\(--drawer\)/.test(blockAfter(css, '\n.modal-sheet {')), '不回弹就不需要底部实色延伸');
 });
 
 test('sheet.js / entry-sheet.js：退场登记、分类轻弹、储存变勾', () => {
@@ -186,8 +200,6 @@ test('记一笔：顺序与停顿期间的保护', () => {
   assert.match(entry, /class: 'modal-sheet-saved-text'/);
   assert.match(blockAfter(css, '\n.modal-sheet-saved-text {'), /display:\s*inline-block/);
   assert.match(blockAfter(css, '\n.modal-sheet.is-saving .modal-sheet-body {'), /pointer-events:\s*none/);
-  const shadow = blockAfter(css, '\n.modal-sheet {').match(/box-shadow:([^;]*)/)[1];
-  assert.ok(shadow.trim().startsWith('0 40px 0 0 var(--drawer)'), '实色延伸要画在模糊阴影上面');
   const sheet = readFileSync(new URL('js/ui/sheet.js', root), 'utf8');
   assert.ok(!/if \(reducedMotion\(\)\) release\(\)/.test(sheet), '减弱动态不能提早放行（焦点还原之前）');
   assert.ok(sheet.indexOf('overlay.remove(); release();') > 0);
@@ -196,7 +208,8 @@ test('记一笔：顺序与停顿期间的保护', () => {
 test('切换分页：.screens 横向裁切；app.js 对新分页淡入滑动，切到统计页呼叫 enter()', () => {
   assert.match(blockAfter(css, '\n.screens {'), /overflow-x:\s*clip/);
   const app = readFileSync(new URL('js/app.js', root), 'utf8');
-  assert.match(app, /translateX\(\$\{dir \* 16\}px\)/);
+  assert.match(app, /translateX\(\$\{dir \* 8\}px\)/);
+  assert.match(app, /duration: DUR\.tab, easing: EASE_OUT/);
   assert.match(app, /duration: DUR\.tab/);
   assert.match(app, /id: 'tab'/);
   assert.match(app, /stats\.enter\(\)/);
