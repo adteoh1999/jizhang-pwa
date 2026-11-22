@@ -7,6 +7,8 @@ import { openSheet } from './sheet.js';
 import { actionSheet, messageDialog } from './dialogs.js';
 import { kindSegmented, confirmDiscard } from './components.js';
 import { showToast } from './toast.js';
+import { announce } from './announce.js';
+import { whenIdle } from './nav.js';
 import { parseAmount, minorToDecimalString } from '../money.js';
 import { todayLocal, isValidDateString } from '../dates.js';
 import { ValidationError, NOTE_MAX } from '../model.js';
@@ -328,6 +330,8 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     // 已经存好：马上关（v2.3.1 拿掉 ✓ 停留）。saving 维持 true，退场中不能再存或删除；面板内容不接受点按。
     sheet.panel.classList.add('is-saving');
     sheet.close();
+    // 拿掉 ✓ 之后，读屏用户靠这句知道存好了。等面板退场完、首页重画完（焦点不再变动）才念，免得被焦点朗读盖掉
+    whenIdle(() => announce('已储存'));
   }
 
   async function confirmDelete() {

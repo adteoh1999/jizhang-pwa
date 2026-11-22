@@ -301,6 +301,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   clip-path: inset(50%);
   white-space: nowrap;
 }
+/* 读屏朗读区（js/ui/announce.js）挂在 body 末尾：固定在左上角，才不会撑出 1px 可滚动高度 */
+.live-region { position: fixed; top: 0; left: 0; }
 
 /* 数字滚轮（js/ui/motion.js rollTo）：每位是一条 0–9 直条，用 translateY 滚动。
    容器用 inline-flex 裁切：基线取自第一格，仍和旁边的「RM」对齐（inline-block 加裁切会让基线掉到底边）。

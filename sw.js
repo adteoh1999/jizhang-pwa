@@ -16,6 +16,7 @@ const ASSETS = [
   './js/money.js',
   './js/stats.js',
   './js/store.js',
+  './js/ui/announce.js',
   './js/ui/categories-page.js',
   './js/ui/components.js',
   './js/ui/dialogs.js',

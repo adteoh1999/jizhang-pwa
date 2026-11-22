@@ -10,6 +10,7 @@ import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
+import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 import { animate, fade, cancelAnims, reducedMotion, clipSupported, DUR, EASE_OUT } from './ui/motion.js';
 
@@ -157,6 +158,7 @@ async function registerServiceWorker() {
 async function boot() {
   const root = document.getElementById('app');
   document.body.prepend(h('div', { class: 'sky', 'aria-hidden': 'true' }));
+  initAnnouncer(); // 读屏朗读区：先放好，之后才念得出来
   window.addEventListener('jizhang:db-versionchange', showDbClosedNotice);
   try {
     // 开发用：只在本机网址上，?simulateDbError=1 模拟开库失败
