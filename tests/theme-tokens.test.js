@@ -183,25 +183,31 @@ test('记一笔面板：进场用 --sheet-in-dur / --sheet-in-ease（只在 is-e
   assert.ok(!/0 40px 0 0 var\(--drawer\)/.test(blockAfter(css, '\n.modal-sheet {')), '不回弹就不需要底部实色延伸');
 });
 
-test('sheet.js / entry-sheet.js：退场登记、分类轻弹、储存变勾', () => {
+test('sheet.js / entry-sheet.js：退场登记、分类轻弹；不再有储存变勾（v2.3.1）', () => {
   const sheet = readFileSync(new URL('js/ui/sheet.js', root), 'utf8');
   assert.match(sheet, /trackExit\(/);
   assert.match(sheet, /is-entering/);
   const entry = readFileSync(new URL('js/ui/entry-sheet.js', root), 'utf8');
   assert.match(entry, /scale\(0\.8\)/);
-  assert.match(entry, /icon\('check'/);
-  assert.match(entry, /DUR\.checkHold/);
+  assert.ok(!/icon\('check'/.test(entry), '不再有 ✓');
+  assert.ok(!/showSaved\(/.test(entry), '不再有 showSaved');
+  assert.ok(!/DUR\.check/.test(entry), '不再等 ✓');
+  assert.ok(!/modal-sheet-check|modal-sheet-saved-text|is-saved/.test(css), '只为 ✓ 的 CSS 已删');
 });
 
 test('记一笔：顺序与停顿期间的保护', () => {
+  const enterIdx = css.indexOf('\n.overlay-modal.is-visible .modal-sheet.is-entering {');
   const rmIdx = css.lastIndexOf('.overlay-modal.is-visible .modal-sheet.is-entering');
-  assert.ok(rmIdx > css.indexOf('\n.overlay-modal.is-visible .modal-sheet.is-entering {'), '减弱动态规则要写在进场规则之后');
+  assert.ok(enterIdx >= 0 && rmIdx > enterIdx + 1, '减弱动态规则要写在进场规则之后（且两条都存在）');
   const entry = readFileSync(new URL('js/ui/entry-sheet.js', root), 'utf8');
   const save = entry.slice(entry.indexOf('async function save('), entry.indexOf('async function confirmDelete('));
-  assert.ok(save.indexOf('showSaved(') > save.indexOf('saveTransaction('), '存好才变勾');
+  // 存好就马上关：saveTransaction 之后、close() 之前不能再 await；is-saving 在 close 之前加上
+  const iSave = save.indexOf('saveTransaction(');
+  const iSaving = save.indexOf("classList.add('is-saving')");
+  const iClose = save.indexOf('sheet.close()');
+  assert.ok(iSave >= 0 && iSaving > iSave && iClose > iSaving, '顺序：存好 → is-saving → close');
+  assert.ok(!/await/.test(save.slice(save.indexOf(';', iSave), iClose)), '存好到关闭之间不能等');
   assert.equal(entry.split('popSelected(').length - 1, 2, 'popSelected 只有定义与一个呼叫点');
-  assert.match(entry, /class: 'modal-sheet-saved-text'/);
-  assert.match(blockAfter(css, '\n.modal-sheet-saved-text {'), /display:\s*inline-block/);
   assert.match(blockAfter(css, '\n.modal-sheet.is-saving .modal-sheet-body {'), /pointer-events:\s*none/);
   const sheet = readFileSync(new URL('js/ui/sheet.js', root), 'utf8');
   assert.ok(!/if \(reducedMotion\(\)\) release\(\)/.test(sheet), '减弱动态不能提早放行（焦点还原之前）');

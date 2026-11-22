@@ -26,7 +26,7 @@ export const EASE_DRAW = 'cubic-bezier(0.3, 0, 0.2, 1)';             // 走势�
 // v2.3.1：用户实测嫌慢 → 大部分 0.15–0.25 秒，飘字 0.8 秒
 export const DUR = {
   roll: 250, bar: 250, rowMove: 220, rowIn: 200, rowOut: 180, pop: 180,
-  check: 380, checkHold: 350, tab: 200, draw: 250, dot: 180, monthOut: 100, monthIn: 200,
+  tab: 200, draw: 250, dot: 180, monthOut: 100, monthIn: 200,
   fade: 200, float: 800, barStagger: 20, barDelay: 40, digitStagger: 12,
 };
 

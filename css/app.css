@@ -723,11 +723,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .modal-sheet-action.is-bold { font-weight: 600; }
 .modal-sheet-action:disabled { color: var(--ink-3); }
 /* 储存成功：文字换成 ✓（储存中按钮是 disabled，但 ✓ 要用正常字色） */
-.modal-sheet-action.is-saved { position: relative; }
-.modal-sheet-action.is-saved:disabled { color: var(--ink); }
-.modal-sheet-check { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.modal-sheet-saved-text { display: inline-block; }   /* inline 盒不吃 transform，上移要 inline-block */
-.modal-sheet.is-saving .modal-sheet-body { pointer-events: none; }   /* ✓ 停顿期间：已存好，不能再改 */
+.modal-sheet.is-saving .modal-sheet-body { pointer-events: none; }   /* 已存好、退场中：不能再改 */
 .modal-sheet-action:active:not(:disabled) { opacity: 0.5; }
 
 .modal-sheet-body {

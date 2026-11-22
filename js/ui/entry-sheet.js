@@ -12,7 +12,7 @@ import { todayLocal, isValidDateString } from '../dates.js';
 import { ValidationError, NOTE_MAX } from '../model.js';
 import { uuid } from '../uuid.js';
 import {
-  markJustAdded, takeJustAdded, animate, fade, reducedMotion, DUR, EASE_OUT,
+  markJustAdded, takeJustAdded, animate, reducedMotion, DUR,
 } from './motion.js';
 
 const MAX_DAYS_AHEAD = 365;
@@ -298,26 +298,6 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     }
   }
 
-  // 储存成功：右上「储存」文字淡出上移、✓ 弹入；按钮的读屏名称维持「储存」
-  async function showSaved(btn) {
-    const label = btn.textContent;
-    const text = h('span', { class: 'modal-sheet-saved-text' }, label);
-    const ok = h('span', { class: 'modal-sheet-check', 'aria-hidden': 'true' }, icon('check', 22));
-    btn.setAttribute('aria-label', label);
-    btn.classList.add('is-saved');
-    btn.replaceChildren(text, ok);
-    text.style.opacity = '0';   // 最终值写在 style 上，动画只用 backwards
-    if (reducedMotion()) {
-      fade(ok, 'in', { delay: 100 }); // 文字直接消失，✓ 淡入（不缩放）
-    } else {
-      animate(text, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-12px)' }],
-        { duration: 180, easing: EASE_OUT });
-      animate(ok, [{ opacity: 0, transform: 'scale(0.4)' }, { opacity: 1, transform: 'scale(1)' }],
-        { duration: DUR.check, delay: 90 });
-    }
-    await new Promise((r) => { setTimeout(r, 90 + DUR.check + DUR.checkHold); }); // ✓ 有 90ms 延迟，完整出现后停约 0.35 秒
-  }
-
   async function save() {
     if (saving) return;
     clearAllErrors();
@@ -345,14 +325,8 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       }
       return;
     }
-    // 已经存好：变 ✓ 停一下再关。这段时间 saving 仍为 true（不能下拉、再存或删除），面板内容不接受点按。
-    // ✓ 动画出错也只记录，一定关闭（不能当成储存失败）
+    // 已经存好：马上关（v2.3.1 拿掉 ✓ 停留）。saving 维持 true，退场中不能再存或删除；面板内容不接受点按。
     sheet.panel.classList.add('is-saving');
-    try {
-      await showSaved(sheet.rightButton);
-    } catch (e) {
-      console.error(e);
-    }
     sheet.close();
   }
 
