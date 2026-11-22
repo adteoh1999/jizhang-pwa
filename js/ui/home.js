@@ -280,7 +280,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     pendingReason = mergeReason(pendingReason, reason);
     // 浮层已关、只剩退场在播：卡片先画（数字马上滚），列表等 whenIdle。
     // 完全闲置时 whenIdle 会马上整页画（含卡片），这里不必先画
-    if (!isIdle() && paintCardEarly({ depth: depth(), pendingReason })) updateCard(pendingReason);
+    if (!isIdle() && paintCardEarly({ depth: depth(), pendingReason })) {
+      try { updateCard(pendingReason); } catch (e) { console.error(e); } // 卡片只是先画：出错也要照常排队画列表
+    }
     if (dragging > 0) { renderPending = true; return; }
     if (idleQueued) return;
     idleQueued = true;
@@ -313,10 +315,13 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const month = monthOf(today);
     lastSummary = summarizeMonth(all, month);
     if (monthEl) monthEl.textContent = formatMonthTitle(month);
-    const anim = shouldAnimateCard({ first: !painted, hidden, reason });
+    const first = !painted;
+    const anim = shouldAnimateCard({ first, hidden, reason });
     painted = true;
     paintCard(anim);
-    if (anim) for (const id of takeFloats()) {
+    // 资料变动就取走飘字标记（隐藏金额时也取走，免得之后显示金额再有变动时飘出旧的一笔）；只有 anim 才真的飘
+    const floats = !first && reason === 'data' ? takeFloats() : [];
+    if (anim) for (const id of floats) {
       const tx = all.find((t) => t.id === id);
       if (tx && monthOf(tx.occurred_on) === month) floatUp(tx); // 记在别的月份不飘
     }

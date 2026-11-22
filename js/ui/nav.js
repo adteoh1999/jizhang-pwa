@@ -22,7 +22,7 @@ let exits = 0;          // 还没播完的退场动画数
 const idleQueue = [];
 
 function flushIdle() {
-  while (stack.length === 0 && exits === 0 && idleQueue.length) {
+  while (isIdle() && idleQueue.length) {
     const fn = idleQueue.shift();
     try { fn(); } catch (e) { console.error(e); }
   }
@@ -30,7 +30,7 @@ function flushIdle() {
 
 /** 现在就闲置 → 同步执行；否则排队，闲置时依加入顺序各执行一次。 */
 export function whenIdle(fn) {
-  if (stack.length === 0 && exits === 0) { fn(); return; }
+  if (isIdle()) { fn(); return; }
   idleQueue.push(fn);
 }
 

@@ -221,15 +221,21 @@ test('home.js：卡片可以在浮层关掉时先画，列表只在 whenIdle 里
   const cb = js.slice(i, js.indexOf('\n  });', i));
   assert.match(cb, /paintCardEarly\(/);
   assert.match(cb, /updateCard\(/);
-  assert.ok(!/flushRender\(|render\(/.test(cb.replace(/updateCard\(/g, '')), 'onDepthChange 里不能画列表');
+  assert.ok(!/flushRender\(|render\(/.test(cb), 'onDepthChange 里不能画列表');
   const rr = js.slice(js.indexOf('function requestRender('), js.indexOf('function flushRender('));
-  assert.match(rr, /updateCard\(/);
+  assert.match(rr, /!isIdle\(\) && paintCardEarly\(/);
+  const iEarly = rr.indexOf('updateCard(');
+  assert.ok(iEarly >= 0 && iEarly < rr.indexOf('if (dragging > 0)'), '先画卡片在拖动判断之前');
+  assert.match(rr.slice(rr.lastIndexOf('\n', iEarly), iEarly), /try \{/, '先画卡片出错不能挡住列表排队');
   assert.match(rr, /whenIdle\(\(\) => \{[\s\S]*flushRender\(\);/);
   // 隐藏金额：updateCard 用 shouldAnimateCard 决定动不动；只有要动才取飘字
   const uc = js.slice(js.indexOf('function updateCard('), js.indexOf('function paintCard('));
   assert.ok(uc.length > 0, '要有 updateCard（写在 paintCard 前面）');
   assert.match(uc, /shouldAnimateCard\(/);
-  assert.match(uc, /if \(anim\)[^\n]*takeFloats\(\)/);
+  // 资料变动就取走飘字标记（隐藏时也取，免得之后误飘旧金额），只有 anim 才真的飘
+  assert.match(uc, /const floats = [^\n]*takeFloats\(\)/);
+  assert.ok(!/if \(anim\)[^\n]*takeFloats\(\)/.test(uc), '不能只在 anim 时才取');
+  assert.match(uc, /if \(anim\)[^\n]*floats/);
   assert.ok(!/takeJustAdded|markJustAdded/.test(js), '旧标记已移除');
 });
 

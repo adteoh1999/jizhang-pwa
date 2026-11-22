@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { pushLayer, popLayer, depth, onDepthChange, whenIdle, trackExit } from '../js/ui/nav.js';
+import { pushLayer, popLayer, depth, onDepthChange, whenIdle, trackExit, isIdle } from '../js/ui/nav.js';
 
 // nav.js 是模块级单例：每个测试后清空堆叠。
 // 有 onDismiss 的层 popLayer 不会关闭，所以设上限，避免无限循环（剩下的层由测试自己 close）
@@ -202,4 +202,15 @@ test('trackExit：没被 release 时，保险计时到了自动 release', async 
   assert.equal(n, 0);
   await new Promise((r) => setTimeout(r, 40));
   assert.equal(n, 1);
+});
+
+test('isIdle：没有浮层且退场都 release 才是 true', () => {
+  assert.equal(isIdle(), true);
+  let release;
+  const h = pushLayer({ onClose: () => { release = trackExit(); } });
+  assert.equal(isIdle(), false, '有浮层');
+  h.close();
+  assert.equal(isIdle(), false, '退场还没播完');
+  release();
+  assert.equal(isIdle(), true);
 });
