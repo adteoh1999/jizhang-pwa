@@ -31,13 +31,19 @@ function group(intStr) {
   return intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-export function formatRM(minor, opts = {}) {
+/** 拆成符号与数字（不含「RM」）：统计页把「RM」缩小显示时用；formatRM 由它组成。 */
+export function rmParts(minor, opts = {}) {
   const sign = opts.sign || 'negative';
   const abs = Math.abs(Math.trunc(minor));
   const [i, f] = minorToDecimalString(abs).split('.');
-  const body = `RM ${group(i)}.${f}`;
-  if (sign === 'none') return body;
-  if (minor < 0) return '−' + body;
-  if (sign === 'always' && minor > 0) return '+' + body;
-  return body;
+  const num = `${group(i)}.${f}`;
+  if (sign === 'none') return { sign: '', num };
+  if (minor < 0) return { sign: '−', num };
+  if (sign === 'always' && minor > 0) return { sign: '+', num };
+  return { sign: '', num };
+}
+
+export function formatRM(minor, opts = {}) {
+  const { sign, num } = rmParts(minor, opts);
+  return `${sign}RM ${num}`;
 }

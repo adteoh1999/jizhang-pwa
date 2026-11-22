@@ -148,3 +148,14 @@ test('playEnter：Node 没有 animate 时不出错；playFlip 与首页共用它
   const pf = js.slice(js.indexOf('export function playFlip('), js.indexOf('export function flipPlan('));
   assert.match(pf, /playEnter\(el, \{ delay: 40 \}\)/);
 });
+
+test('barWidth：与 slideX 同一个百分比（渐层铺满看得到的那段）', async () => {
+  const { barWidth } = await import('../js/ui/motion.js');
+  assert.equal(barWidth(0.41, 6), 'max(6px, 41.00%)');
+  assert.equal(barWidth(0, 6), '0%');
+  assert.equal(barWidth(-1, 6), '0%');
+  assert.equal(barWidth(NaN, 6), '0%');
+  assert.equal(barWidth(1, 0), '100.00%');
+  assert.equal(barWidth(2, 6), 'max(6px, 100.00%)');
+  assert.ok(slideX(0.41, 6).includes(barWidth(0.41, 6)));
+});

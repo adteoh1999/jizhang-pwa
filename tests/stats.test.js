@@ -90,3 +90,14 @@ test('cumulativeByDay first of month, leap year, month lengths, income kind', ()
   assert.equal(inc[0], 300); assert.equal(inc[29], 300); assert.equal(inc[30], 1000);
   assert.ok(cumulativeByDay([], '2026-12', 'expense', '2026-11-20').every((x) => x === null)); // 未来月份
 });
+
+test('summaryIsLong：数字部分（含负号）超过 8 个字元才改三行', async () => {
+  const { summaryIsLong } = await import('../js/stats.js');
+  assert.equal(summaryIsLong([888888, 0, 0]), false);       // 8,888.88
+  assert.equal(summaryIsLong([0, 888888, 888888]), false);
+  assert.equal(summaryIsLong([1000000, 0, 0]), true);       // 10,000.00
+  assert.equal(summaryIsLong([0, 1000000, 0]), true);
+  assert.equal(summaryIsLong([0, 0, -88888]), false);       // −888.88
+  assert.equal(summaryIsLong([0, 0, -888888]), true);       // −8,888.88（9 个字元）
+  assert.equal(summaryIsLong([0, 0, 888888]), false);
+});

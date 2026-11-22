@@ -1,6 +1,7 @@
 // 统计：输入都是未删除的 Transaction 阵列
 import { monthOf } from './dates.js';
 import { timeValue } from './model.js';
+import { rmParts } from './money.js';
 
 export function summarizeMonth(txs, month) {
   let income = 0;
@@ -84,4 +85,11 @@ export function formatPercent(ratio) {
   const p = Math.round(ratio * 100);
   if (p >= 100 && ratio < 1) return '99%';
   return `${p}%`;
+}
+
+/** 统计页摘要卡：收入、支出、结余任一个的数字部分（含负号）超过 8 个字元 → 一行三格放不下，改成三行。
+ *  收入 / 支出不带符号；结余负数带「−」。 */
+export function summaryIsLong([income, expense, balance]) {
+  const len = (v, sign) => { const p = rmParts(v, { sign }); return p.sign.length + p.num.length; };
+  return len(income, 'none') > 8 || len(expense, 'none') > 8 || len(balance, 'negative') > 8;
 }

@@ -86,8 +86,16 @@ export function fade(el, dir, { duration = DUR.fade, delay = 0, id = '' } = {}) 
 export function slideX(ratio, minPx = 0) {
   const r = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   if (r <= 0) return 'translateX(-100%)';
-  if (minPx > 0) return `translateX(calc(max(${minPx}px, ${(r * 100).toFixed(2)}%) - 100%))`;
+  if (minPx > 0) return `translateX(calc(${barWidth(r, minPx)} - 100%))`;
   return `translateX(${((r - 1) * 100).toFixed(2)}%)`;
+}
+
+/** 比例条看得到的宽度（与 slideX 同一个百分比）：统计页条的渐层只铺在这一段，短条也看得到由淡到深。 */
+export function barWidth(ratio, minPx = 0) {
+  const r = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
+  if (r <= 0) return '0%';
+  const pct = `${(r * 100).toFixed(2)}%`;
+  return minPx > 0 ? `max(${minPx}px, ${pct})` : pct;
 }
 
 const isDigit = (c) => c >= '0' && c <= '9';

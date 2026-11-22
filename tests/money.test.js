@@ -39,3 +39,16 @@ test('minorToDecimalString', () => {
   assert.equal(minorToDecimalString(1250), '12.50');
   assert.equal(minorToDecimalString(7), '0.07');
 });
+
+test('rmParts：拆成符号与数字，formatRM 由它组成', async () => {
+  const { rmParts } = await import('../js/money.js');
+  assert.deepEqual(rmParts(480000, { sign: 'none' }), { sign: '', num: '4,800.00' });
+  assert.deepEqual(rmParts(-99999), { sign: '−', num: '999.99' });
+  assert.deepEqual(rmParts(-99999, { sign: 'none' }), { sign: '', num: '999.99' });
+  assert.deepEqual(rmParts(5, { sign: 'always' }), { sign: '+', num: '0.05' });
+  assert.deepEqual(rmParts(0, { sign: 'always' }), { sign: '', num: '0.00' });
+  for (const [v, o] of [[123456789, {}], [-5, {}], [5, { sign: 'always' }], [-5, { sign: 'none' }]]) {
+    const p = rmParts(v, o);
+    assert.equal(formatRM(v, o), `${p.sign}RM ${p.num}`);
+  }
+});
