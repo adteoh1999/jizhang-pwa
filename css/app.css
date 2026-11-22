@@ -67,6 +67,9 @@
   --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(60, 70, 120, 0.3),
     0 24px 44px -20px rgba(70, 60, 140, 0.42), 0 4px 12px -6px rgba(40, 50, 90, 0.16);
   --card-ink-2: rgba(10, 12, 18, 0.65);   /* 卡片上的次要字（深色版较亮，压在光球上仍 ≥4.5:1） */
+  /* 统计页玻璃卡（v2.4）：同结余卡玻璃，投影收小（两张卡上下只隔一个分段控件） */
+  --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(60, 70, 120, 0.3),
+    0 18px 36px -20px rgba(70, 60, 140, 0.36), 0 4px 12px -6px rgba(40, 50, 90, 0.14);
   --tab-glass: rgba(255, 255, 255, 0.72);
   --tab-off: rgba(10, 12, 18, 0.6);
 
@@ -109,6 +112,7 @@
     --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
     --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --card-ink-2: rgba(235, 240, 248, 0.95);
+    --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
     --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
@@ -137,6 +141,7 @@
   --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
   --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --card-ink-2: rgba(235, 240, 248, 0.95);
+  --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
   --fill: rgba(120, 120, 128, 0.36);
   --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
@@ -1362,12 +1367,33 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 .stats-month-btn[aria-disabled="true"] { color: var(--ink-3); }
 
-/* 共用玻璃卡（无光晕）：静态渐层 + 玻璃边，不用 backdrop-filter */
+/* 统计页玻璃卡（v2.4，摘要卡＋走势图卡）：与首页结余卡同一套晨雾玻璃，不用 backdrop-filter。
+   反光边是 ::before 垫在内容下面（z-index:-1，卡片自成层叠上下文）：不压在走势图的动画层 / 拖动层上面，
+   切分页、换月份时不会多出一张带遮罩的合成层。 */
 .glass-card {
+  position: relative;
+  isolation: isolate;
   border-radius: 26px;
-  background: linear-gradient(155deg, var(--glass-sheen), transparent 45%), var(--glass);
-  border: 1px solid var(--glass-edge);
-  box-shadow: inset 0 1px 0 var(--glass-edge), 0 18px 40px -18px var(--glass-shade);
+  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
+  box-shadow: var(--stats-card-shadow);
+}
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: 1.3px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+}
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .glass-card { border: 1px solid var(--card-rim-2); }   /* 不支援 mask 时：普通细边 */
 }
 
 /* 摘要：三栏；金额放不下时自动换行（不截断） */
@@ -1388,6 +1414,41 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .stats-sum-v.is-income { color: var(--income); }
 
 .stats-summary + .segmented { margin: 16px 0 0; }
+/* 统计页的分段控件也换晨雾玻璃（夹在两张玻璃卡中间）；记一笔面板里的不变。
+   选中胶囊是 ::before，反光边用 ::after（z-index:0，在 .segment 的字下面）；边框保留宽度但透明，尺寸不变 */
+.stats-body .segmented {
+  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
+  border-color: transparent;
+}
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .stats-body .segmented::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: 0;
+    padding: 1.3px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+}
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .stats-body .segmented { border-color: var(--card-rim-2); }
+}
+/* 增加对比度 / 降低透明度：拿掉反光边，统计页玻璃改成不透明＋实线边（写在上面的玻璃规则之后才压得过） */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .glass-card::before,
+  .stats-body .segmented::after { display: none; }
+  .glass-card,
+  .stats-body .segmented { background: var(--glass); border: 1px solid var(--glass-edge); }
+}
+@media (prefers-contrast: more) {
+  .glass-card,
+  .stats-body .segmented { border-color: var(--ink-2); }
+}
 
 /* 走势图卡 */
 .trend-card { margin-top: 12px; padding: 16px 14px 12px; }

@@ -12,11 +12,13 @@ const PAIRS = [
 ];
 
 // 半透明叠层：[前景, [最底的不透明底, 往上叠的半透明层…], 最低值]
-// 统计页玻璃卡（.glass-card）压在晨雾上；晨雾每一段都测
-const STACKS = ['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) => [
-  ['--income', [sky, '--glass'], 4.5],
-  ['--ink-2', [sky, '--glass'], 4.5],
-]);
+// 统计页玻璃卡（.glass-card，v2.4 晨雾玻璃）压在晨雾上：晨雾每一段 × 玻璃渐层两端（左上 / 右下）都测
+const STACKS = ['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) =>
+  ['--card-glass-1', '--card-glass-2'].flatMap((glass) => [
+    ['--income', [sky, glass], 4.5],
+    ['--ink-2', [sky, glass], 4.5],
+    ['--ink', [sky, glass], 4.5],
+  ]));
 
 const tokens = { light, dark: { ...light, ...attrDark } };
 
