@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -313,4 +313,47 @@ test('rowTapAllowed：有还没画上去的变动时，不能点列（会拿到�
   assert.equal(rowTapAllowed(null), true);
   assert.equal(rowTapAllowed('data'), false);
   assert.equal(rowTapAllowed('wake'), false);
+});
+
+test('enterTargets 新区块只动区块', () => {
+  assert.deepEqual(enterTargets([
+    { rowKey: 't1', dayKey: 'd2026-11-22' }, { rowKey: 't2', dayKey: 'd2026-11-22' },
+  ], new Set(['d2026-11-22'])), ['d2026-11-22']);
+});
+
+test('enterTargets 旧区块动列', () => {
+  assert.deepEqual(enterTargets([{ rowKey: 't1', dayKey: 'd2026-11-20' }], new Set()), ['t1']);
+  assert.deepEqual(enterTargets([], new Set(['d2026-11-20'])), []);
+});
+
+test('home.js：本机刚存 → 不量位置、不补位，只让新的一笔进场；标记一律在提前 return 之前取走', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
+  const iTake = render.indexOf('takeSavedForList()');
+  const iEmpty = render.indexOf('if (all.length === 0)');
+  assert.ok(iTake >= 0 && iEmpty > iTake, 'takeSavedForList 无条件、在空列表提前 return 之前');
+  assert.match(render, /const before = !local\.size && flipEnterable\(reason, first\)/);
+  assert.match(render, /enterTargets\(/);
+  const iEnter = render.indexOf('enterTargets(');
+  const enterPart = render.slice(iEnter - 300, iEnter + 600);
+  assert.match(enterPart, /list\.closest\('\[hidden\]'\)/, '首页不在画面上不播');
+  assert.match(enterPart, /reducedMotion\(\)[^\n]*fade\(/, '减弱动态只淡入');
+  assert.match(render, /lastDays/, '新区块和上一次画出的日期比，不靠 before');
+});
+
+test('home.js：点到旧列先补画，再确认还是同一列', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  for (const name of ['function onRowClick(', 'function deleteRow(']) {
+    const i = js.indexOf(name);
+    assert.ok(i >= 0, name);
+    const body = js.slice(i, js.indexOf('\n  }\n', i));
+    const iFlush = body.indexOf('flushRender()');
+    assert.ok(iFlush >= 0, `${name} 要先补画`);
+    assert.match(body.slice(0, iFlush), /pendingReason !== null && dragging === 0/);
+    assert.match(body.slice(iFlush), /rows\.get\(rec\.id\) !== rec\) return/);
+  }
+  const click = js.slice(js.indexOf('function onRowClick('), js.indexOf('function slideOut('));
+  assert.ok(!/await/.test(click), 'openEntrySheet 必须同步呼叫');
 });

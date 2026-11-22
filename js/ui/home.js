@@ -12,7 +12,7 @@ import { showToast } from './toast.js';
 import { messageDialog } from './dialogs.js';
 import { depth, whenIdle, onDepthChange, isIdle } from './nav.js';
 import {
-  rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeFloats, DUR,
+  rollTo, slideX, animate, fade, cancelAnims, reducedMotion, shouldAnimateCard, takeFloats, takeSavedForList, DUR,
   EASE_OUT, snapshotTops, playFlip,
 } from './motion.js';
 import { summarizeMonth, groupByDate, spendMeter } from '../stats.js';
@@ -111,6 +111,19 @@ export function flipEnterable(reason, first) {
 /** 重画原因合并：'data'（资料变动，会动画）优先，其余保留先来的。 */
 export function mergeReason(pending, reason) {
   return pending === 'data' || reason === 'data' ? 'data' : (pending || reason);
+}
+
+/**
+ * 本机刚存后列表的进场目标（v2.3.1：储存不补位，只让新的那笔进场）。
+ * added：[{ rowKey, dayKey }]；dayKey 是这次新出现的日期区块 → 动区块（同一个只动一次），否则动那一列。
+ */
+export function enterTargets(added, newDays) {
+  const out = [];
+  for (const { rowKey, dayKey } of added) {
+    const key = newDays.has(dayKey) ? dayKey : rowKey;
+    if (!out.includes(key)) out.push(key);
+  }
+  return out;
 }
 
 /** 结余卡要不要先画（v2.3.1）：没有浮层、又有还没画上去的变动 → 卡片马上画，列表照旧等退场播完。 */
@@ -307,6 +320,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   // ---------- 结余卡（切换眼睛只重画这一块，不重排账单列表） ----------
   let lastRatio = null;   // 比例线上一次的比例（滑入动画的起点）
   let painted = false;    // 第一次画卡片不动画
+  let lastDays = new Set(); // 上一次画出的日期区块 key（判断新区块）
   // 重新算本月摘要并画卡片；资料变动时滚数字、飘字（本机刚新增的那笔）。不动 pendingReason（列表可能还没画）。
   // 列表画时会再呼叫一次：rollTo 字串相同直接返回、比例没变不取消，不会重播。回传全部交易给 render 用。
   function updateCard(reason) {
@@ -393,6 +407,8 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     renderPending = false;
     const first = !painted;
     const all = updateCard(reason);
+    // 本机刚存的 id：一律在这里取走（含空列表提前 return 的情况），有就走「不补位、只让新的一笔进场」
+    const local = takeSavedForList();
     countEl.textContent = countText(all.length);
 
     const scrollY = window.scrollY;
@@ -404,6 +420,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
       rows.clear();
       order = [];
       openRow = null;
+      lastDays = new Set();
       list.replaceChildren(h('p', { class: 'home-empty' }, '还没有记录，点上面的按钮记第一笔'));
       moreBtn.hidden = true;
       return;
@@ -416,7 +433,9 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const frag = [];
     // FLIP：资料变动时先量每一列与日期区块的位置（含进行中的位移），重画后从旧位置补位
     // 首页不在画面上（切到别的分页）时不做：量到的位置都是 0
-    const before = flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
+    // 本机刚存（v2.3.1）：不量位置、不补位（重的工作不要和数字滚动挤在一起），只让新的一笔进场
+    const before = !local.size && flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
+    const days = new Set();
     rendering = true; // 从这里开始列节点会被搬到新的 <ul>（append 时就离开旧位置）
     try {
       let budget = shown;
@@ -432,6 +451,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
           order.push(tx.id);
           return rec.el;
         });
+        days.add(`d${g.date}`);
         frag.push(h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today), 'data-flip': `d${g.date}` },
           h('h2', { class: 'home-day-header' },
             h('span', null, formatDayHeader(g.date, today)),
@@ -449,6 +469,8 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
       rendering = false;
     }
     moreBtn.hidden = all.length <= shown;
+    const newDays = new Set([...days].filter((d) => !lastDays.has(d)));   // 和上一次画出的日期比（不能靠 before）
+    lastDays = days;
 
     // 保持滚动位置与焦点（重排列节点会让焦点掉到 body）
     if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
@@ -466,6 +488,14 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
         isEnter: (key) => key.startsWith('d') || addedKeys.has(key),
         skip: (el) => !!(rows.get(el.dataset.id) || {}).deleting,   // 正在滑出的列不要被补位动画盖掉
       });
+    } else if (local.size && flipEnterable(reason, first) && !list.closest('[hidden]')) {
+      const mine = added.filter((tx) => local.has(tx.id)).map((tx) => ({ rowKey: `t${tx.id}`, dayKey: `d${tx.occurred_on}` }));
+      for (const key of enterTargets(mine, newDays)) {
+        const el = list.querySelector(`[data-flip="${key}"]`);
+        if (!el) continue;
+        if (reducedMotion()) fade(el, 'in', { id: 'flip' });
+        else animate(el, [{ opacity: 0, transform: 'translateY(-10px)' }, { opacity: 1, transform: 'none' }], { duration: DUR.rowIn, id: 'flip' });
+      }
     }
   }
 
@@ -503,7 +533,12 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   function onRowClick(rec) {
     if (rec.deleting) return;               // 正在滑出 / 删除中
-    if (!rowTapAllowed(pendingReason)) return; // 面板刚关、首页还没重画：列上是旧资料
+    // 面板刚关、列表还没更新：先补画（同步，openEntrySheet 仍在点击里呼叫），这一列不在了就不做事
+    if (pendingReason !== null && dragging === 0) {
+      flushRender();
+      if (rows.get(rec.id) !== rec) return;
+    }
+    if (!rowTapAllowed(pendingReason)) return; // 拖动中还没画：列上是旧资料
     const now = performance.now();
     if (now < rec.suppressClickUntil) return;                // 刚拖动过
     if (closingGesture || now < swallowClickUntil) return;   // 这一下是用来关闭别列的
@@ -529,7 +564,12 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   function deleteRow(rec) {
     if (rec.deleting) return;
-    if (!rowTapAllowed(pendingReason)) { closeRow(rec); return; } // 还没重画：这一笔可能已经被删或改了
+    // 列表还没更新：先补画，这一列不在了就不做事（被删或换成新节点）
+    if (pendingReason !== null && dragging === 0) {
+      flushRender();
+      if (rows.get(rec.id) !== rec) return;
+    }
+    if (!rowTapAllowed(pendingReason)) { closeRow(rec); return; } // 拖动中还没画：这一笔可能已经被删或改了
     rec.deleting = true;
     if (openRow === rec) openRow = null;   // 滑出中点别处不要再把内容收回来
     const { id } = rec;
