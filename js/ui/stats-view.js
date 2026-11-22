@@ -130,7 +130,7 @@ export function mountStats(root, store) {
     switching = true;
     const seq = ++switchSeq;
     const slide = !reducedMotion() && clipSupported();   // 不支援 overflow clip（iOS < 16）只淡出淡入
-    cancelAnims(body);   // 进场途中再点：先跳回原位再退场（160ms 内看不出）
+    cancelAnims(body);   // 进场途中再点：先跳回原位再退场（100ms 内看不出）
     const out = !slide
       ? fade(body, 'out', { duration: DUR.monthOut })
       : animate(body, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateX(${-delta * 16}px)` }],

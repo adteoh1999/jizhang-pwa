@@ -178,7 +178,8 @@
   /* v2.3 弹簧：这里是后备（iOS < 17.2 不支援 linear()）；支援时由下面的 @supports 换成真的弹簧。
      数值由 js/ui/motion.js 的 springLinear() 算出，测试会检查两边一致 */
   --spring: cubic-bezier(0.34, 1.35, 0.64, 1);
-  /* 记一笔面板进场（v2.3.1：不回弹，比 --ease-out 不那么前倾，避免「跳出来再拖尾」）；做成变量方便真机调 */
+  /* 记一笔面板进场（v2.3.1：不回弹，比 --ease-out 不那么前倾，避免「跳出来再拖尾」）；做成变量方便真机调。
+     时长调到 0.4s 以上时，记得一起调 sheet.js 的 endEntering 后备（450ms） */
   --sheet-in-dur: 0.32s;
   --sheet-in-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }

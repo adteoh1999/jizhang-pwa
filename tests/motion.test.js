@@ -6,7 +6,7 @@ import {
 } from '../js/ui/motion.js';
 
 test('springLinear：41 个点、首 0 尾 1、最大值 ≈ 1+p', () => {
-  for (const p of [0.08, 0.01]) {
+  for (const p of [0.08, 0.04, 0.01]) {
     const s = springLinear(p);
     assert.ok(s.startsWith('linear(') && s.endsWith(')'));
     const pts = s.slice(7, -1).split(', ').map(Number);

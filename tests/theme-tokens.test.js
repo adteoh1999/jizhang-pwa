@@ -135,6 +135,7 @@ test('--spring：基础值是后备，@supports linear() 区块等于 motion.js 
   const sup = blockAfter(css, '@supports (transition-timing-function: linear(0, 1))');
   const v = namesAndValues(blockAfter(sup, ':root {'));
   assert.equal(v['--spring'], SPRING);
+  assert.ok(css.indexOf('--ease-out') >= 0);
   assert.ok(css.indexOf('@supports (transition-timing-function: linear(0, 1))') > css.indexOf('--ease-out'),
     '@supports 要放在第一个 :root 之后');
 });
@@ -176,7 +177,9 @@ test('记一笔面板：进场用 --sheet-in-dur / --sheet-in-ease（只在 is-e
   const SEL = '.overlay-modal.is-visible .modal-sheet.is-entering {';
   assert.match(blockAfter(css, '\n' + SEL), /transition:\s*transform var\(--sheet-in-dur\) var\(--sheet-in-ease\)/);
   const rm = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)/g)].map((m) => blockAfter(css, '@media (prefers-reduced-motion: reduce)', m.index));
-  assert.ok(rm.some((b) => b.includes(SEL.slice(0, -2)) && /transition:\s*none/.test(b.slice(b.indexOf(SEL.slice(0, -2))))), '减弱动态要盖过进场规则');
+  // 只看那条规则自己的 {…}（同一区块后面别的 transition: none 不算）
+  const own = (b) => { const i = b.indexOf(SEL.slice(0, -2)); return b.slice(i, b.indexOf('}', i)); };
+  assert.ok(rm.some((b) => b.includes(SEL.slice(0, -2)) && /transition:\s*none/.test(own(b))), '减弱动态要盖过进场规则');
   assert.ok(!/0 40px 0 0 var\(--drawer\)/.test(blockAfter(css, '\n.modal-sheet {')), '不回弹就不需要底部实色延伸');
 });
 

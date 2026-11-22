@@ -72,7 +72,7 @@ export function openSheet({
   // 下拉关闭：只在把手 / 标题列上（不含按钮），输入框与可滚动的内容不受影响
   let drag = null;
   const setOffset = (y) => { panel.style.transform = y > 0 ? `translateY(${y}px)` : ''; };
-  // 进场的弹簧只用在进场：播完、开始下拉、或关闭时拿掉（之后的回弹维持 ease-out）
+  // 进场曲线只用在进场：播完、开始下拉、或关闭时拿掉（之后的回弹维持 ease-out）
   const endEntering = () => panel.classList.remove('is-entering');
   panel.addEventListener('transitionend', (e) => { if (e.target === panel) endEntering(); });
   setTimeout(endEntering, 450); // 后备
