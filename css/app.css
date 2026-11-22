@@ -70,6 +70,9 @@
   /* 统计页玻璃卡（v2.4）：同结余卡玻璃，投影收小（两张卡上下只隔一个分段控件） */
   --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(60, 70, 120, 0.3),
     0 18px 36px -20px rgba(70, 60, 140, 0.36), 0 4px 12px -6px rgba(40, 50, 90, 0.14);
+  /* 统计页摘要卡后面的淡蓝光晕（静态 radial-gradient）。浓度上限：文字压在最浓处仍 ≥4.5:1（tests/contrast.test.js） */
+  --stats-glow-1: rgba(110, 185, 255, 0.15);
+  --stats-glow-2: rgba(150, 200, 250, 0.1);
   --tab-glass: rgba(255, 255, 255, 0.72);
   --tab-off: rgba(10, 12, 18, 0.6);
 
@@ -112,6 +115,7 @@
     --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
     --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --card-ink-2: rgba(235, 240, 248, 0.95);
+    --stats-glow-1: rgba(110, 185, 255, 0.06); --stats-glow-2: rgba(150, 200, 250, 0.04);
     --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
@@ -141,6 +145,7 @@
   --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
   --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --card-ink-2: rgba(235, 240, 248, 0.95);
+  --stats-glow-1: rgba(110, 185, 255, 0.06); --stats-glow-2: rgba(150, 200, 250, 0.04);
   --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
   --fill: rgba(120, 120, 128, 0.36);
@@ -977,6 +982,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    层叠：首页 .screen 自成层叠上下文；光球是包装层的 ::before（z-index:-1），
    所以在大标题、卡片、「记一笔」按钮、抽屉下面，在 .sky 上面。包装层自己不能建层叠上下文。 */
 .screen[data-screen="home"] { isolation: isolate; }
+.screen[data-screen="stats"] { isolation: isolate; }   /* 统计页光晕（.stats-month::after，z-index:-1）在 .sky 上面、内容下面 */
 .home-card-wrap { position: relative; margin-top: 10px; }
 .home-card-wrap::before {
   /* 光球层：左右伸到屏幕边（不超出，避免横向滚动），上方只伸出 56px（不碰状态栏），高度固定。
@@ -1345,15 +1351,33 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 /* =====================================================================
    15. Stats 统计页 — js/ui/stats-view.js、js/ui/trend-chart.js
-   - 顺序：月份切换 → 摘要玻璃卡（无光晕）→ 黑色胶囊分段 → 累计走势图卡 → 分类抽屉。
+   - 顺序：月份切换（后面挂淡蓝光晕）→ 摘要玻璃卡（一行三格）→ 黑色胶囊分段（玻璃轨道）→ 累计走势图卡 → 分类抽屉。
    - [dataviz] 走势图单色 ink；比例条用分类色，但每列都有名称 + 金额 + 百分比文字，条本身 aria-hidden。
-   - 效能：玻璃卡是静态渐层（无 backdrop-filter）；分类列不加阴影 / 渐层；拖动只改标记与标签属性。
+   - 效能（v2.4）：玻璃卡、光晕、分类条渐层全是静态渐层与阴影（无 backdrop-filter、无新动画）；分类列不加阴影；拖动只改标记与标签属性。
    ===================================================================== */
 .stats-month {
+  position: relative;   /* 光晕的定位基准；不能有 transform / opacity / z-index / isolation（测试锁住） */
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+}
+/* 摘要卡后面的淡蓝光晕：挂在不会动的月份列上（换月份时整块 .stats-body 滑动，光晕不跟着闪）。
+   以月份列顶端为 0：往上伸 40px（到大标题，不碰状态栏），摘要卡顶在 56px。左右刚好到屏幕边（同首页光球）。
+   每个光晕在 70% 半径处已透明，纵向都在图层内淡完（测试会检查）。静态、无动画、无模糊。 */
+.stats-month::after {
+  --mx: calc(var(--margin) + var(--safe-left));
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: -40px;
+  height: 270px;
+  left: calc(-1 * var(--mx));
+  right: calc(-1 * (var(--margin) + var(--safe-right)));
+  background:
+    radial-gradient(240px 150px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.72) 136px, var(--stats-glow-1), transparent 70%),
+    radial-gradient(220px 140px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.2) 158px, var(--stats-glow-2), transparent 70%);
 }
 .stats-month-title { font: var(--font-headline); text-align: center; flex: 1; font-variant-numeric: tabular-nums; }
 .stats-month-btn {
@@ -1396,22 +1420,42 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   .glass-card { border: 1px solid var(--card-rim-2); }   /* 不支援 mask 时：普通细边 */
 }
 
-/* 摘要：三栏；金额放不下时自动换行（不截断） */
+/* 摘要：一行三格（收入｜支出｜结余），格间 1px 细线（inset 阴影，不占宽度）；「RM」缩小当单位。
+   金额字级有上限（同结余卡做法）：大字级时三格也放得下 RM 9,999.99；放不下的情况改三行（见下）。 */
 .stats-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 8px;
-  padding: 16px 18px;
+  padding: 16px 6px;
 }
-.stats-sum-item { flex: 1 1 0; min-width: max-content; display: grid; gap: 4px; }
-.stats-sum-k { font: var(--font-footnote); color: var(--ink-2); }
+.stats-sum-item { min-width: 0; display: grid; align-content: start; gap: 5px; padding: 0 8px; }
+.stats-sum-item + .stats-sum-item { box-shadow: inset 1px 0 0 var(--hairline); }
+.stats-sum-k { font: var(--font-footnote); color: var(--card-ink-2); }
 .stats-sum-v {
-  font: 500 0.9412rem/1.2 var(--font-family);   /* 16/17 */
+  font: 600 min(0.8824rem, 15px)/1.2 var(--font-family);   /* 15/17 */
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   white-space: nowrap;
 }
+.stats-sum-v small { font: 600 min(0.6471rem, 11px)/1 var(--font-family); letter-spacing: 0; color: var(--card-ink-2); }
 .stats-sum-v.is-income { color: var(--income); }
+.stats-sum-v.is-income small { color: inherit; }
+/* 金额上万（数字连负号超过 8 字元，JS 加 is-long）或窄屏：改成三行，名称在左、金额在右 */
+.stats-summary.is-long { grid-template-columns: 1fr; padding: 4px 18px; }
+.stats-summary.is-long .stats-sum-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 11px 0; box-shadow: none;
+}
+.stats-summary.is-long .stats-sum-item + .stats-sum-item { box-shadow: inset 0 1px 0 var(--hairline); }
+.stats-summary.is-long .stats-sum-v { font-size: min(0.9412rem, 17px); }
+/* iPhone SE 宽度：三格一定放不下 → 一律三行（写在 is-long 之后，同优先级靠文件顺序） */
+@media (max-width: 359px) {
+  .stats-summary { grid-template-columns: 1fr; padding: 4px 18px; }
+  .stats-summary .stats-sum-item {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 11px 0; box-shadow: none;
+  }
+  .stats-summary .stats-sum-item + .stats-sum-item { box-shadow: inset 0 1px 0 var(--hairline); }
+  .stats-summary .stats-sum-v { font-size: min(0.9412rem, 17px); }
+}
 
 .stats-summary + .segmented { margin: 16px 0 0; }
 /* 统计页的分段控件也换晨雾玻璃（夹在两张玻璃卡中间）；记一笔面板里的不变。
@@ -1441,7 +1485,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 增加对比度 / 降低透明度：拿掉反光边，统计页玻璃改成不透明＋实线边（写在上面的玻璃规则之后才压得过） */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .glass-card::before,
-  .stats-body .segmented::after { display: none; }
+  .stats-body .segmented::after,
+  .stats-month::after { display: none; }
   .glass-card,
   .stats-body .segmented { background: var(--glass); border: 1px solid var(--glass-edge); }
 }

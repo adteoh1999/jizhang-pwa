@@ -49,3 +49,31 @@ test('increase contrast / reduce transparency: rims off, stats glass opaque (rul
 test('stats card shadow token exists in light and both dark blocks', () => {
   for (const t of [light, mediaDark, attrDark]) assert.ok(t['--stats-card-shadow'], 'missing --stats-card-shadow');
 });
+
+test('glow hangs on the month row, which never animates or builds a stacking context', () => {
+  assert.match(css, /\.screen\[data-screen="stats"\] \{ isolation: isolate; \}/);
+  const month = blockAfter(css, '\n.stats-month {');
+  assert.ok(!/isolation|z-index|transform|opacity|filter|contain|will-change|mask|clip-path|mix-blend-mode|perspective/.test(month));
+  assert.match(month, /position:\s*relative/);
+  for (const t of [light, mediaDark, attrDark]) {
+    assert.ok(t['--stats-glow-1'] && t['--stats-glow-2'], 'glow tokens in every theme block');
+  }
+  const fb = blockAfter(css, '\n@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {', css.indexOf('\n.stats-month::after {'));
+  assert.match(fb, /\.stats-month::after/);
+});
+
+test('summary: three columns; long amounts / narrow screens switch to three rows (narrow rule last)', () => {
+  assert.match(blockAfter(css, '\n.stats-summary {'), /grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/);
+  const longAt = css.indexOf('\n.stats-summary.is-long {');
+  const narrowAt = css.indexOf('.stats-summary', css.indexOf('@media (max-width: 359px)', longAt));
+  assert.ok(longAt > 0 && narrowAt > longAt, 'narrow-screen rule after .is-long');
+  // 字级上限：大字级时三格不挤爆
+  assert.match(blockAfter(css, '\n.stats-sum-v {'), /min\(0\.8824rem, 15px\)/);
+});
+
+test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from the pure function', () => {
+  assert.match(statsJs, /summaryIsLong\(/);
+  assert.match(statsJs, /'sr-only'/);
+  assert.match(statsJs, /rmParts\(/);
+  assert.match(statsJs, /'aria-hidden': 'true'/);
+});

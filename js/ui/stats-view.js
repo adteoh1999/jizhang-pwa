@@ -1,11 +1,12 @@
-// 统计页：月份切换器、摘要玻璃卡、黑色胶囊支出/收入切换、累计走势图、分类占比抽屉（分类色比例条）。
+// 统计页：月份切换器（后面挂淡蓝光晕）、摘要玻璃卡（一行三格）、黑色胶囊支出/收入切换、累计走势图、
+// 分类占比抽屉（两行：名称＋金额、渐层比例条＋百分比胶囊）。
 // 选中的月份与类型只存在记忆体（切换分页时保留）。
 import { h } from './dom.js';
 import { icon, rowIconAttr } from './icons.js';
 import { kindSegmented } from './components.js';
 import { mountTrendChart } from './trend-chart.js';
-import { summarizeMonth, byCategory, formatPercent, cumulativeByDay } from '../stats.js';
-import { formatRM } from '../money.js';
+import { summarizeMonth, byCategory, formatPercent, cumulativeByDay, summaryIsLong } from '../stats.js';
+import { formatRM, rmParts } from '../money.js';
 import { todayLocal, monthOf, shiftMonth, formatMonthTitle } from '../dates.js';
 import {
   animate, fade, cancelAnims, reducedMotion, clipSupported, slideX, DUR, EASE_OUT,
@@ -28,14 +29,23 @@ export function mountStats(root, store) {
   }, icon('chevron-right', 22));
   const switcher = h('div', { class: 'stats-month' }, prevBtn, title, nextBtn);
 
-  // ---------- 摘要：小一号玻璃卡（无光晕） ----------
-  const incomeEl = h('span', { class: 'stats-sum-v is-income' });
-  const expenseEl = h('span', { class: 'stats-sum-v' });
-  const balanceEl = h('span', { class: 'stats-sum-v' });
-  const cell = (label, el) => h('div', { class: 'stats-sum-item' },
-    h('span', { class: 'stats-sum-k' }, label), el);
+  // ---------- 摘要：晨雾玻璃卡，一行三格（金额上万或窄屏改三行） ----------
+  // 看得到的金额拆成「符号＋小 RM＋数字」（aria-hidden），读屏读 .sr-only 的完整金额
+  const incomeEl = h('span', { class: 'stats-sum-v is-income', 'aria-hidden': 'true' });
+  const expenseEl = h('span', { class: 'stats-sum-v', 'aria-hidden': 'true' });
+  const balanceEl = h('span', { class: 'stats-sum-v', 'aria-hidden': 'true' });
+  const incomeSr = h('span', { class: 'sr-only' });
+  const expenseSr = h('span', { class: 'sr-only' });
+  const balanceSr = h('span', { class: 'sr-only' });
+  const cell = (label, el, sr) => h('div', { class: 'stats-sum-item' },
+    h('span', { class: 'stats-sum-k' }, label), el, sr);
   const summary = h('section', { class: 'glass-card stats-summary' },
-    cell('收入', incomeEl), cell('支出', expenseEl), cell('结余', balanceEl));
+    cell('收入', incomeEl, incomeSr), cell('支出', expenseEl, expenseSr), cell('结余', balanceEl, balanceSr));
+  function setMoney(el, sr, minor, sign) {
+    const p = rmParts(minor, { sign });
+    el.replaceChildren(p.sign, h('small', {}, 'RM'), ` ${p.num}`);
+    sr.textContent = formatRM(minor, { sign });
+  }
 
   // ---------- 支出 / 收入 ----------
   const seg = kindSegmented({ value: kind, onChange: (k) => setKind(k) });
@@ -70,9 +80,10 @@ export function mountStats(root, store) {
 
     const all = store.transactions();
     const s = summarizeMonth(all, month);
-    incomeEl.textContent = formatRM(s.income, { sign: 'none' });
-    expenseEl.textContent = formatRM(s.expense, { sign: 'none' });
-    balanceEl.textContent = formatRM(s.balance);
+    setMoney(incomeEl, incomeSr, s.income, 'none');
+    setMoney(expenseEl, expenseSr, s.expense, 'none');
+    setMoney(balanceEl, balanceSr, s.balance, 'negative');
+    summary.classList.toggle('is-long', summaryIsLong([s.income, s.expense, s.balance]));
 
     seg.set(kind);
 

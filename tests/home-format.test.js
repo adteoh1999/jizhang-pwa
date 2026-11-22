@@ -73,7 +73,7 @@ test('CSS：窄屏缩级写在同优先级的基础规则之后（靠文件顺�
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
   const narrow = [...css.matchAll(/@media \(max-width: 359px\) \{/g)].map((m) => m.index);
-  assert.equal(narrow.length, 2);
+  assert.equal(narrow.length, 3);   // 首页两个（下面检查）＋统计页摘要卡一个（v2.4，在文件后面）
   // 基础规则要存在，而且「最后一次出现」也在媒体查询之前（防止以后有人在后面再写一条同名基础规则）
   const after = (rule, i) => assert.ok(css.indexOf(rule) >= 0 && css.lastIndexOf(rule) < i, rule);
   after('\n.home-balance.is-xlong .home-balance-dec {', narrow[0]);   // 顶格＝基础规则（媒体查询里的有缩进）
