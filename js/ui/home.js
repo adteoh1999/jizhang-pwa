@@ -491,7 +491,8 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const dayOrder = [];
     // FLIP：资料变动时先量每一列与日期区块的位置（含进行中的位移），重画后从旧位置补位
     // 首页不在画面上（切到别的分页）时不做：量到的位置都是 0
-    // 本机刚存（v2.3.1）：不量位置、不补位（重的工作不要和数字滚动挤在一起），只让新的一笔进场
+    // 本机刚存（v2.3.1）：不量位置、不补位，只让新的一笔进场。列表这一帧落在数字滚动中段（遮罩 0.2 秒放行），
+    // 所以要尽量轻：不量位置、节点重用（只插入一列）
     const before = !local.size && flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
     if (before) pruneBefore(before, (id) => rows.has(id));
     const days = new Set();
