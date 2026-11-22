@@ -126,6 +126,38 @@ export function enterTargets(added, newDays) {
   return out;
 }
 
+/**
+ * 把 current（key 顺序）变成 next 要做的最少操作（纯函数）。
+ * remove：current 有、next 没有；moves：依 next 顺序，位置上不是它时 [key, beforeKey|null]（null = 放最后）。
+ * 已在正确位置的不动：顶端插入一个 → 只有一个 move。
+ */
+export function reconcile(current, next) {
+  const want = new Set(next);
+  const remove = current.filter((k) => !want.has(k));
+  const cur = current.filter((k) => want.has(k));
+  const moves = [];
+  next.forEach((key, i) => {
+    if (cur[i] === key) return;
+    moves.push([key, cur[i] === undefined ? null : cur[i]]);
+    const j = cur.indexOf(key, i);
+    if (j >= 0) cur.splice(j, 1);
+    cur.splice(i, 0, key);
+  });
+  return { remove, moves };
+}
+
+/**
+ * 让 container 的子节点变成 next（key = data-flip），只搬需要搬的。elOf(key) → 现在代表这个 key 的节点。
+ * 先拿掉「不是 elOf(key) 的旧节点」（没有 key 的空列表提示、删除后撤销留下的透明旧列）。
+ */
+export function syncChildren(container, next, elOf) {
+  for (const el of [...container.children]) if (elOf(el.dataset.flip) !== el) el.remove();
+  const live = [...container.children];
+  const { remove, moves } = reconcile(live.map((el) => el.dataset.flip), next);
+  for (const k of remove) elOf(k).remove();
+  for (const [k, before] of moves) container.insertBefore(elOf(k), before === null ? null : elOf(before));
+}
+
 /** 这次画出、上一次没有的日期区块（判断新区块；不能靠「之前量到的位置」）。 */
 export function newDayKeys(days, lastDays) {
   return new Set([...days].filter((d) => !lastDays.has(d)));
@@ -290,6 +322,17 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
   let renderPending = false;
   let rendering = false;       // render() 正在搬动 DOM
   let lastDays = new Set();    // 上一次画出的日期区块 key（判断新区块）
+  const dayRecs = new Map();   // 日期区块 key → { el, labelEl, netEl, ul, label, net }（重用，不每次重建）
+  const rowElOf = (k) => (k ? (rows.get(k.slice(1)) || {}).el : undefined);
+  const dayElOf = (k) => (k ? (dayRecs.get(k) || {}).el : undefined);
+  function buildDay(date) {
+    const labelEl = h('span');
+    const netEl = h('span', { class: 'home-day-net' });
+    const ul = h('ul', { class: 'home-group', role: 'list' });
+    const el = h('section', { class: 'home-day', 'data-flip': `d${date}` },
+      h('h2', { class: 'home-day-header' }, labelEl, netEl), ul);
+    return { el, labelEl, netEl, ul, label: null, net: null };
+  }
   const activeDrags = new Set(); // 拖动中的列 record
   // reason：'data' 资料变动（会动画）、'wake' 从背景回来、'more' 显示更多。多次合并时 'data' 优先。
   // 有浮层（记一笔面板等）时延后到浮层关完、退场播完（whenIdle），动画才看得到。
@@ -426,6 +469,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
       order = [];
       openRow = null;
       lastDays = new Set();
+      dayRecs.clear();
       list.replaceChildren(h('p', { class: 'home-empty' }, '还没有记录，点上面的按钮记第一笔'));
       moreBtn.hidden = true;
       return;
@@ -435,36 +479,40 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     const seen = new Set();
     const added = [];   // 这次新出现的列
     order = [];
-    const frag = [];
+    const dayOrder = [];
     // FLIP：资料变动时先量每一列与日期区块的位置（含进行中的位移），重画后从旧位置补位
     // 首页不在画面上（切到别的分页）时不做：量到的位置都是 0
     // 本机刚存（v2.3.1）：不量位置、不补位（重的工作不要和数字滚动挤在一起），只让新的一笔进场
     const before = !local.size && flipEnterable(reason, first) && !list.closest('[hidden]') ? snapshotTops(list) : null;
     const days = new Set();
     const dayEls = new Map();   // 日期区块 key → section（进场直接拿节点，不用 id 拼选择器）
-    rendering = true; // 从这里开始列节点会被搬到新的 <ul>（append 时就离开旧位置）
+    rendering = true; // 从这里开始会搬动列节点（insertBefore 时就离开旧位置，焦点可能掉）
     try {
       let budget = shown;
       for (const g of groups) {
         if (budget <= 0) break;
         const items = g.items.slice(0, budget);
         budget -= items.length;
-        const lis = items.map((tx) => {
+        const keys = items.map((tx) => {
           let rec = rows.get(tx.id);
           if (!rec) { rec = buildRow(tx); rows.set(tx.id, rec); added.push(tx); }
           fillRow(rec, tx);
           seen.add(tx.id);
           order.push(tx.id);
-          return rec.el;
+          return `t${tx.id}`;
         });
-        const section = h('section', { class: 'home-day', 'aria-label': formatDayHeader(g.date, today), 'data-flip': `d${g.date}` },
-          h('h2', { class: 'home-day-header' },
-            h('span', null, formatDayHeader(g.date, today)),
-            h('span', { class: 'home-day-net' }, formatRM(g.net, { sign: 'always' }))),
-          h('ul', { class: 'home-group', role: 'list' }, lis));
-        days.add(`d${g.date}`);
-        dayEls.set(`d${g.date}`, section);
-        frag.push(section);
+        const key = `d${g.date}`;
+        let d = dayRecs.get(key);
+        if (!d) { d = buildDay(g.date); dayRecs.set(key, d); }
+        // 区块重用：标题（今天 / 昨天…）与净额变了才改字；区块内的列只搬需要搬的
+        const label = formatDayHeader(g.date, today);
+        if (d.label !== label) { d.label = label; d.labelEl.textContent = label; d.el.setAttribute('aria-label', label); }
+        const net = formatRM(g.net, { sign: 'always' });
+        if (d.net !== net) { d.net = net; d.netEl.textContent = net; }
+        syncChildren(d.ul, keys, rowElOf);
+        days.add(key);
+        dayEls.set(key, d.el);
+        dayOrder.push(key);
       }
       for (const id of [...rows.keys()]) {
         if (!seen.has(id)) {
@@ -472,7 +520,8 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
           rows.delete(id);
         }
       }
-      list.replaceChildren(...frag);
+      for (const k of [...dayRecs.keys()]) if (!days.has(k)) dayRecs.delete(k);
+      syncChildren(list, dayOrder, dayElOf);
     } finally {
       rendering = false;
     }

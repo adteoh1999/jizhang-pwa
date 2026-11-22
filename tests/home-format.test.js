@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   balanceSizeClass, balanceParts, meterText, countText, flowSizeClass,
-  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets, newDayKeys,
+  HIDE_KEY, MASK, readHidden, writeHidden, cardView, eyeButtonState, floatText, flipEnterable, mergeReason, rowTapAllowed, paintCardEarly, enterTargets, newDayKeys, reconcile, syncChildren,
 } from '../js/ui/home.js';
 import { rowIconAttr } from '../js/ui/icons.js';
 
@@ -275,7 +275,7 @@ test('home.js：列与日期区块带 data-flip，render 前后量位置；左�
   const { readFileSync } = await import('node:fs');
   const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
   assert.match(js, /'data-flip': `t\$\{tx\.id\}`/);
-  assert.match(js, /'data-flip': `d\$\{g\.date\}`/);
+  assert.match(js, /'data-flip': `d\$\{date\}`/);
   assert.match(js, /snapshotTops\(list\)/);
   assert.match(js, /playFlip\(list,/);
   const del = js.slice(js.indexOf('function deleteRow('), js.indexOf('function attachSwipe('));
@@ -286,7 +286,9 @@ test('home.js：列与日期区块带 data-flip，render 前后量位置；左�
   // 删除成功就把旧 rec 从 rows 拿掉：之后撤销一定建新节点（旧节点停在透明）
   assert.match(del, /if \(rows\.get\(id\) === rec\) rows\.delete\(id\);/);
   const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
-  assert.ok(render.indexOf('snapshotTops(list)') < render.indexOf('list.replaceChildren(...frag)'));
+  const iSnap = render.indexOf('snapshotTops(list)');
+  const iMove = render.indexOf('syncChildren(');
+  assert.ok(iSnap >= 0 && iMove > iSnap, '先量位置再搬节点');
   assert.ok(render.indexOf('window.scrollTo(0, scrollY)') < render.indexOf('playFlip(list,'));
   // 只有这次新出现的列（或新的日期区块）才滑入
   assert.match(render, /addedKeys\.has\(key\)/);
@@ -373,4 +375,98 @@ test('newDayKeys：这次有、上一次没有的日期区块', () => {
   assert.deepEqual([...newDayKeys(new Set(['d1', 'd2']), new Set(['d2']))], ['d1']);
   assert.equal(newDayKeys(new Set(['d1']), new Set(['d1'])).size, 0);
   assert.deepEqual([...newDayKeys(new Set(['d1']), new Set())], ['d1']);
+});
+
+// 套用 reconcile 的结果到阵列（模拟 DOM 的 remove / insertBefore）
+function applyOps(current, { remove, moves }) {
+  const a = current.filter((k) => !remove.includes(k));
+  for (const [key, before] of moves) {
+    const i = a.indexOf(key);
+    if (i >= 0) a.splice(i, 1);
+    if (before === null) a.push(key);
+    else a.splice(a.indexOf(before), 0, key);
+  }
+  return a;
+}
+
+test('reconcile 不变', () => {
+  assert.deepEqual(reconcile(['a', 'b', 'c'], ['a', 'b', 'c']), { remove: [], moves: [] });
+});
+
+test('reconcile 顶端插入只动一个', () => {
+  assert.deepEqual(reconcile(['b', 'c'], ['a', 'b', 'c']), { remove: [], moves: [['a', 'b']] });
+});
+
+test('reconcile 删除中间', () => {
+  assert.deepEqual(reconcile(['a', 'b', 'c'], ['a', 'c']), { remove: ['b'], moves: [] });
+});
+
+test('reconcile 尾端新增', () => {
+  assert.deepEqual(reconcile(['a'], ['a', 'b']), { remove: [], moves: [['b', null]] });
+});
+
+test('reconcile 换位与混合：套用后等于 next', () => {
+  for (const [cur, next] of [
+    [['a', 'b', 'c'], ['c', 'a', 'b']],
+    [['a', 'b', 'c'], ['a', 'c', 'b']],
+    [['a', 'b', 'c', 'd'], ['d', 'x', 'b']],
+    [[], ['a', 'b']],
+    [['a', 'b'], []],
+  ]) {
+    const ops = reconcile(cur, next);
+    assert.deepEqual(applyOps(cur, ops), next, `${cur} → ${next}`);
+  }
+  assert.equal(reconcile(['a', 'b', 'c'], ['c', 'a', 'b']).moves.length, 1, '最后一个移到最前只动一次');
+});
+
+test('home.js：列表按日期区块重用节点，不再整个重建', async () => {
+  const { readFileSync } = await import('node:fs');
+  const js = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+  const render = js.slice(js.indexOf('function render('), js.indexOf('function setOffset('));
+  assert.ok(!/list\.replaceChildren\(\.\.\.frag\)/.test(render), '不能整个重建');
+  assert.ok((render.match(/syncChildren\(/g) || []).length >= 2, '日期区块与区块内的列都用 syncChildren（reconcile）');
+  const iOn = render.indexOf('rendering = true;');
+  const iOff = render.indexOf('rendering = false;');
+  const iSync = render.indexOf('syncChildren(');
+  assert.ok(iOn >= 0 && iSync > iOn && iOff > iSync, 'rendering 旗标包住搬动');
+  assert.match(js, /const dayRecs = new Map\(\)/);
+});
+
+// 极简假 DOM：children 阵列、insertBefore 会把节点从原本的父层搬走、remove 自己脱离
+function fakeEl(key) {
+  const el = { dataset: { flip: key }, parent: null, remove() { if (el.parent) el.parent.children.splice(el.parent.children.indexOf(el), 1); el.parent = null; } };
+  return el;
+}
+function fakeBox(els = []) {
+  const box = { children: [], insertBefore(el, ref) {
+    el.remove();
+    const i = ref === null ? box.children.length : box.children.indexOf(ref);
+    box.children.splice(i, 0, el); el.parent = box;
+  } };
+  for (const el of els) box.insertBefore(el, null);
+  return box;
+}
+
+test('syncChildren：同 key 的旧节点（删除后撤销、还没重画）被换成新节点', () => {
+  const a = fakeEl('ta'); const oldB = fakeEl('tb'); const c = fakeEl('tc');
+  const box = fakeBox([a, oldB, c]);
+  const newB = fakeEl('tb');
+  const map = { ta: a, tb: newB, tc: c };
+  syncChildren(box, ['ta', 'tb', 'tc'], (k) => map[k]);
+  assert.deepEqual(box.children, [a, newB, c]);
+  assert.equal(oldB.parent, null);
+});
+
+test('syncChildren：没有 key 的节点（空列表提示）会被拿掉；列在区块之间搬动', () => {
+  const empty = { dataset: {}, parent: null, remove() { if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; } };
+  const list = fakeBox([empty]);
+  const d1 = fakeEl('d1');
+  syncChildren(list, ['d1'], (k) => ({ d1 }[k]));
+  assert.deepEqual(list.children, [d1]);
+  const x = fakeEl('tx');
+  const u1 = fakeBox([x]); const u2 = fakeBox([]);
+  syncChildren(u2, ['tx'], (k) => ({ tx: x }[k]));   // 新区块先处理：x 搬过去
+  syncChildren(u1, [], (k) => ({ tx: x }[k]));       // 旧区块后处理：不能把 x 从新区块拿掉
+  assert.deepEqual(u2.children, [x]);
+  assert.deepEqual(u1.children, []);
 });
