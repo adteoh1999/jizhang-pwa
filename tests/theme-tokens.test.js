@@ -195,7 +195,7 @@ test('sheet.js / entry-sheet.js：退场登记、分类轻弹；不再有储存�
   assert.ok(!/modal-sheet-check|modal-sheet-saved-text|is-saved/.test(css), '只为 ✓ 的 CSS 已删');
 });
 
-test('记一笔：顺序与停顿期间的保护', () => {
+test('记一笔：存好马上关（中间不能等）', () => {
   const enterIdx = css.indexOf('\n.overlay-modal.is-visible .modal-sheet.is-entering {');
   const rmIdx = css.lastIndexOf('.overlay-modal.is-visible .modal-sheet.is-entering');
   assert.ok(enterIdx >= 0 && rmIdx > enterIdx + 1, '减弱动态规则要写在进场规则之后（且两条都存在）');
@@ -206,7 +206,9 @@ test('记一笔：顺序与停顿期间的保护', () => {
   const iSaving = save.indexOf("classList.add('is-saving')");
   const iClose = save.indexOf('sheet.close()');
   assert.ok(iSave >= 0 && iSaving > iSave && iClose > iSaving, '顺序：存好 → is-saving → close');
-  assert.ok(!/await/.test(save.slice(save.indexOf(';', iSave), iClose)), '存好到关闭之间不能等');
+  // 存好到关闭之间：不能 await，也不能用计时器 / then 延后关闭（注释里写到这些字会误报，改写时留意）
+  const gap = save.slice(save.indexOf(';', iSave), iClose);
+  assert.ok(!/await|setTimeout|requestAnimationFrame|\.then\(/.test(gap), '存好到关闭之间不能等');
   assert.equal(entry.split('popSelected(').length - 1, 2, 'popSelected 只有定义与一个呼叫点');
   assert.match(blockAfter(css, '\n.modal-sheet.is-saving .modal-sheet-body {'), /pointer-events:\s*none/);
   const sheet = readFileSync(new URL('js/ui/sheet.js', root), 'utf8');
