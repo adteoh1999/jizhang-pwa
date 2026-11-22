@@ -73,6 +73,9 @@
   /* 统计页摘要卡后面的淡蓝光晕（静态 radial-gradient）。浓度上限：文字压在最浓处仍 ≥4.5:1（tests/contrast.test.js） */
   --stats-glow-1: rgba(110, 185, 255, 0.15);
   --stats-glow-2: rgba(150, 200, 250, 0.1);
+  /* 统计页分类条：轨道、渐层淡端（浅色往白淡；深色往抽屉色淡，＝ --drawer 的 .5，测试锁住） */
+  --stats-track: rgba(10, 12, 18, 0.07);
+  --bar-fade: rgba(255, 255, 255, 0.55);
   --tab-glass: rgba(255, 255, 255, 0.72);
   --tab-off: rgba(10, 12, 18, 0.6);
 
@@ -115,6 +118,7 @@
     --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
     --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --card-ink-2: rgba(235, 240, 248, 0.95);
+    --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(26, 29, 35, 0.5);
     --stats-glow-1: rgba(110, 185, 255, 0.06); --stats-glow-2: rgba(150, 200, 250, 0.04);
     --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
@@ -145,6 +149,7 @@
   --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
   --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --card-ink-2: rgba(235, 240, 248, 0.95);
+  --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(26, 29, 35, 0.5);
   --stats-glow-1: rgba(110, 185, 255, 0.06); --stats-glow-2: rgba(150, 200, 250, 0.04);
   --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
@@ -1589,52 +1594,93 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 分类抽屉（与首页账单抽屉同样式，见上方 .home-drawer） */
 .stats-drawer { margin-top: 18px; }
 .stats-group { list-style: none; margin: 0; padding: 6px 0 0; }
+/* 分类列（v2.4）：两行——名称 … 金额；渐层粗条 … 百分比胶囊。data-icon 挂在列上，图标、条、胶囊都继承分类色。
+   分隔线从文字起点开始（图标 44 + 间距 14），保留安全区 */
 .stats-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-height: 62px;
-  padding: 9px calc(20px + var(--safe-right)) 9px calc(20px + var(--safe-left));
+  padding: 11px calc(20px + var(--safe-right)) 11px calc(20px + var(--safe-left));
+}
+.stats-row + .stats-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(78px + var(--safe-left));
+  right: calc(20px + var(--safe-right));
+  height: 1px;
+  background: var(--hairline);
 }
 .stats-row .home-row-icon { width: 44px; height: 44px; }
-.stats-row-text { flex: 1; min-width: 0; display: grid; gap: 7px; }
+.stats-row-text { flex: 1; min-width: 0; display: grid; gap: 9px; }
+.stats-row-line1,
+.stats-row-line2 { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .stats-row-name {
-  font: var(--font-body);
-  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+  font: 500 0.9412rem/1.25 var(--font-family);   /* 16/17 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.stats-row-amount {
+  flex: none;
+  font: 600 0.9412rem/1.25 var(--font-family);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.stats-row-amount small { font: 600 0.6471rem/1 var(--font-family); letter-spacing: 0; color: var(--ink-2); }
 .stats-bar {
   position: relative;
   display: block;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--track);
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--stats-track);
   overflow: hidden;
 }
-/* v2.3 分类条「滑入」：固定 100% 宽，translateX 往左藏（只走合成）；::before 往左延伸补弹过头的缝 */
+/* v2.3 分类条「滑入」：固定 100% 宽，translateX 往左藏（只走合成）。左端由轨道圆角裁切 → 两端都圆。
+   同色渐层（v2.4，不用 color-mix）：分类色上叠一层「淡 → 透明」，淡色一直铺到看得到的那段起点
+   （--bar-w＝JS 的 barWidth，与 slideX 同一个值），所以短条也看得到由淡到深，左端永远是最淡色。 */
 .stats-bar-fill {
   position: absolute;
   inset: 0;
   width: 100%;
-  border-radius: 0 3px 3px 0;
-  background: var(--cat-fg, var(--secondary-label));
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, var(--bar-fade) calc(100% - var(--bar-w, 100%)), transparent 100%), var(--cat-fg, var(--secondary-label));
 }
-.stats-bar-fill::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 100%; background: inherit; }
+/* 往左延伸补弹过头的缝：明写成最淡色（不能 inherit，否则贴着主条的是最深色） */
+.stats-bar-fill::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 100%;
+  background: linear-gradient(var(--bar-fade), var(--bar-fade)), var(--cat-fg, var(--secondary-label));
+}
 .stats-body { display: flex; flex-direction: column; flex: 1 0 auto; }   /* 换月份时整块滑动 */
-.stats-row-nums { flex: none; display: grid; justify-items: end; gap: 3px; }
-.stats-row-amount {
-  font: var(--font-body);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* 百分比小胶囊：底＝分类淡色，字＝加深的分类色（灰色列：ink 淡底、次要字） */
 .stats-row-pct {
-  font: var(--font-caption);
-  color: var(--ink-2);
+  flex: none;
+  min-width: 3.3em;
+  box-sizing: border-box;
+  padding: 0.2em 0.55em;
+  border-radius: 999px;
+  text-align: center;
+  font: 600 0.7059rem/1.2 var(--font-family);   /* 12/17 */
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  background: var(--cat-bg, var(--ink-tint));
+  color: var(--cat-ink, var(--ink-2));
+}
+/* 增加对比度 / 降低透明度：分类条改回纯色（写在分类条规则之后才压得过） */
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .stats-bar-fill,
+  .stats-bar-fill::before { background: var(--cat-fg, var(--secondary-label)); }
 }
 
 /* =====================================================================
@@ -1824,25 +1870,26 @@ button.update-action {
 }
 button.update-action::after { content: ""; position: absolute; inset: -12px -8px; }
 
-/* ===== 分类颜色（Task 2）：[data-icon] 设定 --cat-bg / --cat-fg，任何元件都可套用 ===== */
-[data-icon="food"] { --cat-bg: #FFE4CF; --cat-fg: #C85A08; }
-[data-icon="transport"] { --cat-bg: #D8E8FF; --cat-fg: #1D63BF; }
-[data-icon="shopping"] { --cat-bg: #FFDCE8; --cat-fg: #B92E62; }
-[data-icon="bills"] { --cat-bg: #D3F0EA; --cat-fg: #137767; }
-[data-icon="fun"] { --cat-bg: #E8DFFF; --cat-fg: #6040C4; }
-[data-icon="other"] { --cat-bg: #E6E8EC; --cat-fg: #4A5160; }
-[data-icon="salary"] { --cat-bg: #D8F2DC; --cat-fg: #1F7D36; }
-[data-icon="bonus"] { --cat-bg: #FFF0BF; --cat-fg: #9A6B00; }
-[data-icon="side"] { --cat-bg: #DDE1FF; --cat-fg: #3E4CBF; }
-[data-icon="other_income"] { --cat-bg: #DCEBE6; --cat-fg: #2D6B57; }
-[data-icon="pet"] { --cat-bg: #F3DCF6; --cat-fg: #8A3FB0; }
-[data-icon="health"] { --cat-bg: #FFDAD8; --cat-fg: #C0262D; }
-[data-icon="home"] { --cat-bg: #EFE6D2; --cat-fg: #7A5B12; }
-[data-icon="gift"] { --cat-bg: #F9D9F2; --cat-fg: #A4289A; }
-[data-icon="travel"] { --cat-bg: #D0EDF8; --cat-fg: #0E6F94; }
-[data-icon="education"] { --cat-bg: #E3F0C4; --cat-fg: #52700E; }
-[data-icon="coffee"] { --cat-bg: #EBDCCF; --cat-fg: #7A4A2A; }
-[data-icon="phone"] { --cat-bg: #DDF1D0; --cat-fg: #2F7A1C; }
+/* ===== 分类颜色（Task 2）：[data-icon] 设定 --cat-bg / --cat-fg，任何元件都可套用 =====
+   --cat-ink（v2.4）：统计页百分比胶囊的字色＝--cat-fg 每通道 ×0.72（浅色在 --cat-bg 上 ≥4.5:1）；深色直接用 --cat-fg（下面两条通用规则） */
+[data-icon="food"] { --cat-bg: #FFE4CF; --cat-fg: #C85A08; --cat-ink: #904106; }
+[data-icon="transport"] { --cat-bg: #D8E8FF; --cat-fg: #1D63BF; --cat-ink: #15478A; }
+[data-icon="shopping"] { --cat-bg: #FFDCE8; --cat-fg: #B92E62; --cat-ink: #852147; }
+[data-icon="bills"] { --cat-bg: #D3F0EA; --cat-fg: #137767; --cat-ink: #0E564A; }
+[data-icon="fun"] { --cat-bg: #E8DFFF; --cat-fg: #6040C4; --cat-ink: #452E8D; }
+[data-icon="other"] { --cat-bg: #E6E8EC; --cat-fg: #4A5160; --cat-ink: #353A45; }
+[data-icon="salary"] { --cat-bg: #D8F2DC; --cat-fg: #1F7D36; --cat-ink: #165A27; }
+[data-icon="bonus"] { --cat-bg: #FFF0BF; --cat-fg: #9A6B00; --cat-ink: #6F4D00; }
+[data-icon="side"] { --cat-bg: #DDE1FF; --cat-fg: #3E4CBF; --cat-ink: #2D378A; }
+[data-icon="other_income"] { --cat-bg: #DCEBE6; --cat-fg: #2D6B57; --cat-ink: #204D3F; }
+[data-icon="pet"] { --cat-bg: #F3DCF6; --cat-fg: #8A3FB0; --cat-ink: #632D7F; }
+[data-icon="health"] { --cat-bg: #FFDAD8; --cat-fg: #C0262D; --cat-ink: #8A1B20; }
+[data-icon="home"] { --cat-bg: #EFE6D2; --cat-fg: #7A5B12; --cat-ink: #58420D; }
+[data-icon="gift"] { --cat-bg: #F9D9F2; --cat-fg: #A4289A; --cat-ink: #761D6F; }
+[data-icon="travel"] { --cat-bg: #D0EDF8; --cat-fg: #0E6F94; --cat-ink: #0A506B; }
+[data-icon="education"] { --cat-bg: #E3F0C4; --cat-fg: #52700E; --cat-ink: #3B510A; }
+[data-icon="coffee"] { --cat-bg: #EBDCCF; --cat-fg: #7A4A2A; --cat-ink: #58351E; }
+[data-icon="phone"] { --cat-bg: #DDF1D0; --cat-fg: #2F7A1C; --cat-ink: #225814; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) [data-icon="food"] { --cat-bg: rgba(255, 140, 50, 0.18); --cat-fg: #FFA35C; }
   :root:not([data-theme="light"]) [data-icon="transport"] { --cat-bg: rgba(70, 150, 255, 0.18); --cat-fg: #7DB4FF; }
@@ -1862,6 +1909,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   :root:not([data-theme="light"]) [data-icon="education"] { --cat-bg: rgba(186, 247, 49, 0.19); --cat-fg: #D1FA75; }
   :root:not([data-theme="light"]) [data-icon="coffee"] { --cat-bg: rgba(150, 110, 85, 0.19); --cat-fg: #C4A28C; }
   :root:not([data-theme="light"]) [data-icon="phone"] { --cat-bg: rgba(98, 231, 65, 0.19); --cat-fg: #97EF80; }
+  :root:not([data-theme="light"]) [data-icon] { --cat-ink: var(--cat-fg, var(--secondary-label)); }
 }
 :root[data-theme="dark"] [data-icon="food"] { --cat-bg: rgba(255, 140, 50, 0.18); --cat-fg: #FFA35C; }
 :root[data-theme="dark"] [data-icon="transport"] { --cat-bg: rgba(70, 150, 255, 0.18); --cat-fg: #7DB4FF; }
@@ -1881,10 +1929,10 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 :root[data-theme="dark"] [data-icon="education"] { --cat-bg: rgba(186, 247, 49, 0.19); --cat-fg: #D1FA75; }
 :root[data-theme="dark"] [data-icon="coffee"] { --cat-bg: rgba(150, 110, 85, 0.19); --cat-fg: #C4A28C; }
 :root[data-theme="dark"] [data-icon="phone"] { --cat-bg: rgba(98, 231, 65, 0.19); --cat-fg: #97EF80; }
+:root[data-theme="dark"] [data-icon] { --cat-ink: var(--cat-fg, var(--secondary-label)); }
 
 .home-row-icon[data-icon] { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
 .cat-tile[data-icon] .cat-tile-icon { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
-.stats-bar-fill[data-icon] { background: var(--cat-fg, var(--secondary-label)); }
 
 /* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
 @media (prefers-contrast: more) {

@@ -9,7 +9,7 @@ import { summarizeMonth, byCategory, formatPercent, cumulativeByDay, summaryIsLo
 import { formatRM, rmParts } from '../money.js';
 import { todayLocal, monthOf, shiftMonth, formatMonthTitle } from '../dates.js';
 import {
-  animate, fade, cancelAnims, reducedMotion, clipSupported, slideX, DUR, EASE_OUT,
+  animate, fade, cancelAnims, reducedMotion, clipSupported, slideX, barWidth, DUR, EASE_OUT,
 } from './motion.js';
 
 export function mountStats(root, store) {
@@ -98,18 +98,23 @@ export function mountStats(root, store) {
       const cat = store.categoryById(r.category_id);
       const name = cat ? cat.name : '未分类';
       const iconAttr = rowIconAttr(cat); // null → 灰色（已删除 / 未分类）
-      const bar = h('span', { class: 'stats-bar-fill', 'data-icon': iconAttr });
+      const bar = h('span', { class: 'stats-bar-fill' });
       bar.style.transform = slideX(r.ratio, 6);   // 滑入做法；有值时最少露出 6px
+      bar.style.setProperty('--bar-w', barWidth(r.ratio, 6));   // 渐层只铺在看得到的那段（与 slideX 同一个宽度）
       bar.dataset.to = bar.style.transform;
-      return h('li', { class: 'stats-row' },
+      const amt = rmParts(r.total, { sign: 'none' });
+      // data-icon 挂在列上：图标、条、百分比胶囊都继承分类色（null → 灰色后备）
+      return h('li', { class: 'stats-row', 'data-icon': iconAttr },
         h('span', { class: `home-row-icon${iconAttr ? '' : ' is-muted'}`, 'data-icon': iconAttr },
           icon(cat ? cat.icon : 'other', 22)),
         h('span', { class: 'stats-row-text' },
-          h('span', { class: 'stats-row-name' }, name),
-          h('span', { class: 'stats-bar', 'aria-hidden': 'true' }, bar)),
-        h('span', { class: 'stats-row-nums' },
-          h('span', { class: 'stats-row-amount' }, formatRM(r.total, { sign: 'none' })),
-          h('span', { class: 'stats-row-pct' }, formatPercent(r.ratio))));
+          h('span', { class: 'stats-row-line1' },
+            h('span', { class: 'stats-row-name' }, name),
+            h('span', { class: 'stats-row-amount', 'aria-hidden': 'true' }, h('small', {}, 'RM'), ` ${amt.num}`),
+            h('span', { class: 'sr-only' }, formatRM(r.total, { sign: 'none' }))),
+          h('span', { class: 'stats-row-line2' },
+            h('span', { class: 'stats-bar', 'aria-hidden': 'true' }, bar),
+            h('span', { class: 'stats-row-pct' }, formatPercent(r.ratio)))));
     }));
   }
 

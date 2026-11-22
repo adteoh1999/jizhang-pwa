@@ -13,12 +13,14 @@ const PAIRS = [
 
 // 半透明叠层：[前景, [最底的不透明底, 往上叠的半透明层…], 最低值]
 // 统计页玻璃卡（.glass-card，v2.4 晨雾玻璃）压在晨雾上：晨雾每一段 × 玻璃渐层两端（左上 / 右下）都测
+// 统计页灰色（已删除 / 未分类）百分比胶囊：--ink-2 压在抽屉＋--ink-tint
+const GREY_PILL = [['--ink-2', ['--drawer', '--ink-tint'], 4.5]];
 const STACKS = ['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) =>
   ['--card-glass-1', '--card-glass-2'].flatMap((glass) => [
     ['--income', [sky, glass], 4.5],
     ['--ink-2', [sky, glass], 4.5],
     ['--ink', [sky, glass], 4.5],
-  ]));
+  ])).concat(GREY_PILL);
 
 const tokens = { light, dark: { ...light, ...attrDark } };
 

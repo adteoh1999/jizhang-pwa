@@ -110,3 +110,27 @@ test('there is a dark @media block with the icon rules, and the attr rules sit o
 test('colour use sites carry a grey fallback', () => {
   assert.doesNotMatch(css, /var\(--cat-(bg|fg)\)/);
 });
+
+// v2.4 统计页百分比胶囊：字压在 --cat-bg 上。浅色用加深的 --cat-ink；深色用通用规则 --cat-ink = --cat-fg
+const inkOf = (n) => {
+  const m = new RegExp(`(?:^|\\n)\\[data-icon="${n}"\\]\\s*\\{([^}]*)\\}`).exec(css);
+  const v = m && /--cat-ink:\s*([^;]+);/.exec(m[1]);
+  return v ? v[1].trim() : null;
+};
+test('stats pill: light --cat-ink on --cat-bg >= 4.5 for every icon', () => {
+  for (const n of names) {
+    const ink = inkOf(n);
+    assert.ok(ink, `light --cat-ink ${n}`);
+    const l = lightRuleFor(n);
+    assert.ok(contrast(rgb(ink).c, rgb(l.bg).c) >= 4.5, `light pill ${n}`);
+  }
+});
+test('stats pill: dark --cat-fg on drawer + --cat-bg >= 4.5, and dark blocks reset --cat-ink to --cat-fg', () => {
+  const drawer = [0x1A, 0x1D, 0x23];
+  for (const n of names) {
+    const d = darkAttr(n);
+    assert.ok(contrast(rgb(d.fg).c, over(rgb(d.bg), drawer)) >= 4.5, `dark pill ${n}`);
+  }
+  assert.match(css, /\n\s*:root:not\(\[data-theme="light"\]\) \[data-icon\] \{ --cat-ink: var\(--cat-fg, var\(--secondary-label\)\); \}/);
+  assert.match(css, /\n:root\[data-theme="dark"\] \[data-icon\] \{ --cat-ink: var\(--cat-fg, var\(--secondary-label\)\); \}/);
+});
