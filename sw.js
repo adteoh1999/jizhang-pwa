@@ -1,5 +1,5 @@
 // 每次发布都要同时改 js/version.js 的 APP_VERSION 与 sw.js 的 VERSION（测试会检查两者相同、资产清单完整）
-const VERSION = 'v2.4-2026-11-22';
+const VERSION = 'v2.5-2026-11-24';
 const CACHE = `jizhang-${VERSION}`;
 
 const ASSETS = [

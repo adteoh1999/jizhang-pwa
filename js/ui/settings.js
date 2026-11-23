@@ -1,5 +1,5 @@
-// 设置页（iOS inset grouped 列表）：分类、数据（导出 / 导入 CSV）、关于。
-// 账号、绑定、邀请码、删除账号是第 2、3 阶段的事，这里不放占位。
+// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、分类、数据（导出 / 导入 CSV）、关于。
+// 绑定、邀请码、删除账号是 2f、第 3 阶段的事，这里不放占位。
 // 注意：导出时 navigator.share 要在点击事件里同步呼叫（之前不能 await），否则会失去使用者手势。
 import { h } from './dom.js';
 import { icon } from './icons.js';
@@ -9,6 +9,7 @@ import { openCategoriesPage } from './categories-page.js';
 import { todayLocal } from '../dates.js';
 import { APP_VERSION } from '../version.js';
 import { onUpdateAvailable, applyUpdate } from '../update.js';
+import { signOut } from '../auth.js';
 
 /** 导出档名：jizhang-YYYYMMDD.csv（当地日期）。 */
 export function exportFileName(now = new Date()) {
@@ -24,7 +25,17 @@ function download(file) {
   setTimeout(() => URL.revokeObjectURL(url), 60000); // 给浏览器（尤其 iOS）时间开始下载再释放
 }
 
-export function mountSettings(root, store) {
+/** 账号区要显示的列（纯函数）：有 session → 邮箱、登出；没有 → 不显示账号区。 */
+export function accountRows(session) {
+  if (!session) return [];
+  return [
+    { kind: 'email', label: '邮箱', detail: session.email || '' },
+    { kind: 'signout', label: '登出' },
+  ];
+}
+
+/** opts.session：目前登录的 session（没有就不显示账号区）。 */
+export function mountSettings(root, store, { session = null } = {}) {
   let seq = 0;
   const section = (title, rows, footer) => {
     const id = `settings-sec-${++seq}`;
@@ -159,7 +170,33 @@ export function mountSettings(root, store) {
     versionRow.querySelector('.inset-row-detail').replaceWith(btn);
   });
 
+  // ---------- 账号 ----------
+  let signingOut = false;
+  async function onSignOut() {
+    if (signingOut) return;
+    const ok = await confirmDialog({
+      title: '要登出吗？', message: '这台设备上的账本会保留。', confirmLabel: '登出', destructive: true,
+    });
+    if (!ok) return;
+    signingOut = true;
+    const done = await signOut(store, () => location.reload());
+    if (!done) {
+      signingOut = false;
+      await messageDialog({ title: '登出失败', message: '请再试一次。' });
+    }
+  }
+  const accountSection = () => {
+    const rows = accountRows(session).map((r) => (r.kind === 'email'
+      ? h('div', { class: 'inset-row' },
+        h('span', { class: 'inset-row-label' }, r.label),
+        h('span', { class: 'inset-row-detail account-email' }, r.detail))
+      : h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: onSignOut } },
+        h('span', { class: 'inset-row-label' }, r.label))));
+    return rows.length ? section('账号', rows) : null;
+  };
+
   root.replaceChildren(
+    ...[accountSection()].filter(Boolean),
     section('分类', [
       buttonRow('管理分类', () => openCategoriesPage(store, { from: 'settings' }), { chevron: true }),
     ]),

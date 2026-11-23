@@ -1748,6 +1748,8 @@ button.inset-row:active { background: var(--press-bg); }
 .inset-row-label { flex: 1; min-width: 0; }
 .inset-row-detail { flex: none; color: var(--secondary-label); font-variant-numeric: tabular-nums; }
 .inset-row-chevron { flex: none; display: flex; color: var(--ink-3); }
+.inset-row.is-destructive { color: var(--red-text); }   /* 登出（2d） */
+.inset-row-detail.account-email { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }   /* 长邮箱换行，不撑出横向滚动 */
 
 /* =====================================================================
    17. Categories page 分类管理子画面 — js/ui/categories-page.js
@@ -1947,7 +1949,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-2); }
 }
 
-/* ---------- 17. 登录页（2d） ----------
+/* ---------- 登录页（2d，js/ui/login.js） ----------
    照登录页预览：底色由 .sky（整页晨雾）提供，.login 自己不设底色、不 fixed（状态栏方案 B）。
    光晕是静态 radial-gradient，没有模糊、没有动画；增加对比度 / 降低透明度时关掉。
    键盘挡住时 js 只对 .login-body 加 translateY（不改排版）。 */
@@ -2002,7 +2004,8 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .la-sheen-end { stop-color: #FFFFFF; stop-opacity: 0; }
 .login-welcome-text { display: flex; flex-direction: column; gap: 12px; padding-bottom: 36px; }
 .login-title { font: 800 2rem/1.18 var(--font-family); letter-spacing: 0.01em; }
-.login-title:focus { outline: none; }             /* 程式移焦点（读屏用），不显示外框 */
+.login-title:focus,
+.large-title:focus { outline: none; }             /* 程式移焦点（读屏用；登录成功后移到首页大标题），不显示外框 */
 .login-body .login-title { margin: 8px 0; }
 .login-sub { font: var(--font-body); line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
 .login-body .login-sub { margin-bottom: 24px; }

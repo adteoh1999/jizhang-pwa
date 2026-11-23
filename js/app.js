@@ -1,4 +1,4 @@
-// 进入点：开 DB → 建 store → init → 挂载 Tab Bar 与三个分页 → 安装提示。
+// 进入点：开 DB → 建 store → init → 读登录状态：没登录 → 登录页（2d）；有 → 挂载 Tab Bar 与三个分页 → 安装提示。
 // 最后注册 Service Worker（离线 + 更新提示）。
 import { openDatabase } from './db.js';
 import { createStore } from './store.js';
@@ -9,6 +9,8 @@ import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
+import { mountLogin } from './ui/login.js';
+import { loadSession, bootTarget } from './auth.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
@@ -52,7 +54,7 @@ export function showDbClosedNotice() {
   btn.focus({ preventScroll: true });
 }
 
-function mountShell(root, store) {
+function mountShell(root, store, session) {
   const hintSlot = h('div', { class: 'hint-slot' });
   const screens = new Map();
   const scrollPos = new Map(); // 每个分页各自记住滚动位置（只在记忆体）
@@ -77,7 +79,7 @@ function mountShell(root, store) {
   const home = screens.get('home');
   mountHome(home.querySelector('.screen-content'), store, { monthEl: home.querySelector('.large-title-aside') });
   const stats = mountStats(screens.get('stats').querySelector('.screen-content'), store);
-  mountSettings(screens.get('settings').querySelector('.screen-content'), store);
+  mountSettings(screens.get('settings').querySelector('.screen-content'), store, { session });
 
   const tabbar = mountTabBar(root, {
     tabs: TABS,
@@ -169,7 +171,22 @@ async function boot() {
     const store = createStore({ db });
     await store.init();
     if (isDevHost()) window.__store = store;
-    mountShell(root, store);
+    const session = await loadSession(store);
+    if (bootTarget(session) === 'login') {
+      mountLogin(root, {
+        store,
+        fetchFn: (url, init) => fetch(url, init),
+        hasLocalData: () => store.transactions().length > 0,
+        onSignedIn: (s) => {
+          mountShell(root, store, s);
+          // 登录成功：焦点移到首页大标题（读屏从这里开始念）
+          const title = root.querySelector('.large-title');
+          if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
+        },
+      });
+    } else {
+      mountShell(root, store, session);
+    }
   } catch (err) {
     console.warn('boot failed:', err);
     renderDbError(root, err);

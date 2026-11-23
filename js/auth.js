@@ -174,3 +174,24 @@ export async function loadLastUserId(store) {
   return isStr(v) ? v : null;
 }
 export const saveLastUserId = (store, id) => store.setMeta('lastUserId', id);
+
+/** 启动时要显示什么：没有 session → 登录页；有（就算过期）→ App（本地优先，token 刷新是 2e 的事）。 */
+export function bootTarget(session) {
+  return session ? 'app' : 'login';
+}
+
+/**
+ * 登出（2d 最简单版）：只清登录状态，账本与 lastUserId 保留（用户决定：同步做好前账本是唯一一份）。
+ * 两个写入都成功才调 reload；失败回 false（呼叫者显示「登出失败」）。
+ */
+export async function signOut(store, reload) {
+  try {
+    await clearSession(store);
+    await clearPending(store);
+  } catch (e) {
+    console.warn(`[auth] 登出写入失败：${e && e.name ? e.name : '未知'}`);
+    return false;
+  }
+  reload();
+  return true;
+}
