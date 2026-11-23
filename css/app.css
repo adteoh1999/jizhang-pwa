@@ -46,6 +46,12 @@
   --btn-fg: #FFFFFF;
   --on-red: #FFFFFF;                /* 红底上的字（滑动删除等），各主题都是白 */
   --red-text: #D70015;              /* 红字专用（底色为抽屉 / ink-tint 时 ≥4.5:1） */
+  /* 登录页（2d）：输入框底、插图硬币、钱包反光、光晕浓度、错误字（直接压在晨雾上，--red-text 只有 4.07，另设较深的红） */
+  --field: rgba(255, 255, 255, 0.72);
+  --coin: rgba(255, 255, 255, 0.72);
+  --login-sheen: 0.55;
+  --login-halo: 0.9;
+  --login-error: #B4000F;
   --income: #157A35;
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
@@ -109,6 +115,7 @@
     --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
     --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #4CD07A; --red: rgb(255, 66, 69);
+    --field: rgba(255, 255, 255, 0.07); --coin: rgba(30, 36, 46, 0.85); --login-sheen: 0.12; --login-halo: 0.5; --login-error: #FF6B6F;
     --track: rgba(255, 255, 255, 0.14);
     --glass-sheen: rgba(255, 255, 255, 0.18);
     --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
@@ -140,6 +147,7 @@
   --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
   --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #4CD07A; --red: rgb(255, 66, 69);
+  --field: rgba(255, 255, 255, 0.07); --coin: rgba(30, 36, 46, 0.85); --login-sheen: 0.12; --login-halo: 0.5; --login-error: #FF6B6F;
   --track: rgba(255, 255, 255, 0.14);
   --glass-sheen: rgba(255, 255, 255, 0.18);
   --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
@@ -1937,4 +1945,150 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 /* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
 @media (prefers-contrast: more) {
   .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-2); }
+}
+
+/* ---------- 17. 登录页（2d） ----------
+   照登录页预览：底色由 .sky（整页晨雾）提供，.login 自己不设底色、不 fixed（状态栏方案 B）。
+   光晕是静态 radial-gradient，没有模糊、没有动画；增加对比度 / 降低透明度时关掉。
+   键盘挡住时 js 只对 .login-body 加 translateY（不改排版）。 */
+.login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: var(--safe-top) calc(24px + var(--safe-right)) 0 calc(24px + var(--safe-left));
+  color: var(--ink);
+  overflow-x: clip;
+}
+.login-step { flex: 1 0 auto; display: flex; flex-direction: column; min-width: 0; }
+.login-hint { margin: 8px 0 4px; }
+.login-welcome { padding-bottom: calc(var(--safe-bottom) + 24px); }
+.login-hero {
+  flex: 1 1 auto;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.login-halo {
+  position: absolute;
+  width: min(340px, 100%);
+  height: 300px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -54%);
+  opacity: var(--login-halo);
+  pointer-events: none;
+  background:
+    radial-gradient(26% 30% at 34% 52%, rgba(110, 185, 255, 0.85), transparent),
+    radial-gradient(24% 28% at 58% 28%, rgba(100, 220, 180, 0.8), transparent),
+    radial-gradient(22% 24% at 42% 18%, rgba(175, 165, 250, 0.7), transparent),
+    radial-gradient(28% 32% at 68% 60%, rgba(90, 205, 215, 0.7), transparent),
+    radial-gradient(24% 26% at 40% 76%, rgba(165, 155, 245, 0.6), transparent),
+    radial-gradient(20% 22% at 60% 44%, rgba(150, 200, 250, 0.6), transparent);
+}
+.login-art { position: relative; max-width: 100%; height: auto; }
+.la-coin { fill: var(--coin); stroke: var(--glass-edge); stroke-width: 2; }
+.la-ring { fill: none; stroke: var(--ink-3); stroke-width: 2; }
+.la-ink { fill: var(--ink); font-family: var(--font-family); }
+.la-arrow { fill: none; stroke: var(--ink); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.la-wallet { fill: var(--glass); stroke: var(--glass-edge); stroke-width: 2; }
+.la-edge { fill: none; stroke: var(--glass-edge); stroke-width: 2; }
+.la-fill { fill: var(--btn-bg); }
+.la-clasp { fill: var(--btn-fg); }
+.la-sheen-top { stop-color: #FFFFFF; stop-opacity: var(--login-sheen); }
+.la-sheen-end { stop-color: #FFFFFF; stop-opacity: 0; }
+.login-welcome-text { display: flex; flex-direction: column; gap: 12px; padding-bottom: 36px; }
+.login-title { font: 800 2rem/1.18 var(--font-family); letter-spacing: 0.01em; }
+.login-title:focus { outline: none; }             /* 程式移焦点（读屏用），不显示外框 */
+.login-body .login-title { margin: 8px 0; }
+.login-sub { font: var(--font-body); line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
+.login-body .login-sub { margin-bottom: 24px; }
+.login-primary {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 24px;
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: var(--font-headline);
+}
+.login-welcome .login-primary { min-height: 56px; }
+.login-primary[aria-disabled="true"] { opacity: 0.6; }
+.login-footnote { margin-top: 14px; text-align: center; font: var(--font-footnote); color: var(--ink-2); }
+.login-body { transition: transform 0.2s var(--ease-out); }
+.login-back {
+  width: var(--hit);
+  height: var(--hit);
+  margin-left: -10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+}
+.login-form { display: flex; flex-direction: column; gap: 6px; }
+.login-field { display: block; font: 600 0.7647rem/1.385 var(--font-family); color: var(--ink-2); }
+.login-input + .login-field { margin-top: 10px; }
+.login-input {
+  width: 100%;
+  height: 52px;
+  box-sizing: border-box;
+  padding: 0 15px;
+  border-radius: 16px;
+  border: 1px solid var(--glass-edge);
+  background: var(--field);
+  color: var(--ink);
+  font: 400 max(17px, 1rem)/1.2 var(--font-family);   /* ≥16px：iOS 不会自动放大 */
+  outline: none;
+}
+.login-input::placeholder { color: var(--ink); opacity: 0.45; }
+.login-input:focus { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.login-input[aria-invalid] { border-color: var(--login-error); box-shadow: 0 0 0 1px var(--login-error); }
+.login-input-invite { letter-spacing: 0.06em; }
+.login-field-hint { font: var(--font-footnote); color: var(--ink-2); }
+.login-notice { font: var(--font-subhead); color: var(--ink-2); }
+.login-error { font: var(--font-subhead); color: var(--login-error); }
+.login-form .login-primary { margin-top: 14px; }
+.login-code { position: relative; }
+.login-cells { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.login-cell {
+  height: 60px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 28px/1 var(--font-family);
+  font-variant-numeric: tabular-nums;
+  background: var(--field);
+  border: 1px solid var(--glass-edge);
+}
+.login-code:focus-within .login-cell.is-active { border: 2px solid var(--ink); }
+.login-code-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+  font-size: 17px;
+  outline: none;
+}
+.login-code-input::selection { background: transparent; }
+.login-resend { min-height: var(--hit); display: flex; align-items: center; font: var(--font-subhead); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.login-link { min-height: var(--hit); padding: 0; font: var(--font-subhead); font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .login-halo { display: none; }
+  .login-input, .login-cell { border-color: var(--ink-2); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-body { transition: none; }
 }

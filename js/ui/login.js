@@ -1,0 +1,356 @@
+// 登录画面：欢迎 → 邮箱（＋邀请码）→ 6 位数验证码。照登录页预览（晨雾背景、静态光晕、钱包硬币插图、按钮紧跟输入框）。
+// 流程逻辑都在 js/login-flow.js；这里只负责画、绑事件、键盘、倒数。
+// 规则：DOM 一次建好，状态变化只改文字与属性，不重建输入框（内容、焦点、键盘不丢）。
+import { h } from './dom.js';
+import { icon } from './icons.js';
+import { isIosBrowserTab } from './install-hint.js';
+import { confirmDialog } from './dialogs.js';
+import { fade, reducedMotion } from './motion.js';
+import { announce } from './announce.js';
+import { createLoginFlow } from '../login-flow.js';
+import { registerEmail, requestOtp, verifyOtp } from '../auth.js';
+
+export const LOGIN_TEXT = Object.freeze({
+  welcomeTitle: '每一笔钱，都记得清清楚楚',
+  welcomeSub: '手机和 Telegram 共用同一本账，换设备也不会丢。',
+  welcomeButton: '用邮箱登录',
+  welcomeFoot: '第一次使用需要邀请码',
+  emailTitle: '登录',
+  emailSub: '我们会寄一组 6 位数验证码到你的邮箱。',
+  emailLabel: '邮箱',
+  inviteLabel: '邀请码（第一次使用才需要）',
+  invitePlaceholder: '例如 K7MP-Q4XZ',
+  inviteHint: '已经注册过的邮箱，不用再填。',
+  sendButton: '发送验证码',
+  sending: '正在发送…',
+  codeTitle: '输入验证码',
+  codeLabel: '6 位数验证码',
+  codeAuto: '输满 6 位会自动登录。',
+  codeButton: '进入记账',
+  signingIn: '正在登录…',
+  resendButton: '重新发送验证码',
+  safariHint: '请先加到主屏幕再使用：点 分享 → 添加到主屏幕。在这里登录后，加到主屏幕还要再登录一次。',
+  switchTitle: '这台设备上有另一个账号的账本',
+  switchMessage: '继续登录的话，新账号会看到这些记录。',
+  switchConfirm: '继续',
+  sentTo: (email) => `已寄到 ${email}，10 分钟内有效。`,
+  resendIn: (sec) => `没收到？${sec} 秒后可以重新发送`,
+});
+
+/**
+ * 键盘挡住表单时要往上移多少 px（纯函数）。
+ * blockTop / blockBottom：表单块现在量到的位置（已含目前的位移 currentLift）；
+ * 可见范围是 [vvOffsetTop, vvOffsetTop + vvHeight]；最多移到表单顶端碰到 minTop 为止。
+ */
+export function keyboardLift({ blockTop, blockBottom, currentLift = 0, vvHeight, vvOffsetTop = 0, minTop = 0, gap = 12 }) {
+  const top = blockTop + currentLift;
+  const bottom = blockBottom + currentLift;
+  const need = bottom + gap - (vvOffsetTop + vvHeight);
+  if (need <= 0) return 0;
+  return Math.max(0, Math.min(need, top - minTop));
+}
+
+/** 验证码 6 格的显示内容：下一个要输入的那格 active。 */
+export function codeCells(code) {
+  const s = typeof code === 'string' ? code : '';
+  return Array.from({ length: 6 }, (_, i) => ({ v: s[i] || '', active: i === s.length }));
+}
+
+// 原创插图：毛玻璃钱包＋两枚硬币（照预览；静态 SVG，没有动画）。逐个 createElementNS，不用 HTML 字串。
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const HERO_PARTS = [
+  ['circle', { class: 'la-coin', cx: 98, cy: 70, r: 40 }],
+  ['circle', { class: 'la-ring', cx: 98, cy: 70, r: 29 }],
+  ['text', { class: 'la-ink', x: 98, y: 77, 'text-anchor': 'middle', 'font-size': 20, 'font-weight': 800 }, 'RM'],
+  ['circle', { class: 'la-coin', cx: 160, cy: 54, r: 32 }],
+  ['circle', { class: 'la-ring', cx: 160, cy: 54, r: 22 }],
+  ['path', { class: 'la-arrow', d: 'M160 42 v24 M152 48 l8 -6 l8 6' }],
+  ['rect', { class: 'la-wallet', x: 34, y: 92, width: 192, height: 124, rx: 28 }],
+  ['rect', { class: 'la-sheen', x: 34, y: 92, width: 192, height: 124, rx: 28, fill: 'url(#login-sheen)' }],
+  ['path', { class: 'la-edge', d: 'M34 132 h132 a22 22 0 0 1 22 22 v0 a22 22 0 0 1 -22 22 h-132' }],
+  ['rect', { class: 'la-fill', x: 150, y: 136, width: 60, height: 36, rx: 18 }],
+  ['circle', { class: 'la-clasp', cx: 170, cy: 154, r: 7 }],
+];
+function svgEl(tag, attrs, text) {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+  if (text) n.textContent = text;
+  return n;
+}
+function heroArt() {
+  const svg = svgEl('svg', { class: 'login-art', role: 'img', 'aria-label': '钱包和硬币插图', width: 260, height: 230, viewBox: '0 0 260 230' });
+  const grad = svgEl('linearGradient', { id: 'login-sheen', x1: 0, y1: 0, x2: 0, y2: 1 });
+  grad.append(svgEl('stop', { class: 'la-sheen-top', offset: 0 }), svgEl('stop', { class: 'la-sheen-end', offset: 0.5 }));
+  const defs = svgEl('defs', {});
+  defs.append(grad);
+  svg.append(defs, ...HERO_PARTS.map(([tag, attrs, text]) => svgEl(tag, attrs, text)));
+  return svg;
+}
+
+/**
+ * 挂载登录画面。store：读写 meta；fetchFn：fetch；hasLocalData()：本地有没有账本；onSignedIn(session)。
+ * 回 { destroy() }。登录成功时会先自动 destroy 再叫 onSignedIn。
+ */
+export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, onSignedIn, now = () => Date.now() }) {
+  const T = LOGIN_TEXT;
+  const cleanups = [];
+  let destroyed = false;
+  let timer = null;
+  let lift = 0;
+  let prevStep = null;
+
+  const flow = createLoginFlow({
+    api: {
+      registerEmail: (email, invite) => registerEmail(fetchFn, email, invite),
+      requestOtp: (email) => requestOtp(fetchFn, email),
+      verifyOtp: (email, code, nowMs) => verifyOtp(fetchFn, email, code, nowMs),
+    },
+    store,
+    now,
+    hasLocalData,
+    confirmSwitch: () => confirmDialog({ title: T.switchTitle, message: T.switchMessage, confirmLabel: T.switchConfirm }),
+    onSignedIn: (s) => { destroy(); onSignedIn(s); },
+  });
+
+  // ---------- 共用小件 ----------
+  const primary = (label, attrs = {}) => h('button', { class: 'login-primary pressable', ...attrs }, label);
+  const backBtn = (label) => h('button', { type: 'button', class: 'login-back pressable', 'aria-label': label, on: { click: () => flow.back() } }, icon('chevron-left', 24));
+  const statusRows = () => ({
+    notice: h('p', { class: 'login-notice', 'aria-live': 'polite' }),
+    error: h('p', { class: 'login-error', role: 'alert' }),
+  });
+  const safariHint = () => (isIosBrowserTab()
+    ? h('div', { class: 'install-hint login-hint', role: 'note' },
+      h('span', { class: 'install-hint-icon' }, icon('square-arrow-up', 20)),
+      h('p', { class: 'install-hint-text' }, T.safariHint))
+    : null);
+
+  // ---------- 1. 欢迎 ----------
+  const hero = h('div', { class: 'login-hero' }, h('div', { class: 'login-halo', 'aria-hidden': 'true' }), heroArt());
+  const [t1, t2] = T.welcomeTitle.split('，');
+  const welcomeTitle = h('h1', { class: 'login-title login-title-welcome', id: 'login-title-welcome', tabindex: '-1' }, `${t1}，`, h('br'), t2);
+  const welcome = h('section', { class: 'login-step login-welcome', 'data-step': 'welcome', 'aria-labelledby': 'login-title-welcome' },
+    safariHint(),
+    hero,
+    h('div', { class: 'login-welcome-text' }, welcomeTitle, h('p', { class: 'login-sub' }, T.welcomeSub)),
+    primary(T.welcomeButton, { type: 'button', on: { click: () => flow.goEmail() } }),
+    h('p', { class: 'login-footnote' }, T.welcomeFoot));
+
+  // ---------- 2. 邮箱 ----------
+  const emailInput = h('input', {
+    class: 'login-input', id: 'login-email', type: 'email', inputmode: 'email', autocomplete: 'email',
+    autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next', placeholder: 'you@example.com',
+  });
+  const inviteInput = h('input', {
+    class: 'login-input login-input-invite', id: 'login-invite', type: 'text', autocomplete: 'off',
+    autocapitalize: 'characters', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'send', placeholder: T.invitePlaceholder,
+  });
+  const emailStatus = statusRows();
+  const sendBtn = primary(T.sendButton, { type: 'submit' });
+  const emailTitle = h('h1', { class: 'login-title', id: 'login-title-email', tabindex: '-1' }, T.emailTitle);
+  const emailForm = h('form', { class: 'login-form', novalidate: true },
+    h('label', { class: 'login-field', for: 'login-email' }, h('span', { class: 'login-label' }, T.emailLabel)),
+    emailInput,
+    h('label', { class: 'login-field', for: 'login-invite' }, h('span', { class: 'login-label' }, T.inviteLabel)),
+    inviteInput,
+    h('p', { class: 'login-field-hint', id: 'login-invite-hint' }, T.inviteHint),
+    emailStatus.notice, emailStatus.error, sendBtn);
+  inviteInput.setAttribute('aria-describedby', 'login-invite-hint');
+  // 邮箱栏按「下一个」跳到邀请码，不直接送出
+  emailInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inviteInput.focus(); }
+  });
+  emailForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitEmail(emailInput.value, inviteInput.value); });
+  const emailBody = h('div', { class: 'login-body' }, backBtn('返回'), emailTitle, h('p', { class: 'login-sub' }, T.emailSub), emailForm);
+  const emailStep = h('section', { class: 'login-step', 'data-step': 'email', 'aria-labelledby': 'login-title-email' }, safariHint(), emailBody);
+
+  // ---------- 3. 验证码 ----------
+  const cells = Array.from({ length: 6 }, () => h('div', { class: 'login-cell' }));
+  const codeInput = h('input', {
+    class: 'login-code-input', id: 'login-code', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code',
+    pattern: '[0-9]*', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'done',
+    'aria-describedby': 'login-code-desc login-code-auto',
+  });
+  const codeDesc = h('p', { class: 'login-sub', id: 'login-code-desc' });
+  const resendText = h('span', { class: 'login-resend-text' });
+  const resendBtn = h('button', { type: 'button', class: 'login-link pressable', hidden: true, on: { click: () => flow.resend() } }, T.resendButton);
+  const codeStatus = statusRows();
+  const enterBtn = primary(T.codeButton, { type: 'submit' });
+  const codeTitle = h('h1', { class: 'login-title', id: 'login-title-code', tabindex: '-1' }, T.codeTitle);
+  const codeForm = h('form', { class: 'login-form', novalidate: true },
+    h('label', { class: 'sr-only', for: 'login-code' }, T.codeLabel),
+    h('div', { class: 'login-code' }, h('div', { class: 'login-cells', 'aria-hidden': 'true' }, cells), codeInput),
+    h('span', { class: 'sr-only', id: 'login-code-auto' }, T.codeAuto),
+    h('p', { class: 'login-resend' }, resendText, resendBtn),
+    codeStatus.notice, codeStatus.error, enterBtn);
+  codeInput.addEventListener('input', () => { flow.inputCode(codeInput.value); });
+  // 游标固定在最后（6 格只显示，不支援从中间插入）
+  const caretToEnd = () => { const n = codeInput.value.length; try { codeInput.setSelectionRange(n, n); } catch { /* 部分类型不支援 */ } };
+  codeInput.addEventListener('focus', caretToEnd);
+  codeInput.addEventListener('click', caretToEnd);
+  codeForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitCode(); });
+  const codeBody = h('div', { class: 'login-body' }, backBtn('返回，换一个邮箱'), codeTitle, codeDesc, codeForm);
+  const codeStep = h('section', { class: 'login-step', 'data-step': 'code', 'aria-labelledby': 'login-title-code' }, safariHint(), codeBody);
+
+  const steps = { welcome, email: emailStep, code: codeStep };
+  const el = h('div', { class: 'login' }, welcome, emailStep, codeStep);
+  for (const s of Object.values(steps)) s.hidden = true;
+  root.replaceChildren(el);
+
+  // ---------- 文字区：同一句再出现也要被念出来（先清空再写） ----------
+  function setText(node, text) {
+    if (node.textContent === text) {
+      if (!text || node.getAttribute('role') !== 'alert') return;
+      node.textContent = '';
+      setTimeout(() => { if (!destroyed) node.textContent = text; }, 60);
+      return;
+    }
+    node.textContent = text;
+  }
+  let lastError = '';
+
+  // ---------- 倒数 ----------
+  function updateResend() {
+    const left = flow.resendLeft();
+    resendText.textContent = left > 0 ? T.resendIn(left) : '';
+    resendText.hidden = left === 0;
+    resendBtn.hidden = left > 0;
+    if (left === 0 && timer) { clearInterval(timer); timer = null; }
+  }
+  function startTimer() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    updateResend();
+    if (flow.resendLeft() > 0) timer = setInterval(updateResend, 1000);
+  }
+
+  // ---------- 键盘：整块往上移（只用 transform） ----------
+  function activeBody() {
+    const st = flow.state.step;
+    return st === 'email' ? emailBody : st === 'code' ? codeBody : null;
+  }
+  function applyLift(body, px) {
+    lift = px;
+    body.style.transform = px ? `translateY(${-px}px)` : '';
+  }
+  function updateLift() {
+    const vv = window.visualViewport;
+    const body = activeBody();
+    if (!vv || !body) return;
+    const form = body.querySelector('.login-form');
+    const back = body.querySelector('.login-back');
+    const r = form.getBoundingClientRect();
+    const minTop = back.getBoundingClientRect().top + lift;
+    const next = keyboardLift({
+      blockTop: r.top, blockBottom: r.bottom, currentLift: lift,
+      vvHeight: vv.height, vvOffsetTop: vv.offsetTop, minTop,
+    });
+    if (next !== lift) applyLift(body, next);
+  }
+  let liftQueued = false;
+  const queueLift = () => {
+    if (liftQueued) return;
+    liftQueued = true;
+    requestAnimationFrame(() => { liftQueued = false; if (!destroyed) updateLift(); });
+  };
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', queueLift);
+    window.visualViewport.addEventListener('scroll', queueLift);
+    cleanups.push(() => {
+      window.visualViewport.removeEventListener('resize', queueLift);
+      window.visualViewport.removeEventListener('scroll', queueLift);
+    });
+  }
+  el.addEventListener('focusin', queueLift);
+
+  // 回到前景：倒数用 sentAt 重算（iOS 背景会停计时器）、检查验证码是否过期
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible') return;
+    flow.checkExpiry();
+    if (flow.state.step === 'code') startTimer();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
+
+  // ---------- 画面 ----------
+  function render(s) {
+    if (destroyed) return;
+    const step = s.step === 'done' ? 'code' : s.step;
+    const changed = step !== prevStep;
+    if (changed) {
+      for (const [k, node] of Object.entries(steps)) node.hidden = k !== step;
+      if (prevStep) {
+        for (const b of [emailBody, codeBody]) b.style.transform = '';
+        lift = 0;
+        if (!reducedMotion()) fade(steps[step], 'in', { id: 'login' });
+      }
+    }
+
+    // 邮箱页
+    if (step === 'email' && changed && !emailInput.value && s.email) emailInput.value = s.email;
+    // 验证码页
+    codeDesc.textContent = T.sentTo(s.email);
+    if (codeInput.value !== s.code && codeInput.value.replace(/\D/g, '').slice(0, 6) !== s.code) codeInput.value = s.code;
+    codeCells(s.code).forEach((c, i) => {
+      cells[i].textContent = c.v;
+      cells[i].classList.toggle('is-active', c.active && !s.busy);
+    });
+
+    const status = step === 'code' ? codeStatus : emailStatus;
+    const other = step === 'code' ? emailStatus : codeStatus;
+    setText(other.notice, '');
+    setText(other.error, '');
+    setText(status.notice, s.notice || '');
+    // 每次送出前 flow 都会先清空 error，所以同一句再错一次也会经过「空 → 讯息」，读屏会再念
+    if (s.error !== lastError || changed) setText(status.error, s.error || '');
+
+    // 送出中
+    sendBtn.textContent = s.busy && step === 'email' ? T.sending : T.sendButton;
+    enterBtn.textContent = s.busy && step === 'code' ? T.signingIn : T.codeButton;
+    for (const b of [sendBtn, enterBtn, resendBtn]) b.setAttribute('aria-disabled', s.busy ? 'true' : 'false');
+    if (s.busy && step === 'code' && !lastBusy) announce('正在登录');
+
+    // 栏位标示错误
+    const inviteBad = s.error === '需要有效的邀请码';
+    const emailBad = s.error === '请输入正确的邮箱';
+    emailInput.toggleAttribute('aria-invalid', emailBad);
+    inviteInput.toggleAttribute('aria-invalid', inviteBad);
+    if (s.error && s.error !== lastError) {
+      if (inviteBad) inviteInput.focus({ preventScroll: true });
+      else if (emailBad) emailInput.focus({ preventScroll: true });
+    }
+
+    if (changed) {
+      if (step === 'code') {
+        startTimer();
+        codeInput.focus({ preventScroll: true });
+      } else {
+        if (timer) { clearInterval(timer); timer = null; }
+        if (step === 'email' && prevStep === 'welcome') emailInput.focus({ preventScroll: true });
+        else if (prevStep) (step === 'welcome' ? welcomeTitle : emailTitle).focus({ preventScroll: true });
+      }
+    } else if (step === 'code') {
+      updateResend();
+      if (flow.resendLeft() > 0 && !timer) startTimer();
+    }
+
+    lastError = s.error;
+    lastBusy = s.busy;
+    prevStep = step;
+  }
+  let lastBusy = false;
+
+  const unsubscribe = flow.subscribe(render);
+  cleanups.push(unsubscribe);
+  render(flow.state);
+  flow.start().catch((e) => console.warn('[login] start 失败', e && e.name));
+
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    if (timer) clearInterval(timer);
+    for (const fn of cleanups) { try { fn(); } catch { /* 已移除 */ } }
+    el.remove();
+  }
+  return { destroy, flow };
+}

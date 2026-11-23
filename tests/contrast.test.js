@@ -9,6 +9,9 @@ const PAIRS = [
   // 直接压在整页晨雾上的次要字（统计页、设置页）：渐变的四个色都要过
   ['--ink-2', '--sky-top', 4.5], ['--ink-2', '--sky-mid', 4.5],
   ['--ink-2', '--sky-low', 4.5], ['--ink-2', '--sky-bottom', 4.5],
+  // 登录页（2d）错误字直接压在晨雾上
+  ['--login-error', '--sky-top', 4.5], ['--login-error', '--sky-mid', 4.5],
+  ['--login-error', '--sky-low', 4.5], ['--login-error', '--sky-bottom', 4.5],
 ];
 
 // 半透明叠层：[前景, [最底的不透明底, 往上叠的半透明层…], 最低值]
@@ -20,7 +23,11 @@ const STACKS = ['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((
     ['--income', [sky, glass], 4.5],
     ['--ink-2', [sky, glass], 4.5],
     ['--ink', [sky, glass], 4.5],
-  ])).concat(GREY_PILL);
+  ])).concat(GREY_PILL)
+  // 登录页（2d）：输入框（--field）压在晨雾上，框内文字 ink、次要字 ink-2
+  .concat(['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) => [
+    ['--ink', [sky, '--field'], 4.5], ['--ink-2', [sky, '--field'], 4.5],
+  ]));
 
 const tokens = { light, dark: { ...light, ...attrDark } };
 

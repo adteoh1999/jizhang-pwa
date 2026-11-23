@@ -28,6 +28,7 @@ const ASSETS = [
   './js/ui/home.js',
   './js/ui/icons.js',
   './js/ui/install-hint.js',
+  './js/ui/login.js',
   './js/ui/motion.js',
   './js/ui/nav.js',
   './js/ui/settings.js',
