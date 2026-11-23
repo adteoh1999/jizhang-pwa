@@ -10,7 +10,7 @@ begin;
 
 create table if not exists public.transactions (
   user_id           uuid        not null default auth.uid() references auth.users (id) on delete cascade,
-  id                uuid        primary key,
+  id                uuid        not null,
   kind              text        not null check (kind in ('expense', 'income')),
   amount_minor      bigint      not null check (amount_minor between 1 and 9999999999),  -- 「仙」，上限 RM 99,999,999.99
   category_id       text        not null check (char_length(category_id) between 1 and 64),
@@ -20,8 +20,25 @@ create table if not exists public.transactions (
   source            text        not null default 'manual' check (source in ('manual', 'bot', 'import')),
   updated_at        timestamptz not null,
   deleted           boolean     not null default false,
-  server_updated_at timestamptz not null default now()
+  server_updated_at timestamptz not null default now(),
+  primary key (user_id, id)   -- 每人各自不重复：A 导出的 CSV 导入到 B 也不会撞号
 );
+
+-- 旧版主键只有 id（全站唯一）→ 换成 (user_id, id)。已经是新版就什么都不做，可重复执行。
+do $$
+declare
+  v_name text;
+  v_cols int;
+begin
+  select c.conname, cardinality(c.conkey) into v_name, v_cols
+    from pg_constraint c
+   where c.conrelid = 'public.transactions'::regclass and c.contype = 'p';
+  if v_cols = 1 then
+    execute format('alter table public.transactions drop constraint %I', v_name);
+    alter table public.transactions add constraint transactions_pkey primary key (user_id, id);
+  end if;
+end
+$$;
 
 create table if not exists public.categories (
   user_id           uuid        not null default auth.uid() references auth.users (id) on delete cascade,

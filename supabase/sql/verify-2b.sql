@@ -226,6 +226,22 @@ begin
   exception when others then fails := array_append(fails, ('B建不了自己的分类或关键词:' || sqlerrm));
   end;
 
+  -- 22b. B 用和 A 一样的账目编号新增（例如导入 A 导出的 CSV）→ 成功，A 那笔不受影响
+  total := total + 1;
+  begin
+    insert into public.transactions (id, kind, amount_minor, category_id, occurred_on, note, created_at, updated_at)
+    values (t1, 'expense', 100, 'food', '2026-11-23', 'B的', now(), now());
+    perform set_config('role', 'postgres', true);
+    select count(*) into n from public.transactions where id = t1;
+    select note into v from public.transactions where id = t1 and user_id = a;
+    perform set_config('role', 'authenticated', true);
+    if n = 2 and v = '之后再改' then pass := pass + 1;
+    else fails := array_append(fails, format('同编号:列数%s A的备注%s', n, coalesce(v, 'null'))); end if;
+  exception when others then
+    perform set_config('role', 'authenticated', true);  -- 保险（出错时本来就会自动撤回）
+    fails := array_append(fails, ('B用相同编号新增失败:' || sqlerrm));
+  end;
+
   -- ===================== 身份：未登录（anon）=====================
   perform set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
   perform set_config('role', 'anon', true);
@@ -453,6 +469,21 @@ begin
    where s.nspname = 'private' and c.relkind = 'r' and not c.relrowsecurity;
   if n = 0 and n2 = 0 and n3 = 0 then pass := pass + 1;
   else fails := array_append(fails, format('第二层防线:函数%s 表%s 没开RLS%s', n, n2, n3)); end if;
+
+  -- 40. 再加固：两个内部分区连「进门」都不行、内部编号器没开放、账目主键是 (user_id, id)
+  total := total + 1;
+  select count(*) into n from unnest(array['anon', 'authenticated']) rl, unnest(array['private', 'svc']) sc
+   where has_schema_privilege(rl, sc, 'usage');
+  select count(*) into n2 from pg_class c join pg_namespace s on s.oid = c.relnamespace,
+         unnest(array['anon', 'authenticated']) rl
+   where s.nspname = 'private' and c.relkind = 'S'
+     and has_sequence_privilege(rl, c.oid, 'usage, select, update');
+  select string_agg(att.attname, ',' order by k.ord) into v
+    from pg_constraint c, unnest(c.conkey) with ordinality k(attnum, ord)
+    join pg_attribute att on att.attrelid = 'public.transactions'::regclass and att.attnum = k.attnum
+   where c.conrelid = 'public.transactions'::regclass and c.contype = 'p';
+  if n = 0 and n2 = 0 and v = 'user_id,id' then pass := pass + 1;
+  else fails := array_append(fails, format('加固:分区%s 编号器%s 主键%s', n, n2, coalesce(v, 'null'))); end if;
 
   raise exception 'VERIFY 2b: % / % PASS。失败: %', pass, total,
     case when cardinality(fails) = 0 then '无' else array_to_string(fails, '；') end;

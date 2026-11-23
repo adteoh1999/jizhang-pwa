@@ -304,4 +304,20 @@ grant execute on function svc.svc_refund_invite(text, text)               to ser
 grant execute on function svc.svc_record_invite_use(text, text, uuid)     to service_role;
 grant execute on function svc.svc_new_invite_code(integer, integer, text) to service_role;
 
+-- 兜底：svc 里「所有」函数（包括以后新增、忘了写进上面名单的）一律只给 service_role
+do $$
+declare
+  f regprocedure;
+begin
+  for f in select p.oid::regprocedure from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'svc' and p.prokind = 'f'
+  loop
+    execute format('revoke all on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+end
+$$;
+-- 注意：Postgres 新建函数默认开放给 public，而且无法只针对 svc 改掉这个默认。
+--       所以在 svc 新增函数后，一定要重跑本文件，再跑 verify-2b（第 39 项会抓漏）。
+
 commit;
