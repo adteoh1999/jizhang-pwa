@@ -202,6 +202,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
         if (last && last !== s.user_id && hasLocalData()) {
           const go = await confirmSwitch();
           if (!go) {
+            pendingUsed = true; // 这组验证码已被服务器用掉
             clearPending(store).catch(warn('clearPending'));
             Object.assign(state, { step: 'welcome', code: '', sentAt: null });
             setNotice('');

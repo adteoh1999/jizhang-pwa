@@ -120,7 +120,7 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   const primary = (label, attrs = {}) => h('button', { class: 'login-primary pressable', ...attrs }, label);
   const backBtn = (label) => h('button', { type: 'button', class: 'login-back pressable', 'aria-label': label, on: { click: () => flow.back() } }, icon('chevron-left', 24));
   const statusRows = () => ({
-    notice: h('p', { class: 'login-notice', 'aria-live': 'polite' }),
+    notice: h('p', { class: 'login-notice' }),   // 提示改走 announce()，这里不设 aria-live（免得念两次）
     error: h('p', { class: 'login-error', role: 'alert' }),
   });
   const safariHint = () => (isIosBrowserTab()
@@ -211,11 +211,13 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
 
   // ---------- 文字区 ----------
   // 错误：同一句再出现（序号变了）先清空再写，role=alert 才会再念
+  let errorWrite = 0; // 每次写错误区加一；延迟写回前比对，避免 60ms 内错误已被清掉还写回旧句子
   function sayError(node, text, fresh) {
     if (!fresh && node.textContent === text) return;
+    const my = ++errorWrite;
     if (fresh && text && node.textContent === text) {
       node.textContent = '';
-      setTimeout(() => { if (!destroyed) node.textContent = text; }, 60);
+      setTimeout(() => { if (!destroyed && my === errorWrite) node.textContent = text; }, 60);
       return;
     }
     node.textContent = text;
@@ -257,13 +259,15 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     const r = form.getBoundingClientRect();
     const focused = body.contains(document.activeElement) && document.activeElement.matches('input')
       ? document.activeElement.getBoundingClientRect().top : null;
-    const next = keyboardLift({
+    let next = keyboardLift({
       blockTop: r.top, blockBottom: r.bottom, currentLift: cur,
       vvHeight: vv.height, vvOffsetTop: vv.offsetTop,
       minTop: first.getBoundingClientRect().top + cur, focusTop: focused,
     });
-    if (next !== lift) {
-      lift = next;
+    const rounded = Math.round(next); // 取整＋容差：避免 1/64px 的差异来回触发过渡
+    if (Math.abs(rounded - lift) >= 1) {
+      lift = rounded;
+      next = rounded;
       body.style.transform = next ? `translateY(${-next}px)` : '';
     }
   }

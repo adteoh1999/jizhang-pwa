@@ -442,3 +442,28 @@ test('提示序号：同一句提示再出现，noticeSeq 会变（读屏才会�
   assert.equal(flow.state.notice, '已重新发送');
   assert.notEqual(flow.state.noticeSeq, a);
 });
+
+test('saveSession 失败后马上重发、otp 回 60 秒限制 → 留在邮箱页显示秒数，不进验证码页', async () => {
+  const db = createMemoryDb();
+  let n = 0;
+  const { flow } = setup({ db, handlers: { requestOtp: () => (++n === 1 ? { ok: true } : { ok: false, status: 429, message: '请 40 秒后再试', retrySec: 40 }) } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  db.failNextWrite(new Error('disk'));
+  await flow.inputCode('481203');
+  await flow.submitEmail('me@x.com', '');
+  assert.deepEqual([flow.state.step, flow.state.error], ['email', '请 40 秒后再试']);
+});
+
+test('换账号按取消后再送同一邮箱 → 真的重寄（那组验证码已用掉）', async () => {
+  const db = createMemoryDb();
+  const { flow, store, calls } = setup({ db, hasLocalData: () => true, confirmSwitch: async () => false, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
+  await saveLastUserId(store, 'u-A');
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  db.failNextWrite(new Error('disk')); // 让 clearPending 失败，pending 还留着
+  await flow.inputCode('481203');
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(calls.requestOtp.length, 2);
+});
