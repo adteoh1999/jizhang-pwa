@@ -1,6 +1,8 @@
 // Supabase Auth「Send Email Hook」：Auth 要寄验证码时会叫这里。
 // 先验证签名 → 限流（svc_otp_reserve）→ 用 Resend 寄信；寄信失败就撤回那一笔（不算次数）。
-// 回应规则（官方）：拒绝寄信回 429；签名错回 401；寄信失败回 500（不能回 503，会被重试）。
+// 回应规则：拒绝寄信回 HTTP 200 + {"error":{"http_code":429,"message":…}}（2d 实测＋Auth 源码 hookshttp.go / hookserrors.go：
+// 直接回 HTTP 429 会被 Auth 改成 500「Service currently unavailable due to hook」、中文讯息丢掉）；
+// 签名错回 401；寄信失败回 500（不能回 503，会被重试）。
 import { normalizeEmail } from '../_shared/normalize.ts';
 import { verifyWebhook, webhookKeyOk } from '../_shared/webhook.ts';
 import { json, secretKey, rpc } from '../_shared/http.ts';
@@ -12,7 +14,15 @@ type Deps = {
   resendTimeoutMs?: number;
 };
 
+// 非 200 时 Auth 不读 body：这里的 message 只给日志和测试看，前端看到的是 Auth 自己的英文 500
 const hookError = (status: number, message: string) => json(status, { error: { http_code: status, message } });
+// 拒绝寄信：HTTP 200，让 Auth 照 http_code 回给前端并带上中文讯息。
+// 注意（hookserrors.go）：message 不是非空字串时 Auth 会当成「寄信成功」，所以一定换成固定句子；
+// 这句会原样回给未登录的前端，限制长度。
+const hookReject = (message: unknown, httpCode = 429) => {
+  const m = typeof message === 'string' && message.trim() && message.length <= 100 ? message.trim() : '请稍后再试';
+  return json(200, { error: { http_code: httpCode, message: m } });
+};
 
 // 只寄需要验证码的类型（spec §8.2）；其他（recovery、invite、email_change…）一律拒绝
 const SEND_TYPES = ['magiclink', 'signup', 'email', 'reauthentication'];
@@ -66,7 +76,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
   } catch {
     return hookError(500, '资料格式不对');
   }
-  if (!SEND_TYPES.includes(action)) return hookError(429, '不支持这个操作');
+  if (!SEND_TYPES.includes(action)) return hookReject('不支持这个操作', 403);
   if (!email || !token) return hookError(500, '资料不完整');
 
   let base: string;
@@ -93,7 +103,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
     return hookError(500, '暂时无法寄信，请稍后再试');
   }
   if (!reserved || reserved.ok !== true) {
-    return hookError(429, reserved?.message || '请稍后再试');
+    return hookReject(reserved?.message);
   }
 
   // 2. 寄信

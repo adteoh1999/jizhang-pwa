@@ -191,6 +191,11 @@ test('authErrorMessage：规则 4 钩子的中文讯息 → 抓数字自己组�
   assert.equal(authErrorMessage(429, { msg: '请 123456 秒后再试' }, 'otp'), '尝试太多次，请稍后再试');
 });
 
+test('authErrorMessage：Task 0 实测的真实回应（钩子改回 200+error 后，2026-11-23）', () => {
+  const body = { code: 429, error_code: 'unknown', msg: '已达到上限，请 54 分钟后再试' };
+  assert.equal(authErrorMessage(429, body, 'otp'), '已达到上限，请 54 分钟后再试');
+});
+
 test('authErrorMessage：规则 5–9', () => {
   assert.equal(authErrorMessage(429, { msg: 'Too many requests' }, 'verify'), '尝试太多次，请稍后再试');
   assert.equal(authErrorMessage(400, {}, 'verify'), '验证码不对或已过期');

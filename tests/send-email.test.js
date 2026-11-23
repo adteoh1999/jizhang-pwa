@@ -50,29 +50,73 @@ for (const [label, mod] of await loadBoth('send-email')) {
     }
   });
 
-  test(`${label}：其他类型（recovery、invite、没写）→ 429，不寄信、不算次数`, async () => {
+  // Auth 源码（supabase/auth internal/hooks/hookshttp.go）：钩子回 HTTP 429 会被改成 500、讯息丢掉；
+  // 回 HTTP 200 + {"error":{"http_code":429,"message":…}} 才会把 429 和讯息传给前端（hookserrors.go）。
+  test(`${label}：其他类型（recovery、invite、没写）→ 200 + error 403（非空讯息），不寄信、不算次数`, async () => {
     for (const t of ['recovery', 'invite', 'email_change_new', undefined]) {
       const f = routes();
       const res = await run(signedRequest(payload({ email_action_type: t }), NOW), f);
-      assert.equal(res.status, 429, String(t));
+      assert.equal(res.status, 200, String(t));
+      assert.match(res.headers.get('content-type'), /application\/json/);
+      assert.deepEqual(await res.json(), { error: { http_code: 403, message: '不支持这个操作' } }, String(t));
       assert.equal(f.calls.length, 0, String(t));
     }
   });
 
-  test(`${label}：更换邮箱 → 429，不寄信`, async () => {
+  test(`${label}：更换邮箱 → 200 + error 403，不寄信`, async () => {
     const f = routes();
     const res = await run(signedRequest(payload({ email_action_type: 'email_change' }), NOW), f);
-    assert.equal(res.status, 429);
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).error.http_code, 403);
     assert.equal(f.callsTo('api.resend.com').length, 0);
   });
 
-  test(`${label}：限流挡下 → 429，原讯息，不带 retry-after`, async () => {
+  test(`${label}：限流挡下 → 200 + error 429 原讯息（Auth 会转成 429 给前端），不带 retry-after`, async () => {
     const f = routes({ reserve: () => jsonRes(200, { ok: false, message: '请 42 秒后再试' }) });
     const res = await run(signedRequest(payload(), NOW), f);
-    assert.equal(res.status, 429);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /application\/json/);
     assert.equal(res.headers.get('retry-after'), null);
     assert.deepEqual(await res.json(), { error: { http_code: 429, message: '请 42 秒后再试' } });
     assert.equal(f.callsTo('api.resend.com').length, 0);
+  });
+
+  // Auth（hookserrors.go）：200 回应里 error.message 不是非空字串，就当成「寄信成功」。所以拒绝一定要有讯息。
+  test(`${label}：限流挡下但讯息缺少 / 空白 / 不是字串 / 太长 → 换成固定句子`, async () => {
+    for (const bad of [undefined, '', '   ', 42, { a: 1 }, ['x'], 'x'.repeat(101)]) {
+      const f = routes({ reserve: () => jsonRes(200, { ok: false, message: bad }) });
+      const res = await run(signedRequest(payload(), NOW), f);
+      assert.equal(res.status, 200, JSON.stringify(bad));
+      assert.deepEqual(await res.json(), { error: { http_code: 429, message: '请稍后再试' } }, JSON.stringify(bad));
+      assert.equal(f.callsTo('api.resend.com').length, 0);
+    }
+    const f = routes({ reserve: () => jsonRes(200, null) });
+    const res = await run(signedRequest(payload(), NOW), f);
+    assert.deepEqual(await res.json(), { error: { http_code: 429, message: '请稍后再试' } });
+  });
+
+  test(`${label}：总规则——回 200 时，要嘛是 {} 且寄了一封，要嘛有非空 error.message 且没寄信`, async () => {
+    const cases = [
+      [payload(), {}],
+      [payload({ email_action_type: 'recovery' }), {}],
+      [payload(), { reserve: () => jsonRes(200, { ok: false, message: '请 9 秒后再试' }) }],
+      [payload(), { reserve: () => jsonRes(200, { ok: false }) }],
+    ];
+    for (const [p, r] of cases) {
+      const f = routes(r);
+      const res = await run(signedRequest(p, NOW), f);
+      if (res.status !== 200) continue;
+      const body = await res.json();
+      const sent = f.callsTo('api.resend.com').length;
+      if (body.error) {
+        assert.equal(typeof body.error.message, 'string');
+        assert.ok(body.error.message.trim().length > 0);
+        assert.equal(sent, 0);
+      } else {
+        assert.deepEqual(body, {});
+        assert.equal(sent, 1);
+      }
+    }
   });
 
   test(`${label}：正常 → 寄信、回 200 {}`, async () => {
