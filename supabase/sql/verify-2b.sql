@@ -1,4 +1,4 @@
--- 记账 App · 2b 验收脚本
+-- 记账 App · 2b 验收脚本（含 2c 加的注册限流检查）
 -- 用法：在 Supabase SQL Editor 贴上整个文件，按 Run。
 -- 结果：一定会出现一个「红色错误」，内容是 VERIFY 2b: 通过数 / 总数 PASS。
 --       这是故意的：用错误结束，脚本里建的测试资料会全部自动撤回，不留垃圾。
@@ -424,8 +424,10 @@ begin
   if ok and ok2 and n = 2 and n2 = 1 then pass := pass + 1;
   else fails := array_append(fails, format('删号后旧码:%s/%s 次数=%s', ok, ok2, n)); end if;
 
-  -- 37. 注册检查：同一 IP 第 21 次 → limited、第 20 次不会；IP 是 null → 不限流；exists、owner 判断正确
+  -- 37. 注册检查：同一 IP 第 21 次 → limited、第 20 次不会；IP 是 null → 不做 IP 限流；exists、owner 判断正确
+  --     先清空尝试纪录，37、41、42 的计数才不受真实资料影响（脚本最后会全部撤回）
   perform set_config('role', 'postgres', true);
+  delete from private.register_attempts;
   insert into private.register_attempts (key, at) select 'ip:9.9.9.9', now() from generate_series(1, 20);
   insert into private.register_attempts (key, at) select 'ip:8.8.8.8', now() from generate_series(1, 19);
   perform set_config('role', 'service_role', true);
@@ -484,6 +486,63 @@ begin
    where c.conrelid = 'public.transactions'::regclass and c.contype = 'p';
   if n = 0 and n2 = 0 and v = 'user_id,id' then pass := pass + 1;
   else fails := array_append(fails, format('加固:分区%s 编号器%s 主键%s', n, n2, coalesce(v, 'null'))); end if;
+
+  -- 41. IP 归并：同一个 IPv6 /64 共用 20 次（19 次还可以）、隔壁 /64 不受影响；大写也认得；
+  --     ::ffff:x.x.x.x 当 IPv4；不是 IP、空字串 → 不出错、记成 noip；p_count 传 null 当成要计次
+  perform set_config('role', 'postgres', true);
+  delete from private.register_attempts;
+  insert into private.register_attempts (key, at) select 'ip:2001:db8:1:2::/64', now() from generate_series(1, 20);
+  insert into private.register_attempts (key, at) select 'ip:2001:db8:9:9::/64', now() from generate_series(1, 19);
+  insert into private.register_attempts (key, at) select 'ip:7.7.7.7', now() from generate_series(1, 20);
+  perform set_config('role', 'service_role', true);
+  total := total + 1;
+  r  := svc.svc_register_check('new@test.invalid', '2001:DB8:1:2:aaaa:bbbb:cccc:dddd');
+  r2 := svc.svc_register_check('new@test.invalid', '2001:db8:1:3::1');
+  r3 := svc.svc_register_check('new@test.invalid', '::ffff:7.7.7.7');
+  ok := not (svc.svc_register_check('new@test.invalid', '2001:db8:9:9::5')->>'limited')::boolean;
+  ok2 := false;
+  begin
+    ok2 := not (svc.svc_register_check('new@test.invalid', 'not-an-ip')->>'limited')::boolean
+       and not (svc.svc_register_check('new@test.invalid', '')->>'limited')::boolean;
+  exception when others then ok2 := false;
+  end;
+  perform svc.svc_register_check('new@test.invalid', '10.1.1.1', null);
+  perform set_config('role', 'postgres', true);
+  select count(*) into n  from private.register_attempts where key = 'noip';
+  select count(*) into n2 from private.register_attempts where key = 'ip:2001:db8:1:3::/64';
+  select count(*) into n3 from private.register_attempts where key = 'ip:10.1.1.1';
+  perform set_config('role', 'service_role', true);
+  if (r->>'limited')::boolean and not (r2->>'limited')::boolean and (r3->>'limited')::boolean
+     and ok and ok2 and n = 2 and n2 = 1 and n3 = 1 then pass := pass + 1;
+  else fails := array_append(fails, format('IP归并:%s %s %s 19次=%s 坏IP=%s noip=%s 隔壁=%s null计次=%s', r, r2, r3, ok, ok2, n, n2, n3)); end if;
+
+  -- 42. 全站上限：199 次时新邮箱还可以；满 200 次 → 新邮箱被挡（换 IP、没 IP 都一样）；
+  --     已有账号、站主不受影响；复查（p_count = false）不挡、不记
+  perform set_config('role', 'postgres', true);
+  delete from private.register_attempts;
+  insert into private.register_attempts (key, at)
+    select 'ip:10.0.' || (g / 250) || '.' || (g % 250), now() from generate_series(1, 199) g;
+  perform set_config('role', 'service_role', true);
+  total := total + 1;
+  ok3 := not (svc.svc_register_check('new@test.invalid', '10.99.99.97')->>'limited')::boolean;  -- 第 200 笔
+  r  := svc.svc_register_check('new@test.invalid', '10.99.99.99');
+  r2 := svc.svc_register_check('new@test.invalid', null);
+  r3 := svc.svc_register_check('a@test.invalid', '10.99.99.98');
+  ok := not (svc.svc_register_check('new@test.invalid', null, false)->>'limited')::boolean
+    and not (svc.svc_register_check('owner@test.invalid', '10.99.99.96')->>'limited')::boolean;
+  perform set_config('role', 'postgres', true);
+  select count(*) into n from private.register_attempts;
+  perform set_config('role', 'service_role', true);
+  if ok3 and (r->>'limited')::boolean and (r2->>'limited')::boolean and not (r3->>'limited')::boolean
+     and (r3->>'exists')::boolean and ok and n = 202 then pass := pass + 1;
+  else fails := array_append(fails, format('全站上限:199时=%s %s %s %s 复查站主=%s 笔数=%s', ok3, r, r2, r3, ok, n)); end if;
+
+  -- 43. svc_register_check 只剩一个版本（旧的两参数版本已删，API 不会选错）
+  perform set_config('role', 'postgres', true);
+  total := total + 1;
+  select count(*) into n from pg_proc p join pg_namespace s on s.oid = p.pronamespace
+   where s.nspname = 'svc' and p.proname = 'svc_register_check';
+  if n = 1 then pass := pass + 1; else fails := array_append(fails, format('注册检查版本数:%s', n)); end if;
 
   raise exception 'VERIFY 2b: % / % PASS。失败: %', pass, total,
     case when cardinality(fails) = 0 then '无' else array_to_string(fails, '；') end;

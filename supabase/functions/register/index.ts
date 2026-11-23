@@ -1,4 +1,4 @@
-// 注册：检查 IP 次数 → 已有账号直接回 200 → 站主免邀请码 → 否则扣邀请码 → 建账号。
+// 注册：检查 IP 和全站次数 → 已有账号直接回 200 → 站主免邀请码 → 否则扣邀请码 → 建账号。
 // 扣码是按（码, 邮箱）记一笔「保留」，同一邮箱重试不会重复扣；建账号明确失败、复查也没有账号才退码。
 import { normalizeEmail, normalizeInviteCode } from '../_shared/normalize.ts';
 import { json, secretKey, rpc, adminHeaders, clientIp } from '../_shared/http.ts';
@@ -76,7 +76,9 @@ export async function handleRegister(req: Request, deps: Deps): Promise<Response
   const call = (name: string, args: unknown) => rpc(deps.fetch, base, key, name, args);
 
   try {
-    const check = (await call('svc_register_check', { p_email: email, p_ip: clientIp(req.headers) })) as Check;
+    const ip = clientIp(req.headers);
+    if (!ip) logFail('IP', '取不到 IP（这次只靠全站上限）');
+    const check = (await call('svc_register_check', { p_email: email, p_ip: ip })) as Check;
     if (check?.limited) return reply(429, { error: '尝试太多次，请稍后再试' });
     if (check?.exists) return reply(200, { ok: true });
 
@@ -99,9 +101,9 @@ export async function handleRegister(req: Request, deps: Deps): Promise<Response
     // 「已存在」：可能是同一邮箱另一个请求刚建好，共用同一笔保留，不能退码
     if (result.kind === 'exists') return reply(200, { ok: true });
 
-    // 失败或结果不明：先再查一次是否已建成（不传 IP，不算次数）
+    // 失败或结果不明：先再查一次是否已建成（p_count=false：不记、不限流）
     try {
-      const again = (await call('svc_register_check', { p_email: email, p_ip: null })) as Check;
+      const again = (await call('svc_register_check', { p_email: email, p_ip: null, p_count: false })) as Check;
       if (again?.exists) return reply(200, { ok: true });
     } catch {
       logFail('复查', '失败（不退码）');

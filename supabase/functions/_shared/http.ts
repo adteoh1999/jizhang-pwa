@@ -56,8 +56,17 @@ export async function rpc(
 }
 
 // 取用户 IP（给注册的 IP 限流用）。
-// 平台会在哪个 header、哪一段放真正的 IP，要部署临时函数 whoami 实测后才定案（计划 2c-4）；
-// 定案前一律回 null → 注册跳过 IP 限流（邀请码 31^8 种组合，猜不到）。
-export function clientIp(_headers: Headers): string | null {
+// 2026-11-23 实测：Supabase 前面是 Cloudflare。cf-connecting-ip 由 Cloudflare 填入，
+// 用户自己送这个 header 会被 Cloudflare 直接拒绝（403），所以可信；
+// x-forwarded-for 会被平台重写，true-client-ip 会原样透传（能伪造），都不用。
+// 前提是请求只能经 Cloudflare 进来；这是实测结果、不是文件承诺，平台改架构后要重测。
+// 这里只做粗筛，真正的格式检查和 IPv6 按 /64 归并在数据库 svc_register_check 里做。
+// 没有这个 header、或格式不像 IP，就回 null → 这次跳过 IP 限流（全站上限和邀请码仍然有效）。
+export function clientIp(headers: Headers): string | null {
+  const v = (headers.get('cf-connecting-ip') ?? '').trim().toLowerCase();
+  if (v.length > 45) return null;
+  const m = v.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) return m.slice(1).every((x) => Number(x) <= 255) ? v : null;
+  if ((v.match(/:/g) ?? []).length >= 2 && /^[0-9a-f:.]+$/.test(v)) return v;
   return null;
 }

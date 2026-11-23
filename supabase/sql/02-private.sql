@@ -57,13 +57,14 @@ create table if not exists private.invite_uses (
 );
 create unique index if not exists invite_uses_reserved_idx on private.invite_uses (code, email) where status = 'reserved';
 
--- 注册尝试（按 IP），防止猜邀请码；只留 2 天
+-- 注册尝试（按 IP，IPv6 按 /64；没有 IP 记成 'noip'），防止猜邀请码；只留 2 天
 create table if not exists private.register_attempts (
   id  bigserial   primary key,
   key text        not null,
   at  timestamptz not null default now()
 );
 create index if not exists register_attempts_key_idx on private.register_attempts (key, at);
+create index if not exists register_attempts_at_idx on private.register_attempts (at);  -- 清理旧纪录、全站总数用
 
 -- 第 3 阶段 Telegram 用（先建，栏位未定案）
 create table if not exists private.telegram_links (
@@ -172,28 +173,61 @@ begin
 end;
 $$;
 
--- 注册前的检查：IP 是否太多次、邮箱是否已有账号、是不是站主
--- p_ip 为 null 或空字串：不记、不限流
-create or replace function svc.svc_register_check(p_email text, p_ip text) returns jsonb
+-- 注册前的检查：IP 是否太多次、全站是否太多次、邮箱是否已有账号、是不是站主
+-- p_count = false（建账号后的复查）：不记、不限流，只回 exists / owner；传 null 当 true（不明就限流）
+-- IP 归并：IPv4 按单一地址；IPv6 按 /64（同一个家用或手机网络算一个）；::ffff:x.x.x.x 当 IPv4
+-- p_ip 是 null、空字串或不是 IP：不做 IP 限流，但仍算进全站总数（记成 'noip'）
+-- 全站上限只挡「还没有账号、也不是站主」的邮箱：注册每次登录都会调用，已有账号的人不能被别人灌爆挡掉
+--   已知取舍：已有账号的登录也算进全站总数；有人用大量 IPv6 灌满时，新用户这一小时内暂时不能注册
+--   计数没加锁：同时进来的请求可能让 20 / 200 稍微超过一点，这个量级可以接受
+--   部署顺序：先跑本文件，再部署新版 register（新版复查会带 p_count）
+--   ::1.2.3.4（旧写法）、64:ff9b::/96（NAT64）按 IPv6 /64 处理，Cloudflare 不会送这些
+-- 上限（2026-11-23 用户定）：同一 IP 每小时 20 次；全站每小时 200 次
+drop function if exists svc.svc_register_check(text, text);
+create or replace function svc.svc_register_check(p_email text, p_ip text, p_count boolean default true) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   e       text    := lower(btrim(coalesce(p_email, '')));
+  ex      boolean;
+  own     boolean;
+  ip      inet;
+  k       text;
   limited boolean := false;
   n       integer;
 begin
-  delete from private.register_attempts where at < now() - interval '2 days';
-  if p_ip is not null and p_ip <> '' then
-    select count(*) into n from private.register_attempts where key = 'ip:' || p_ip and at > now() - interval '1 hour';
-    if n >= 20 then
-      limited := true;
-    else
-      insert into private.register_attempts (key) values ('ip:' || p_ip);
+  ex  := exists (select 1 from auth.users u where lower(u.email) = e);
+  own := exists (select 1 from private.owner_emails o where o.email = e);
+  if p_count is not false then
+    delete from private.register_attempts where at < now() - interval '2 days';
+    begin
+      ip := nullif(btrim(coalesce(p_ip, '')), '')::inet;
+    exception when invalid_text_representation then
+      ip := null;
+    end;
+    if ip is not null and family(ip) = 6 and ip << '::ffff:0.0.0.0/96'::inet then
+      ip := '0.0.0.0'::inet + (host(ip)::inet - '::ffff:0.0.0.0'::inet);
+    end if;
+    if ip is not null then
+      if family(ip) = 6 then
+        k := 'ip:' || network(set_masklen(ip, 64))::text;
+      else
+        k := 'ip:' || host(ip);
+      end if;
+      select count(*) into n from private.register_attempts where key = k and at > now() - interval '1 hour';
+      limited := n >= 20;
+    end if;
+    if not limited and not ex and not own then
+      select count(*) into n from private.register_attempts where at > now() - interval '1 hour';
+      limited := n >= 200;
+    end if;
+    if not limited then
+      insert into private.register_attempts (key) values (coalesce(k, 'noip'));
     end if;
   end if;
   return jsonb_build_object(
     'limited', limited,
-    'exists',  exists (select 1 from auth.users u where lower(u.email) = e),
-    'owner',   exists (select 1 from private.owner_emails o where o.email = e)
+    'exists',  ex,
+    'owner',   own
   );
 end;
 $$;
@@ -291,14 +325,14 @@ $$;
 -- 权限：只有 service_role 能执行
 revoke all on function svc.svc_otp_reserve(text)                        from public, anon, authenticated;
 revoke all on function svc.svc_otp_release(bigint)                      from public, anon, authenticated;
-revoke all on function svc.svc_register_check(text, text)               from public, anon, authenticated;
+revoke all on function svc.svc_register_check(text, text, boolean)      from public, anon, authenticated;
 revoke all on function svc.svc_redeem_invite(text, text)                from public, anon, authenticated;
 revoke all on function svc.svc_refund_invite(text, text)                from public, anon, authenticated;
 revoke all on function svc.svc_record_invite_use(text, text, uuid)      from public, anon, authenticated;
 revoke all on function svc.svc_new_invite_code(integer, integer, text)  from public, anon, authenticated;
 grant execute on function svc.svc_otp_reserve(text)                       to service_role;
 grant execute on function svc.svc_otp_release(bigint)                     to service_role;
-grant execute on function svc.svc_register_check(text, text)              to service_role;
+grant execute on function svc.svc_register_check(text, text, boolean)     to service_role;
 grant execute on function svc.svc_redeem_invite(text, text)               to service_role;
 grant execute on function svc.svc_refund_invite(text, text)               to service_role;
 grant execute on function svc.svc_record_invite_use(text, text, uuid)     to service_role;
@@ -319,5 +353,8 @@ end
 $$;
 -- 注意：Postgres 新建函数默认开放给 public，而且无法只针对 svc 改掉这个默认。
 --       所以在 svc 新增函数后，一定要重跑本文件，再跑 verify-2b（第 39 项会抓漏）。
+
+-- 请 API 重新读一次函数清单（函数参数改过时需要；重复通知无害）
+notify pgrst, 'reload schema';
 
 commit;
