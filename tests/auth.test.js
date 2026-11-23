@@ -230,3 +230,49 @@ test('auth.js 不把回应或 session 印到 console', () => {
     assert.doesNotMatch(m[1], /body|session|token|res\b|json|data/i, m[0]);
   }
 });
+
+// ---------- Task 2：session / pending / lastUserId 存本机 ----------
+import { createStore } from '../js/store.js';
+import { createMemoryDb } from './helpers/memory-db.js';
+import {
+  loadSession, saveSession, clearSession, loadPending, savePending, clearPending,
+  loadLastUserId, saveLastUserId, OTP_TTL_MS, RESEND_MS,
+} from '../js/auth.js';
+
+const SESSION = { access_token: 'a', refresh_token: 'r', expires_at: NOW + 3600e3, user_id: 'u-1', email: 'me@x.com', platform: 'pwa' };
+
+test('常数：验证码 10 分钟有效、60 秒后可重发', () => {
+  assert.equal(OTP_TTL_MS, 600_000);
+  assert.equal(RESEND_MS, 60_000);
+});
+
+test('session：存、读、清；栏位不完整当没有', async () => {
+  const db = createMemoryDb();
+  const store = createStore({ db });
+  assert.equal(await loadSession(store), null);
+  await saveSession(store, SESSION);
+  assert.deepEqual(await loadSession(store), SESSION);
+  await clearSession(store);
+  assert.equal(await loadSession(store), null);
+  await store.setMeta('session', { access_token: 'a' });
+  assert.equal(await loadSession(store), null);
+});
+
+test('pending：存、读（标出是否过期）、清', async () => {
+  const store = createStore({ db: createMemoryDb() });
+  assert.equal(await loadPending(store, NOW), null);
+  await savePending(store, { email: 'me@x.com', sentAt: NOW - 30_000 });
+  assert.deepEqual(await loadPending(store, NOW), { email: 'me@x.com', sentAt: NOW - 30_000, expired: false });
+  assert.equal((await loadPending(store, NOW + OTP_TTL_MS)).expired, true);
+  await clearPending(store);
+  assert.equal(await loadPending(store, NOW), null);
+  await store.setMeta('loginPending', { email: 'me@x.com' });
+  assert.equal(await loadPending(store, NOW), null);
+});
+
+test('lastUserId：存、读', async () => {
+  const store = createStore({ db: createMemoryDb() });
+  assert.equal(await loadLastUserId(store), null);
+  await saveLastUserId(store, 'u-1');
+  assert.equal(await loadLastUserId(store), 'u-1');
+});

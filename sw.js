@@ -14,6 +14,7 @@ const ASSETS = [
   './js/csv.js',
   './js/dates.js',
   './js/db.js',
+  './js/login-flow.js',
   './js/model.js',
   './js/money.js',
   './js/stats.js',

@@ -143,3 +143,34 @@ export function toSession(body, fallbackEmail, nowMs) {
     platform: 'pwa',
   };
 }
+
+// ---------- 存本机（IndexedDB meta）----------
+// session：登录后的 token；loginPending：「等待输入验证码」（切去邮件 App、PWA 被重载后还能回来）；
+// lastUserId：上次登录的账号（登出不清；换账号时提醒，2e 认领本地资料也用它）。
+export const OTP_TTL_MS = 600_000; // 验证码 10 分钟有效（Supabase 后台设定 600 秒）
+export const RESEND_MS = 60_000;   // 60 秒后才能重发
+
+const isStr = (v) => typeof v === 'string' && v.length > 0;
+
+export async function loadSession(store) {
+  const s = await store.getMeta('session');
+  if (!s || !isStr(s.access_token) || !isStr(s.refresh_token) || !isStr(s.user_id) || !Number.isFinite(s.expires_at)) return null;
+  return s;
+}
+export const saveSession = (store, s) => store.setMeta('session', s);
+export const clearSession = (store) => store.setMeta('session', null);
+
+/** 回 {email, sentAt, expired} 或 null。 */
+export async function loadPending(store, nowMs) {
+  const p = await store.getMeta('loginPending');
+  if (!p || !isStr(p.email) || !Number.isFinite(p.sentAt)) return null;
+  return { email: p.email, sentAt: p.sentAt, expired: nowMs - p.sentAt >= OTP_TTL_MS };
+}
+export const savePending = (store, { email, sentAt }) => store.setMeta('loginPending', { email, sentAt });
+export const clearPending = (store) => store.setMeta('loginPending', null);
+
+export async function loadLastUserId(store) {
+  const v = await store.getMeta('lastUserId');
+  return isStr(v) ? v : null;
+}
+export const saveLastUserId = (store, id) => store.setMeta('lastUserId', id);
