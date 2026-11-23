@@ -1,5 +1,6 @@
 // 把 Edge Function 和它 import 的 _shared 档合成一个文件，方便贴进 Supabase 后台编辑器。
 // 用法：node scripts/build-functions.mjs send-email register  → 输出 supabase/dist/<名>.ts
+// 规则：index.ts 里任何含「_shared」字样的行（包括注释）都必须是单行 import { … } from '../_shared/x.ts'，否则报错停下。
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,7 @@ export function bundle(functionsDir, name) {
     if (done.has(m[2])) continue;
     done.add(m[2]);
     const shared = readFileSync(join(functionsDir, '_shared', m[2]), 'utf8');
-    if (/^\s*import\s/m.test(shared)) throw new Error(`_shared/${m[2]} 不能再 import 别的文件`);
+    if (/^\s*import\s|^\s*export\s[^\n]*\sfrom\s|\bimport\s*\(/m.test(shared)) throw new Error(`_shared/${m[2]} 不能再 import 或 export from 别的文件`);
     out.push(`// ---- _shared/${m[2]} ----`, shared.trimEnd(), `// ---- end _shared/${m[2]} ----`);
   }
   return out.join('\n');

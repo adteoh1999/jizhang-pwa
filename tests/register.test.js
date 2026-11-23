@@ -150,6 +150,63 @@ for (const [label, mod] of await loadBoth('register')) {
     assert.equal(res.status, 500);
   });
 
+  test(`${label}：「已存在」的新版格式与只有讯息的格式 → 都不退码，回 200`, async () => {
+    for (const b of [{ code: 'email_exists', message: 'x' }, { msg: 'A user with this email address has already been registered' }]) {
+      const f = routes({ create: () => jsonRes(422, b) });
+      const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
+      assert.equal(res.status, 200);
+      assert.equal(f.callsTo('svc_refund_invite').length, 0);
+    }
+  });
+
+  test(`${label}：建账号成功但没有 id → 仍回 200，不记录、不退码`, async () => {
+    const f = routes({ create: () => jsonRes(200, {}) });
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
+    assert.equal(res.status, 200);
+    assert.equal(f.callsTo('svc_record_invite_use').length, 0);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
+  });
+
+  test(`${label}：记录使用失败 → 仍回 200`, async () => {
+    const f = routes();
+    const f2 = fakeFetch([['/rpc/svc_record_invite_use', () => jsonRes(500, {})], ['', (u, i) => f(u, i)]]);
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f2);
+    assert.equal(res.status, 200);
+  });
+
+  test(`${label}：结果不明、复查也失败 → 500，不退码`, async () => {
+    let n = 0;
+    const f = fakeFetch([
+      ['/rpc/svc_register_check', () => (n++ === 0 ? jsonRes(200, { limited: false, exists: false, owner: false }) : jsonRes(500, {}))],
+      ['/rpc/svc_redeem_invite', () => jsonRes(200, true)],
+      ['/rpc/svc_refund_invite', () => jsonRes(204)],
+      ['/auth/v1/admin/users', () => jsonRes(503, {})],
+    ]);
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
+    assert.equal(res.status, 500);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
+  });
+
+  test(`${label}：邀请码传数字或物件 → 403`, async () => {
+    for (const code of [12345678, { a: 1 }, ['K7MPQ4XZ']]) {
+      const f = routes();
+      const res = await run(req({ email: 'me@x.com', invite_code: code }), f);
+      assert.equal(res.status, 403);
+      assert.equal(f.callsTo('svc_redeem_invite').length, 0);
+    }
+  });
+
+  test(`${label}：建账号回 401 → 日志写出状态码，但不含邮箱和 key`, async () => {
+    const logs = [];
+    const orig = console.error;
+    console.error = (...a) => logs.push(a.map(String).join(' '));
+    try {
+      await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), routes({ create: () => jsonRes(401, { code: 'no_authorization' }) }));
+    } finally { console.error = orig; }
+    assert.ok(logs.some((l) => /401/.test(l)), '日志要有 401');
+    for (const l of logs) assert.doesNotMatch(l, /me@x\.com|sb_secret|K7MPQ4XZ/);
+  });
+
   test(`${label}：OPTIONS → 204，带 CORS header`, async () => {
     const res = await run(req(null, { method: 'OPTIONS' }), routes());
     assert.equal(res.status, 204);

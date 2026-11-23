@@ -8,6 +8,7 @@ export function json(status: number, obj: unknown, extraHeaders: Record<string, 
 }
 
 // 先读新版 SUPABASE_SECRET_KEYS（JSON，取 default，没有就取第一个），再退回旧的 SUPABASE_SERVICE_ROLE_KEY
+// （后备路径未实测：旧版 JWT key 只放 apikey 时，PostgREST 可能不认，rpc 会失败——失败即拒绝，不会误放行）
 export function secretKey(env: (k: string) => string | undefined): string {
   const raw = env('SUPABASE_SECRET_KEYS');
   if (raw) {

@@ -63,3 +63,28 @@ test('webhook-id 不同 → false', async () => {
 test('secret 不是 base64 也不会当掉 → false', async () => {
   assert.equal(await verifyWebhook('v1,whsec_@@@', headers(sign('msg_1', NOW, BODY)), BODY, NOW), false);
 });
+
+test('刚好 300 秒 → true（边界）', async () => {
+  const ts = NOW - 300;
+  assert.equal(await verifyWebhook(SECRET, headers(sign('msg_1', ts, BODY), ts), BODY, NOW), true);
+});
+
+test('secret 不带 v1,whsec_ 前缀也能用', async () => {
+  assert.equal(await verifyWebhook(raw.toString('base64'), headers(sign('msg_1', NOW, BODY)), BODY, NOW), true);
+});
+
+test('时间戳不是数字 → false', async () => {
+  const h = headers(sign('msg_1', NOW, BODY));
+  h.set('webhook-timestamp', '17e8');
+  assert.equal(await verifyWebhook(SECRET, h, BODY, NOW), false);
+});
+
+test('多个签名里夹一个坏 base64，后面那个对 → true', async () => {
+  assert.equal(await verifyWebhook(SECRET, headers(`v1,@@@ ${sign('msg_1', NOW, BODY)}`), BODY, NOW), true);
+});
+
+test('secret 太短（贴错只剩前缀）→ false', async () => {
+  assert.equal(await verifyWebhook('v1,whsec_', headers(sign('msg_1', NOW, BODY, Buffer.alloc(0))), BODY, NOW), false);
+  const short = randomBytes(8);
+  assert.equal(await verifyWebhook('v1,whsec_' + short.toString('base64'), headers(sign('msg_1', NOW, BODY, short)), BODY, NOW), false);
+});

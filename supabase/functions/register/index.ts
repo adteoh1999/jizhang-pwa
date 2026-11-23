@@ -12,6 +12,9 @@ type Check = { limited?: boolean; exists?: boolean; owner?: boolean };
 
 const ALLOWED_ORIGINS = ['https://jizhang.adteoh.com', 'http://localhost:8000'];
 
+// 日志只记「哪一步、状态码、错误代码」，绝不记邮箱、邀请码、key
+const logFail = (step: string, detail: string) => console.error(`[register] ${step}: ${detail}`);
+
 function corsHeaders(origin: string | null): Record<string, string> {
   const h: Record<string, string> = { Vary: 'Origin' };
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
@@ -33,14 +36,16 @@ async function createUser(deps: Deps, base: string, key: string, email: string):
       body: JSON.stringify({ email, email_confirm: true, app_metadata: { kind: 'email' } }),
       signal: AbortSignal.timeout(deps.adminTimeoutMs ?? 5000),
     });
-  } catch {
+  } catch (e) {
+    logFail('建账号', e instanceof Error ? e.name : '失败');
     return { kind: 'unknown' };
   }
   let data: any = null;
   try { data = await res.json(); } catch { /* 没有内容 */ }
   if (res.ok) return { kind: 'created', id: typeof data?.id === 'string' ? data.id : undefined };
-  if (res.status >= 500) return { kind: 'unknown' };
   const code = String(data?.error_code ?? data?.code ?? '');
+  logFail('建账号', `HTTP ${res.status} ${code.slice(0, 40)}`);
+  if (res.status >= 500) return { kind: 'unknown' };
   const msg = String(data?.msg ?? data?.message ?? '');
   if (code === 'email_exists' || /already (been )?registered/i.test(msg)) return { kind: 'exists' };
   return { kind: 'failed' };
@@ -65,6 +70,7 @@ export async function handleRegister(req: Request, deps: Deps): Promise<Response
     key = secretKey(deps.env);
     if (!base) throw new Error('缺设定');
   } catch {
+    logFail('设定', '缺 SUPABASE_URL 或 secret key');
     return reply(500, { error: '服务器设定不完整' });
   }
   const call = (name: string, args: unknown) => rpc(deps.fetch, base, key, name, args);
@@ -86,7 +92,7 @@ export async function handleRegister(req: Request, deps: Deps): Promise<Response
     if (result.kind === 'created') {
       if (code && result.id) {
         try { await call('svc_record_invite_use', { p_code: code, p_email: email, p_user_id: result.id }); }
-        catch { /* 记录失败：保留 15 分钟后自动当作已用 */ }
+        catch { logFail('记录使用', '失败（保留 15 分钟后自动当作已用）'); }
       }
       return reply(200, { ok: true });
     }
@@ -99,14 +105,16 @@ export async function handleRegister(req: Request, deps: Deps): Promise<Response
         const again = (await call('svc_register_check', { p_email: email, p_ip: null })) as Check;
         if (again?.exists) return reply(200, { ok: true });
       } catch {
+        logFail('复查', '失败（不退码）');
         return reply(500, { error: '暂时无法注册，请稍后再试' });  // 查不到就不退码，宁可让保留 15 分钟后过期
       }
     }
     if (code) {
-      try { await call('svc_refund_invite', { p_code: code, p_email: email }); } catch { /* 退码失败：保留 15 分钟后当作已用 */ }
+      try { await call('svc_refund_invite', { p_code: code, p_email: email }); } catch { logFail('退码', '失败（保留 15 分钟后当作已用）'); }
     }
     return reply(500, { error: '暂时无法注册，请稍后再试' });
-  } catch {
+  } catch (e) {
+    logFail('rpc', e instanceof Error ? e.message : '失败');
     return reply(500, { error: '暂时无法注册，请稍后再试' });
   }
 }

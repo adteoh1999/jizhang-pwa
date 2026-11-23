@@ -36,6 +36,29 @@ for (const [label, mod] of await loadBoth('send-email')) {
     assert.equal(f.callsTo('/rpc/').length, 0);
   });
 
+  test(`${label}：签名不对的回应格式`, async () => {
+    const res = await run(signedRequest(payload(), NOW, { key: randomBytes(32) }), routes());
+    assert.deepEqual(await res.json(), { error: { http_code: 401, message: '签名不对' } });
+  });
+
+  test(`${label}：只寄 spec 允许的类型（magiclink、signup、email、reauthentication）`, async () => {
+    for (const t of ['magiclink', 'signup', 'email', 'reauthentication']) {
+      const f = routes();
+      const res = await run(signedRequest(payload({ email_action_type: t }), NOW), f);
+      assert.equal(res.status, 200, t);
+      assert.equal(f.callsTo('api.resend.com').length, 1, t);
+    }
+  });
+
+  test(`${label}：其他类型（recovery、invite、没写）→ 429，不寄信、不算次数`, async () => {
+    for (const t of ['recovery', 'invite', 'email_change_new', undefined]) {
+      const f = routes();
+      const res = await run(signedRequest(payload({ email_action_type: t }), NOW), f);
+      assert.equal(res.status, 429, String(t));
+      assert.equal(f.calls.length, 0, String(t));
+    }
+  });
+
   test(`${label}：更换邮箱 → 429，不寄信`, async () => {
     const f = routes();
     const res = await run(signedRequest(payload({ email_action_type: 'email_change' }), NOW), f);
@@ -107,6 +130,39 @@ for (const [label, mod] of await loadBoth('send-email')) {
     assert.equal(res.status, 500);
     assert.equal(f.callsTo('api.resend.com').length, 0);
     assert.equal(f.callsTo('/rpc/').length, 0);
+  });
+
+  test(`${label}：撤回那一笔也失败 → 仍回 500`, async () => {
+    const f = fakeFetch([
+      ['/rpc/svc_otp_reserve', () => jsonRes(200, { ok: true, id: 7 })],
+      ['/rpc/svc_otp_release', () => jsonRes(500, {})],
+      ['api.resend.com', () => jsonRes(500, {})],
+    ]);
+    const res = await run(signedRequest(payload(), NOW), f);
+    assert.equal(res.status, 500);
+    assert.equal(f.callsTo('/rpc/svc_otp_release').length, 1);
+  });
+
+  test(`${label}：缺钩子 secret 或 Resend key → 500，不寄信`, async () => {
+    for (const missing of ['SEND_EMAIL_HOOK_SECRET', 'RESEND_API_KEY']) {
+      const f = routes();
+      const env = (k) => (k === missing ? undefined : ENV(k));
+      const res = await mod.handleSendEmail(signedRequest(payload(), NOW), { env, fetch: f, nowSec: () => NOW });
+      assert.equal(res.status, 500, missing);
+      assert.equal(f.callsTo('api.resend.com').length, 0, missing);
+    }
+  });
+
+  test(`${label}：出错时的日志不含邮箱、验证码、key`, async () => {
+    const logs = [];
+    const orig = console.error;
+    console.error = (...a) => logs.push(a.map(String).join(' '));
+    try {
+      await run(signedRequest(payload(), NOW), routes({ resend: () => jsonRes(500, {}) }));
+      await run(signedRequest(payload(), NOW), routes({ reserve: () => jsonRes(500, {}) }));
+    } finally { console.error = orig; }
+    assert.ok(logs.length >= 2, '应该有日志');
+    for (const l of logs) assert.doesNotMatch(l, /me@x\.com|123456|re_test|sb_secret/);
   });
 
   test(`${label}：信件内容只放验证码，HTML 不会被注入`, () => {

@@ -14,8 +14,15 @@ type Deps = {
 
 const hookError = (status: number, message: string) => json(status, { error: { http_code: status, message } });
 
+// 只寄需要验证码的类型（spec §8.2）；其他（recovery、invite、email_change…）一律拒绝
+const SEND_TYPES = ['magiclink', 'signup', 'email', 'reauthentication'];
+
+// 日志只记「哪一步、状态码」，绝不记邮箱、验证码、key
+const logFail = (step: string, detail: string) => console.error(`[send-email] ${step}: ${detail}`);
+
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return s.replace(/[&<>"']/g, (c) => map[c]);
 }
 
 export function emailText(code: string): string {
@@ -42,7 +49,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
   }
 
   const hookSecret = env('SEND_EMAIL_HOOK_SECRET');
-  if (!hookSecret) return hookError(500, '服务器设定不完整');
+  if (!hookSecret) { logFail('设定', '缺 SEND_EMAIL_HOOK_SECRET'); return hookError(500, '服务器设定不完整'); }
   if (!(await verifyWebhook(hookSecret, req.headers, body, deps.nowSec()))) {
     return hookError(401, '签名不对');
   }
@@ -58,7 +65,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
   } catch {
     return hookError(500, '资料格式不对');
   }
-  if (action === 'email_change') return hookError(429, '不支持更换邮箱');
+  if (!SEND_TYPES.includes(action)) return hookError(429, '不支持这个操作');
   if (!email || !token) return hookError(500, '资料不完整');
 
   let base: string;
@@ -72,6 +79,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
     from = env('EMAIL_FROM') ?? '';
     if (!base || !resendKey || !from) throw new Error('缺设定');
   } catch {
+    logFail('设定', '缺 SUPABASE_URL、secret key、RESEND_API_KEY 或 EMAIL_FROM');
     return hookError(500, '服务器设定不完整');
   }
 
@@ -79,7 +87,8 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
   let reserved: { ok?: boolean; id?: number; message?: string };
   try {
     reserved = (await rpc(deps.fetch, base, key, 'svc_otp_reserve', { p_email: email })) as typeof reserved;
-  } catch {
+  } catch (e) {
+    logFail('限流 rpc', e instanceof Error ? e.message : '失败');
     return hookError(500, '暂时无法寄信，请稍后再试');
   }
   if (!reserved || reserved.ok !== true) {
@@ -96,7 +105,9 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
       signal: AbortSignal.timeout(deps.resendTimeoutMs ?? 2500),
     });
     sent = res.ok;
-  } catch {
+    if (!sent) logFail('Resend', `HTTP ${res.status}`);
+  } catch (e) {
+    logFail('Resend', e instanceof Error ? e.name : '失败');
     sent = false;
   }
   if (sent) return json(200, {});
@@ -104,7 +115,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
   // 3. 寄信失败：撤回那一笔，让用户可以马上重试
   try {
     await rpc(deps.fetch, base, key, 'svc_otp_release', { p_id: reserved.id });
-  } catch { /* 撤回失败最多多算一次，不影响回应 */ }
+  } catch { logFail('撤回', '失败（最多多算一次）'); }
   return hookError(500, '寄信失败，请稍后再试');
 }
 
