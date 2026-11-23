@@ -113,11 +113,33 @@ for (const [label, mod] of await loadBoth('register')) {
     assert.equal(f.callsTo('svc_refund_invite').length, 0);
   });
 
-  test(`${label}：建账号明确失败 → 退码，回 500`, async () => {
+  test(`${label}：建账号明确失败、复查也没有账号 → 退码，回 500`, async () => {
     const f = routes({ create: () => jsonRes(400, { code: 'validation_failed', msg: 'x' }) });
     const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
     assert.equal(res.status, 500);
+    assert.equal(f.callsTo('svc_register_check').length, 2);
+    assert.equal(f.callsTo('svc_register_check')[1].body.p_ip, null);
     assert.deepEqual(f.callsTo('svc_refund_invite')[0].body, { p_code: 'K7MPQ4XZ', p_email: 'me@x.com' });
+  });
+
+  test(`${label}：建账号明确失败、但复查发现已有账号（另一个请求建的）→ 不退码，回 200`, async () => {
+    const f = routes({ create: () => jsonRes(400, { code: 'x' }), check2: { limited: false, exists: true, owner: false } });
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
+    assert.equal(res.status, 200);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
+  });
+
+  test(`${label}：建账号明确失败、复查也失败 → 500，不退码`, async () => {
+    let n = 0;
+    const f = fakeFetch([
+      ['/rpc/svc_register_check', () => (n++ === 0 ? jsonRes(200, { limited: false, exists: false, owner: false }) : jsonRes(500, {}))],
+      ['/rpc/svc_redeem_invite', () => jsonRes(200, true)],
+      ['/rpc/svc_refund_invite', () => jsonRes(204)],
+      ['/auth/v1/admin/users', () => jsonRes(400, {})],
+    ]);
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
+    assert.equal(res.status, 500);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
   });
 
   test(`${label}：建账号回「已存在」→ 不退码，回 200`, async () => {
@@ -136,12 +158,19 @@ for (const [label, mod] of await loadBoth('register')) {
     assert.equal(f.callsTo('svc_refund_invite').length, 0);
   });
 
-  test(`${label}：建账号回 503、而且没建成 → 退码，回 500`, async () => {
+  test(`${label}：建账号回 503（结果不明）、复查也没有账号 → 一律不退码，回 500`, async () => {
     const f = routes({ create: () => jsonRes(503, {}) });
     const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
     assert.equal(res.status, 500);
     assert.equal(f.callsTo('svc_register_check').length, 2);
-    assert.equal(f.callsTo('svc_refund_invite').length, 1);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
+  });
+
+  test(`${label}：建账号超时、复查也没有账号 → 一律不退码，回 500`, async () => {
+    const f = routes({ create: hang });
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f, { adminTimeoutMs: 50 });
+    assert.equal(res.status, 500);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
   });
 
   test(`${label}：检查的 rpc 失败 → 500`, async () => {

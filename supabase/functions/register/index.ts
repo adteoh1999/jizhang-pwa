@@ -1,5 +1,5 @@
 // 注册：检查 IP 次数 → 已有账号直接回 200 → 站主免邀请码 → 否则扣邀请码 → 建账号。
-// 扣码是按（码, 邮箱）记一笔「保留」，同一邮箱重试不会重复扣；建账号失败就退码。
+// 扣码是按（码, 邮箱）记一笔「保留」，同一邮箱重试不会重复扣；建账号明确失败、复查也没有账号才退码。
 import { normalizeEmail, normalizeInviteCode } from '../_shared/normalize.ts';
 import { json, secretKey, rpc, adminHeaders, clientIp } from '../_shared/http.ts';
 
@@ -99,17 +99,17 @@ export async function handleRegister(req: Request, deps: Deps): Promise<Response
     // 「已存在」：可能是同一邮箱另一个请求刚建好，共用同一笔保留，不能退码
     if (result.kind === 'exists') return reply(200, { ok: true });
 
-    if (result.kind === 'unknown') {
-      // 结果不明：再查一次是否已建成（不传 IP，不算次数）
-      try {
-        const again = (await call('svc_register_check', { p_email: email, p_ip: null })) as Check;
-        if (again?.exists) return reply(200, { ok: true });
-      } catch {
-        logFail('复查', '失败（不退码）');
-        return reply(500, { error: '暂时无法注册，请稍后再试' });  // 查不到就不退码，宁可让保留 15 分钟后过期
-      }
+    // 失败或结果不明：先再查一次是否已建成（不传 IP，不算次数）
+    try {
+      const again = (await call('svc_register_check', { p_email: email, p_ip: null })) as Check;
+      if (again?.exists) return reply(200, { ok: true });
+    } catch {
+      logFail('复查', '失败（不退码）');
+      return reply(500, { error: '暂时无法注册，请稍后再试' });
     }
-    if (code) {
+    // 只有「明确失败」才退码。结果不明（超时、5xx）时 Supabase 可能稍后才建好，一律不退：
+    // 同一邮箱 15 分钟内重试会重用同一笔保留，不会多扣；没重试的话这个码作废（用户 2026-11-23 选的取舍）
+    if (code && result.kind === 'failed') {
       try { await call('svc_refund_invite', { p_code: code, p_email: email }); } catch { logFail('退码', '失败（保留 15 分钟后当作已用）'); }
     }
     return reply(500, { error: '暂时无法注册，请稍后再试' });
