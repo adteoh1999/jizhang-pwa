@@ -7,3 +7,12 @@ docs/
 
 # Edge Function 打包结果（贴进后台用），不进 git
 supabase/dist/
+
+# Supabase CLI 产生的本机资料（项目识别、版本快取），不进 git
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+supabase/.env.local
+supabase/.env.*.local
+supabase/.env.keys
+.supabase/
