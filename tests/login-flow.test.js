@@ -122,7 +122,7 @@ test('Review Focus 3a：发送中再按一次 → 只发一次', async () => {
   const { flow, calls } = setup({ handlers: { registerEmail: () => d.p } });
   flow.goEmail();
   const a = flow.submitEmail('me@x.com', '');
-  assert.equal(flow.state.busy, true);
+  assert.equal(flow.state.busy, 'send');
   const b = flow.submitEmail('me@x.com', '');
   d.resolve({ ok: true });
   await Promise.all([a, b]);
@@ -222,7 +222,7 @@ test('Review Focus 3c：自动送出时又按「进入记账」→ 只验证一�
 });
 
 test('验证失败 → 显示讯息、清空验证码；同一组不会再自动送出', async () => {
-  const { flow, calls } = setup({ handlers: { verifyOtp: () => ({ ok: false, message: '验证码不对或已过期' }) } });
+  const { flow, calls } = setup({ handlers: { verifyOtp: () => ({ ok: false, status: 403, message: '验证码不对或已过期' }) } });
   flow.goEmail();
   await flow.submitEmail('me@x.com', '');
   await flow.inputCode('111111');
@@ -298,4 +298,147 @@ test('back：验证码页 → 邮箱页（pending 保留）→ 欢迎页；subsc
   flow.goEmail();
   assert.ok(seen.includes('code'));
   assert.equal(seen.at(-1), 'welcome');
+});
+
+// ---------- 审核后补（2026-11-24） ----------
+test('busy 标示是哪个动作：send / resend / verify', async () => {
+  const d = deferred();
+  const { flow, nowRef } = setup({ handlers: { requestOtp: (() => { let n = 0; return () => (++n === 1 ? { ok: true } : d.p); })() } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  nowRef.t += 61_000;
+  const p = flow.resend();
+  assert.equal(flow.state.busy, 'resend');
+  d.resolve({ ok: true });
+  await p;
+  const v = deferred();
+  const { flow: f2 } = setup({ handlers: { verifyOtp: () => v.p } });
+  f2.goEmail();
+  await f2.submitEmail('me@x.com', '');
+  const q = f2.inputCode('481203');
+  assert.equal(f2.state.busy, 'verify');
+  v.resolve({ ok: false, status: 403, message: '验证码不对或已过期' });
+  await q;
+});
+
+test('Review Focus 4（验证）：网络错 / 429 / 5xx → 验证码保留、可以再按一次重试', async () => {
+  for (const status of [0, 429, 503]) {
+    let n = 0;
+    const { flow, calls } = setup({ handlers: { verifyOtp: () => (++n === 1 ? { ok: false, status, message: 'x' } : { ok: true, session: session() }) } });
+    flow.goEmail();
+    await flow.submitEmail('me@x.com', '');
+    await flow.inputCode('481203');
+    assert.deepEqual([flow.state.code, flow.state.step, flow.state.busy], ['481203', 'code', false], String(status));
+    await flow.submitCode();
+    assert.equal(calls.verifyOtp.length, 2, String(status));
+  }
+});
+
+test('Review Focus 4（寄信 / 重发）：otp 网络错 → 讯息、留在原页', async () => {
+  const { flow } = setup({ handlers: { requestOtp: () => ({ ok: false, status: 0, message: NET, retrySec: null }) } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.deepEqual([flow.state.step, flow.state.error, flow.state.busy], ['email', NET, false]);
+  let n = 0;
+  const { flow: f2, nowRef } = setup({ handlers: { requestOtp: () => (++n === 1 ? { ok: true } : { ok: false, status: 0, message: NET, retrySec: null }) } });
+  f2.goEmail();
+  await f2.submitEmail('me@x.com', '');
+  nowRef.t += 61_000;
+  await f2.resend();
+  assert.deepEqual([f2.state.step, f2.state.error, f2.state.busy], ['code', NET, false]);
+});
+
+test('saveSession 失败后再按「发送验证码」同一邮箱 → 真的重新 register + otp', async () => {
+  const db = createMemoryDb();
+  const { flow, calls } = setup({ db });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  db.failNextWrite(new Error('disk'));
+  await flow.inputCode('481203');
+  assert.equal(flow.state.step, 'email');
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(calls.registerEmail.length, 2);
+  assert.equal(calls.requestOtp.length, 2);
+  assert.equal(flow.state.step, 'code');
+});
+
+test('错误带栏位与序号：同一句再错一次序号会变；邀请码相关错误指向 invite', async () => {
+  const { flow } = setup({ handlers: { registerEmail: () => ({ ok: false, status: 403, message: '需要有效的邀请码' }) } });
+  flow.goEmail();
+  await flow.submitEmail('abc', '');
+  const s1 = flow.state;
+  assert.deepEqual([s1.error, s1.errorField], ['请输入正确的邮箱', 'email']);
+  await flow.submitEmail('abc', '');
+  assert.notEqual(flow.state.errorSeq, s1.errorSeq);
+  await flow.submitEmail('me@x.com', '');
+  assert.deepEqual([flow.state.error, flow.state.errorField], ['需要有效的邀请码', 'invite']);
+  const { flow: f2 } = setup({ handlers: { requestOtp: () => ({ ok: false, status: 422, message: '这个邮箱还没注册，请填邀请码', retrySec: null }) } });
+  f2.goEmail();
+  await f2.submitEmail('me@x.com', '');
+  assert.equal(f2.state.errorField, 'invite');
+});
+
+test('验证码不满 6 位按「进入记账」→ 提示，不发请求', async () => {
+  const { flow, calls } = setup();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  await flow.inputCode('48');
+  await flow.submitCode();
+  assert.equal(flow.state.error, '请输入 6 位数验证码');
+  assert.equal(calls.verifyOtp.length, 0);
+});
+
+test('onSignedIn 丢错不会被吞成「出了点问题」，也不会被调两次', async () => {
+  const store = createStore({ db: createMemoryDb() });
+  const { api } = fakeApi();
+  let n = 0;
+  const flow = createLoginFlow({ api, store, now: () => T0, onSignedIn: () => { n++; throw new Error('mount 失败'); } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  await assert.rejects(flow.inputCode('481203'), /mount 失败/);
+  assert.equal(n, 1);
+  assert.equal(flow.state.error, '');
+});
+
+test('retrySec 超过 60 也只当 60（倒数不会卡住）', async () => {
+  const { flow } = setup({ handlers: { requestOtp: () => ({ ok: false, status: 429, message: '请 90 秒后再试', retrySec: 90 }) } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(flow.resendLeft(), 60);
+});
+
+test('start 还没读完时用户已点「用邮箱登录」→ 不会被拉回欢迎页；读完前 ready 为 false', async () => {
+  const { flow } = setup();
+  assert.equal(flow.state.ready, false);
+  const p = flow.start();
+  flow.goEmail();
+  await p;
+  assert.equal(flow.state.step, 'email');
+  assert.equal(flow.state.ready, true);
+});
+
+test('checkExpiry（回前景）：刚好 600 秒算过期；过期后不能重发', async () => {
+  const { flow, nowRef, calls } = setup();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  nowRef.t += 599_999;
+  assert.equal(flow.checkExpiry(), false);
+  nowRef.t += 1;
+  assert.equal(flow.checkExpiry(), true);
+  assert.equal(flow.state.step, 'email');
+  await flow.resend();
+  assert.equal(calls.requestOtp.length, 1);
+});
+
+test('提示序号：同一句提示再出现，noticeSeq 会变（读屏才会再念）', async () => {
+  const { flow, nowRef } = setup();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  nowRef.t += 61_000;
+  await flow.resend();
+  const a = flow.state.noticeSeq;
+  nowRef.t += 61_000;
+  await flow.resend();
+  assert.equal(flow.state.notice, '已重新发送');
+  assert.notEqual(flow.state.noticeSeq, a);
 });

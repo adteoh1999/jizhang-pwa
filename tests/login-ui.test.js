@@ -22,6 +22,13 @@ test('keyboardLift：已经上移过再量一次，结果不变（量到的位�
   assert.equal(keyboardLift({ ...base, blockTop: 248, blockBottom: 508, currentLift: 52, vvHeight: 520 }), 52);
 });
 
+test('keyboardLift：正在输入的栏位不会被推出可见范围（留 8px）', () => {
+  assert.equal(keyboardLift({ ...base, blockTop: 100, blockBottom: 700, vvHeight: 400, minTop: 0, focusTop: 80 }), 72);
+  assert.equal(keyboardLift({ ...base, blockTop: 100, blockBottom: 700, vvHeight: 400, focusTop: 120 }), 40);
+  // 已上移 40 再量：结果不变
+  assert.equal(keyboardLift({ ...base, blockTop: 60, blockBottom: 660, currentLift: 40, vvHeight: 400, focusTop: 80 }), 40);
+});
+
 test('keyboardLift：最多移到表单顶端碰到 minTop 为止', () => {
   assert.equal(keyboardLift({ ...base, blockTop: 100, blockBottom: 700, vvHeight: 400 }), 40);
   assert.equal(keyboardLift({ ...base, blockTop: 50, blockBottom: 700, vvHeight: 400 }), 0);
@@ -60,11 +67,23 @@ test('CSS：登录页规则没有模糊、will-change、持续动画', () => {
   }
 });
 
-test('CSS：.login 本身不是贴顶、有底色的 fixed 层（状态栏方案 B：底色由 .sky 提供）', () => {
-  for (const r of rulesMatching(/(^|,)\s*\.login\s*(,|$)/)) {
-    assert.doesNotMatch(r.body, /position\s*:\s*fixed/, r.sel);
-    assert.doesNotMatch(r.body, /background/, r.sel);
-  }
+test('CSS：登录页没有 fixed 层；.login 本身没有底色（状态栏方案 B：底色由 .sky 提供）', () => {
+  for (const r of rulesMatching(/\.login/)) assert.doesNotMatch(r.body, /position\s*:\s*fixed/, r.sel);
+  for (const r of rulesMatching(/(^|,)\s*\.login\s*(,|$)/)) assert.doesNotMatch(r.body, /background/, r.sel);
+});
+
+test('CSS：错误栏位用 [aria-invalid="true"]；占位字用 --ink-2', () => {
+  assert.ok(rulesMatching(/\.login-input\[aria-invalid="true"\]/).length === 1);
+  const [ph] = rulesMatching(/\.login-input::placeholder/);
+  assert.match(ph.body, /color\s*:\s*var\(--ink-2\)/);
+  assert.doesNotMatch(ph.body, /opacity\s*:\s*0\./);
+});
+
+test('login.js：插图对读屏隐藏；aria-invalid 设成字串 "true"，不用 toggleAttribute', () => {
+  const s = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
+  assert.match(s, /class: 'login-art', 'aria-hidden': 'true'/);
+  assert.doesNotMatch(s, /toggleAttribute\('aria-invalid'/);
+  assert.match(s, /setAttribute\('aria-invalid', 'true'\)/);
 });
 
 test('CSS：验证码输入框是盖满 6 格的透明真实输入框，不是 display:none / 1px', () => {
@@ -83,8 +102,10 @@ test('CSS：光晕在增加对比度 / 降低透明度时关掉', () => {
   assert.ok(m, '.login-halo 有后备');
 });
 
-test('login.js 不打印 session 或 token', () => {
-  const s = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(s, /console\.log\(/);
-  assert.doesNotMatch(s, /console\.\w+\([^)]*(session|token)/i);
+test('登录相关的 js 不打印 session 或 token', () => {
+  for (const f of ['../js/ui/login.js', '../js/login-flow.js', '../js/app.js', '../js/ui/settings.js', '../js/auth.js']) {
+    const s = readFileSync(new URL(f, import.meta.url), 'utf8');
+    assert.doesNotMatch(s, /console\.log\(/, f);
+    assert.doesNotMatch(s, /console\.\w+\([^)]*(session|token|refresh|access)/i, f);
+  }
 });

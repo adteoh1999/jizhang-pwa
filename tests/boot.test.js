@@ -61,3 +61,16 @@ test('app.js：开库后先读 session，决定登录页或 App；登录成功�
   assert.match(app, /mountLogin\(/);
   assert.match(app, /mountShell\(root, store, s(ession)?\)/);
 });
+
+test('signOut：session 清掉了但 pending 清不掉 → 仍算登出、会 reload', async () => {
+  const db = createMemoryDb();
+  const store = createStore({ db });
+  await saveSession(store, SESSION);
+  let n = 0;
+  const realWrite = db.write.bind(db);
+  db.write = async (c) => { if (++n === 2) throw new Error('disk'); return realWrite(c); };
+  let reloaded = false;
+  assert.equal(await signOut(store, () => { reloaded = true; }), true);
+  assert.equal(reloaded, true);
+  assert.equal(await loadSession(store), null);
+});

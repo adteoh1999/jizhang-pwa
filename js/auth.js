@@ -182,16 +182,17 @@ export function bootTarget(session) {
 
 /**
  * 登出（2d 最简单版）：只清登录状态，账本与 lastUserId 保留（用户决定：同步做好前账本是唯一一份）。
- * 两个写入都成功才调 reload；失败回 false（呼叫者显示「登出失败」）。
+ * 清 session 成功才调 reload；失败回 false（呼叫者显示「登出失败」）。
  */
 export async function signOut(store, reload) {
   try {
     await clearSession(store);
-    await clearPending(store);
   } catch (e) {
     console.warn(`[auth] 登出写入失败：${e && e.name ? e.name : '未知'}`);
     return false;
   }
+  // session 已清就算登出；pending 清不掉只记日志（下次打开登录页会照常判断过期）
+  await clearPending(store).catch((e) => console.warn(`[auth] 清 pending 失败：${e && e.name ? e.name : '未知'}`));
   reload();
   return true;
 }

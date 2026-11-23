@@ -7,6 +7,7 @@ import { isIosBrowserTab } from './install-hint.js';
 import { confirmDialog } from './dialogs.js';
 import { fade, reducedMotion } from './motion.js';
 import { announce } from './announce.js';
+import { onDepthChange } from './nav.js';
 import { createLoginFlow } from '../login-flow.js';
 import { registerEmail, requestOtp, verifyOtp } from '../auth.js';
 
@@ -39,15 +40,18 @@ export const LOGIN_TEXT = Object.freeze({
 
 /**
  * 键盘挡住表单时要往上移多少 px（纯函数）。
- * blockTop / blockBottom：表单块现在量到的位置（已含目前的位移 currentLift）；
- * 可见范围是 [vvOffsetTop, vvOffsetTop + vvHeight]；最多移到表单顶端碰到 minTop 为止。
+ * blockTop / blockBottom / focusTop：表单块与正在输入的栏位「现在量到」的位置（已含目前实际的位移 currentLift）；
+ * 可见范围是 [vvOffsetTop, vvOffsetTop + vvHeight]。上限：表单顶端不高于 minTop，
+ * 而且正在输入的栏位顶端不能被推出可见范围（留 8px）——大字级 + 小屏幕时优先让输入框看得到。
  */
-export function keyboardLift({ blockTop, blockBottom, currentLift = 0, vvHeight, vvOffsetTop = 0, minTop = 0, gap = 12 }) {
+export function keyboardLift({ blockTop, blockBottom, currentLift = 0, vvHeight, vvOffsetTop = 0, minTop = 0, focusTop = null, gap = 12 }) {
   const top = blockTop + currentLift;
   const bottom = blockBottom + currentLift;
   const need = bottom + gap - (vvOffsetTop + vvHeight);
   if (need <= 0) return 0;
-  return Math.max(0, Math.min(need, top - minTop));
+  let cap = top - minTop;
+  if (Number.isFinite(focusTop)) cap = Math.min(cap, focusTop + currentLift - (vvOffsetTop + 8));
+  return Math.max(0, Math.min(need, cap));
 }
 
 /** 验证码 6 格的显示内容：下一个要输入的那格 active。 */
@@ -78,7 +82,7 @@ function svgEl(tag, attrs, text) {
   return n;
 }
 function heroArt() {
-  const svg = svgEl('svg', { class: 'login-art', role: 'img', 'aria-label': '钱包和硬币插图', width: 260, height: 230, viewBox: '0 0 260 230' });
+  const svg = svgEl('svg', { class: 'login-art', 'aria-hidden': 'true', width: 260, height: 230, viewBox: '0 0 260 230' });
   const grad = svgEl('linearGradient', { id: 'login-sheen', x1: 0, y1: 0, x2: 0, y2: 1 });
   grad.append(svgEl('stop', { class: 'la-sheen-top', offset: 0 }), svgEl('stop', { class: 'la-sheen-end', offset: 0.5 }));
   const defs = svgEl('defs', {});
@@ -161,8 +165,9 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inviteInput.focus(); }
   });
   emailForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitEmail(emailInput.value, inviteInput.value); });
-  const emailBody = h('div', { class: 'login-body' }, backBtn('返回'), emailTitle, h('p', { class: 'login-sub' }, T.emailSub), emailForm);
-  const emailStep = h('section', { class: 'login-step', 'data-step': 'email', 'aria-labelledby': 'login-title-email' }, safariHint(), emailBody);
+  // Safari 提示放在 .login-body 里：键盘上移时和标题一起移动，不会叠在一起
+  const emailBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回'), emailTitle, h('p', { class: 'login-sub' }, T.emailSub), emailForm);
+  const emailStep = h('section', { class: 'login-step', 'data-step': 'email', 'aria-labelledby': 'login-title-email' }, emailBody);
 
   // ---------- 3. 验证码 ----------
   const cells = Array.from({ length: 6 }, () => h('div', { class: 'login-cell' }));
@@ -173,7 +178,11 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   });
   const codeDesc = h('p', { class: 'login-sub', id: 'login-code-desc' });
   const resendText = h('span', { class: 'login-resend-text' });
-  const resendBtn = h('button', { type: 'button', class: 'login-link pressable', hidden: true, on: { click: () => flow.resend() } }, T.resendButton);
+  // 重发后这个按钮会被藏起来：焦点移回验证码框，不要掉到页首
+  const resendBtn = h('button', {
+    type: 'button', class: 'login-link pressable', hidden: true,
+    on: { click: () => flow.resend().then(() => { if (!destroyed && flow.state.step === 'code') codeInput.focus({ preventScroll: true }); }) },
+  }, T.resendButton);
   const codeStatus = statusRows();
   const enterBtn = primary(T.codeButton, { type: 'submit' });
   const codeTitle = h('h1', { class: 'login-title', id: 'login-title-code', tabindex: '-1' }, T.codeTitle);
@@ -183,31 +192,34 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     h('span', { class: 'sr-only', id: 'login-code-auto' }, T.codeAuto),
     h('p', { class: 'login-resend' }, resendText, resendBtn),
     codeStatus.notice, codeStatus.error, enterBtn);
-  codeInput.addEventListener('input', () => { flow.inputCode(codeInput.value); });
+  codeInput.addEventListener('input', () => { flow.inputCode(codeInput.value).catch((e) => console.error(e)); });
   // 游标固定在最后（6 格只显示，不支援从中间插入）
   const caretToEnd = () => { const n = codeInput.value.length; try { codeInput.setSelectionRange(n, n); } catch { /* 部分类型不支援 */ } };
   codeInput.addEventListener('focus', caretToEnd);
   codeInput.addEventListener('click', caretToEnd);
-  codeForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitCode(); });
-  const codeBody = h('div', { class: 'login-body' }, backBtn('返回，换一个邮箱'), codeTitle, codeDesc, codeForm);
-  const codeStep = h('section', { class: 'login-step', 'data-step': 'code', 'aria-labelledby': 'login-title-code' }, safariHint(), codeBody);
+  codeForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitCode().catch((err) => console.error(err)); });
+  const codeBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回，换一个邮箱'), codeTitle, codeDesc, codeForm);
+  const codeStep = h('section', { class: 'login-step', 'data-step': 'code', 'aria-labelledby': 'login-title-code' }, codeBody);
 
   const steps = { welcome, email: emailStep, code: codeStep };
   const el = h('div', { class: 'login' }, welcome, emailStep, codeStep);
-  for (const s of Object.values(steps)) s.hidden = true;
+  for (const node of Object.values(steps)) node.hidden = true; // start() 读完前三步都不显示（避免欢迎页一闪）
   root.replaceChildren(el);
 
-  // ---------- 文字区：同一句再出现也要被念出来（先清空再写） ----------
-  function setText(node, text) {
-    if (node.textContent === text) {
-      if (!text || node.getAttribute('role') !== 'alert') return;
+  // 有对话框（换账号确认）时，登录页不可操作、VoiceOver 也不会读到后面
+  cleanups.push(onDepthChange((d) => { el.inert = d > 0; }));
+
+  // ---------- 文字区 ----------
+  // 错误：同一句再出现（序号变了）先清空再写，role=alert 才会再念
+  function sayError(node, text, fresh) {
+    if (!fresh && node.textContent === text) return;
+    if (fresh && text && node.textContent === text) {
       node.textContent = '';
       setTimeout(() => { if (!destroyed) node.textContent = text; }, 60);
       return;
     }
     node.textContent = text;
   }
-  let lastError = '';
 
   // ---------- 倒数 ----------
   function updateResend() {
@@ -227,29 +239,37 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   // ---------- 键盘：整块往上移（只用 transform） ----------
   function activeBody() {
     const st = flow.state.step;
-    return st === 'email' ? emailBody : st === 'code' ? codeBody : null;
+    return st === 'email' ? emailBody : st === 'code' || st === 'done' ? codeBody : null;
   }
-  function applyLift(body, px) {
-    lift = px;
-    body.style.transform = px ? `translateY(${-px}px)` : '';
+  // 实际的位移（过渡动画中途也对），不用目标值
+  function actualLift(body) {
+    const tf = getComputedStyle(body).transform;
+    if (!tf || tf === 'none') return 0;
+    try { return -new DOMMatrixReadOnly(tf).m42; } catch { return 0; }
   }
   function updateLift() {
     const vv = window.visualViewport;
     const body = activeBody();
     if (!vv || !body) return;
     const form = body.querySelector('.login-form');
-    const back = body.querySelector('.login-back');
+    const first = body.firstElementChild;        // Safari 提示或返回键：表单最多移到它原本的位置
+    const cur = actualLift(body);
     const r = form.getBoundingClientRect();
-    const minTop = back.getBoundingClientRect().top + lift;
+    const focused = body.contains(document.activeElement) && document.activeElement.matches('input')
+      ? document.activeElement.getBoundingClientRect().top : null;
     const next = keyboardLift({
-      blockTop: r.top, blockBottom: r.bottom, currentLift: lift,
-      vvHeight: vv.height, vvOffsetTop: vv.offsetTop, minTop,
+      blockTop: r.top, blockBottom: r.bottom, currentLift: cur,
+      vvHeight: vv.height, vvOffsetTop: vv.offsetTop,
+      minTop: first.getBoundingClientRect().top + cur, focusTop: focused,
     });
-    if (next !== lift) applyLift(body, next);
+    if (next !== lift) {
+      lift = next;
+      body.style.transform = next ? `translateY(${-next}px)` : '';
+    }
   }
   let liftQueued = false;
   const queueLift = () => {
-    if (liftQueued) return;
+    if (liftQueued || destroyed) return;
     liftQueued = true;
     requestAnimationFrame(() => { liftQueued = false; if (!destroyed) updateLift(); });
   };
@@ -262,6 +282,8 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     });
   }
   el.addEventListener('focusin', queueLift);
+  // 位移过渡结束再量一次（过渡中途量到的若不准，这里补正）
+  for (const b of [emailBody, codeBody]) b.addEventListener('transitionend', queueLift);
 
   // 回到前景：倒数用 sentAt 重算（iOS 背景会停计时器）、检查验证码是否过期
   const onVisible = () => {
@@ -273,54 +295,31 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   cleanups.push(() => document.removeEventListener('visibilitychange', onVisible));
 
   // ---------- 画面 ----------
+  let prevBusy = false;
+  let prevErrorSeq = 0;
+  let prevNoticeSeq = 0;
   function render(s) {
-    if (destroyed) return;
+    if (destroyed || !s.ready) return;
     const step = s.step === 'done' ? 'code' : s.step;
     const changed = step !== prevStep;
-    if (changed) {
-      for (const [k, node] of Object.entries(steps)) node.hidden = k !== step;
-      if (prevStep) {
-        for (const b of [emailBody, codeBody]) b.style.transform = '';
-        lift = 0;
-        if (!reducedMotion()) fade(steps[step], 'in', { id: 'login' });
-      }
-    }
 
-    // 邮箱页
+    // 邮箱页：回来时预先填好
     if (step === 'email' && changed && !emailInput.value && s.email) emailInput.value = s.email;
     // 验证码页
     codeDesc.textContent = T.sentTo(s.email);
-    if (codeInput.value !== s.code && codeInput.value.replace(/\D/g, '').slice(0, 6) !== s.code) codeInput.value = s.code;
+    if (codeInput.value.replace(/\D/g, '').slice(0, 6) !== s.code) codeInput.value = s.code;
     codeCells(s.code).forEach((c, i) => {
       cells[i].textContent = c.v;
       cells[i].classList.toggle('is-active', c.active && !s.busy);
     });
 
-    const status = step === 'code' ? codeStatus : emailStatus;
-    const other = step === 'code' ? emailStatus : codeStatus;
-    setText(other.notice, '');
-    setText(other.error, '');
-    setText(status.notice, s.notice || '');
-    // 每次送出前 flow 都会先清空 error，所以同一句再错一次也会经过「空 → 讯息」，读屏会再念
-    if (s.error !== lastError || changed) setText(status.error, s.error || '');
-
-    // 送出中
-    sendBtn.textContent = s.busy && step === 'email' ? T.sending : T.sendButton;
-    enterBtn.textContent = s.busy && step === 'code' ? T.signingIn : T.codeButton;
-    for (const b of [sendBtn, enterBtn, resendBtn]) b.setAttribute('aria-disabled', s.busy ? 'true' : 'false');
-    if (s.busy && step === 'code' && !lastBusy) announce('正在登录');
-
-    // 栏位标示错误
-    const inviteBad = s.error === '需要有效的邀请码';
-    const emailBad = s.error === '请输入正确的邮箱';
-    emailInput.toggleAttribute('aria-invalid', emailBad);
-    inviteInput.toggleAttribute('aria-invalid', inviteBad);
-    if (s.error && s.error !== lastError) {
-      if (inviteBad) inviteInput.focus({ preventScroll: true });
-      else if (emailBad) emailInput.focus({ preventScroll: true });
-    }
-
     if (changed) {
+      // 先显示新步骤、移焦点，再藏旧步骤（有焦点的输入框先被藏起来，iOS 会收键盘）
+      const next = steps[step];
+      next.hidden = false;
+      for (const b of [emailBody, codeBody]) b.style.transform = '';
+      lift = 0;
+      if (prevStep && !reducedMotion()) fade(next, 'in', { id: 'login' });
       if (step === 'code') {
         startTimer();
         codeInput.focus({ preventScroll: true });
@@ -329,20 +328,47 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
         if (step === 'email' && prevStep === 'welcome') emailInput.focus({ preventScroll: true });
         else if (prevStep) (step === 'welcome' ? welcomeTitle : emailTitle).focus({ preventScroll: true });
       }
+      for (const [k, node] of Object.entries(steps)) if (k !== step) node.hidden = true;
     } else if (step === 'code') {
       updateResend();
       if (flow.resendLeft() > 0 && !timer) startTimer();
     }
 
-    lastError = s.error;
-    lastBusy = s.busy;
-    prevStep = step;
-  }
-  let lastBusy = false;
+    // 讯息
+    const status = step === 'code' ? codeStatus : emailStatus;
+    const other = step === 'code' ? emailStatus : codeStatus;
+    other.notice.textContent = '';
+    other.error.textContent = '';
+    status.notice.textContent = s.notice || '';
+    // 提示（过期、已重新发送…）：步骤切换同时出现的字 VoiceOver 常不念，改走 announce
+    if (s.notice && s.noticeSeq !== prevNoticeSeq) announce(s.notice);
+    const freshError = s.errorSeq !== prevErrorSeq;
+    sayError(status.error, s.error || '', freshError || changed);
 
-  const unsubscribe = flow.subscribe(render);
-  cleanups.push(unsubscribe);
-  render(flow.state);
+    // 送出中：按钮文字只跟自己的动作
+    sendBtn.textContent = s.busy === 'send' ? T.sending : T.sendButton;
+    enterBtn.textContent = s.busy === 'verify' ? T.signingIn : T.codeButton;
+    for (const b of [sendBtn, enterBtn, resendBtn]) b.setAttribute('aria-disabled', s.busy ? 'true' : 'false');
+    if (s.busy === 'verify' && prevBusy !== 'verify') announce('正在登录');
+
+    // 栏位标示错误（aria-invalid 要是字串 "true"，空值等于没错）
+    for (const [field, input] of [['email', emailInput], ['invite', inviteInput]]) {
+      if (s.error && s.errorField === field) input.setAttribute('aria-invalid', 'true');
+      else input.removeAttribute('aria-invalid');
+    }
+    if (s.error && freshError && step === 'email') {
+      if (s.errorField === 'invite') inviteInput.focus({ preventScroll: true });
+      else if (s.errorField === 'email') emailInput.focus({ preventScroll: true });
+    }
+
+    prevBusy = s.busy;
+    prevErrorSeq = s.errorSeq;
+    prevNoticeSeq = s.noticeSeq;
+    prevStep = step;
+    queueLift(); // 讯息出现让表单变高时也要重算
+  }
+
+  cleanups.push(flow.subscribe(render));
   flow.start().catch((e) => console.warn('[login] start 失败', e && e.name));
 
   function destroy() {

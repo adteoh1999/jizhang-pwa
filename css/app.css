@@ -1964,7 +1964,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   overflow-x: clip;
 }
 .login-step { flex: 1 0 auto; display: flex; flex-direction: column; min-width: 0; }
-.login-hint { margin: 8px 0 4px; }
+.login-hint { margin: 8px 0 4px; padding-right: 14px; }   /* 没有关闭键，右边留和左边一样的内距 */
 .login-welcome { padding-bottom: calc(var(--safe-bottom) + 24px); }
 .login-hero {
   flex: 1 1 auto;
@@ -2046,9 +2046,9 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   font: 400 max(17px, 1rem)/1.2 var(--font-family);   /* ≥16px：iOS 不会自动放大 */
   outline: none;
 }
-.login-input::placeholder { color: var(--ink); opacity: 0.45; }
+.login-input::placeholder { color: var(--ink-2); opacity: 1; }   /* ≥4.5:1（contrast.test 锁住 ink-2 压在 field 上） */
 .login-input:focus { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
-.login-input[aria-invalid] { border-color: var(--login-error); box-shadow: 0 0 0 1px var(--login-error); }
+.login-input[aria-invalid="true"] { border-color: var(--login-error); box-shadow: 0 0 0 1px var(--login-error); }
 .login-input-invite { letter-spacing: 0.06em; }
 .login-field-hint { font: var(--font-footnote); color: var(--ink-2); }
 .login-notice { font: var(--font-subhead); color: var(--ink-2); }

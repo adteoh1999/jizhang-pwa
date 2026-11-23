@@ -178,7 +178,14 @@ async function boot() {
         fetchFn: (url, init) => fetch(url, init),
         hasLocalData: () => store.transactions().length > 0,
         onSignedIn: (s) => {
-          mountShell(root, store, s);
+          window.scrollTo(0, 0); // 键盘曾让页面滚动过：首页从顶端开始
+          try {
+            mountShell(root, store, s);
+          } catch (err) {
+            console.error(err);
+            renderDbError(root, err); // 不要留白屏：显示「重新整理」
+            return;
+          }
           // 登录成功：焦点移到首页大标题（读屏从这里开始念）
           const title = root.querySelector('.large-title');
           if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
