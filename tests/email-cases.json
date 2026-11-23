@@ -1,0 +1,12 @@
+[
+  [" Me@X.COM ", "me@x.com"],
+  ["me@x.com", "me@x.com"],
+  ["abc", ""],
+  ["", ""],
+  ["@x.com", ""],
+  ["me@", ""],
+  ["a b@x.com", ""],
+  ["a@b@c.com", ""],
+  ["me@x.com\t", "me@x.com"],
+  ["ME@Example.Invalid", "me@example.invalid"]
+]
