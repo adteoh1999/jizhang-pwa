@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac, randomBytes } from 'node:crypto';
-import { verifyWebhook } from '../supabase/functions/_shared/webhook.ts';
+import { verifyWebhook, webhookKeyOk } from '../supabase/functions/_shared/webhook.ts';
 
 // 测试自己产生的 secret（不是真的）
 const raw = randomBytes(32);
@@ -87,4 +87,11 @@ test('secret 太短（贴错只剩前缀）→ false', async () => {
   assert.equal(await verifyWebhook('v1,whsec_', headers(sign('msg_1', NOW, BODY, Buffer.alloc(0))), BODY, NOW), false);
   const short = randomBytes(8);
   assert.equal(await verifyWebhook('v1,whsec_' + short.toString('base64'), headers(sign('msg_1', NOW, BODY, short)), BODY, NOW), false);
+});
+
+test('webhookKeyOk：secret 格式检查（给日志用）', () => {
+  assert.equal(webhookKeyOk(SECRET), true);
+  assert.equal(webhookKeyOk('v1,whsec_'), false);
+  assert.equal(webhookKeyOk('v1,whsec_@@@'), false);
+  assert.equal(webhookKeyOk('v1,whsec_' + randomBytes(8).toString('base64')), false);
 });

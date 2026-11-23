@@ -19,7 +19,7 @@ export function bundle(functionsDir, name) {
     if (done.has(m[2])) continue;
     done.add(m[2]);
     const shared = readFileSync(join(functionsDir, '_shared', m[2]), 'utf8');
-    if (/^\s*import\s|^\s*export\s[^\n]*\sfrom\s|\bimport\s*\(/m.test(shared)) throw new Error(`_shared/${m[2]} 不能再 import 或 export from 别的文件`);
+    if (/^\s*import\b|\bexport\b[^;]*?\bfrom\s*['"]|\bimport\s*\(/m.test(shared)) throw new Error(`_shared/${m[2]} 不能再 import 或 export from 别的文件`);
     out.push(`// ---- _shared/${m[2]} ----`, shared.trimEnd(), `// ---- end _shared/${m[2]} ----`);
   }
   return out.join('\n');

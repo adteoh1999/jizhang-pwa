@@ -2,7 +2,7 @@
 // 先验证签名 → 限流（svc_otp_reserve）→ 用 Resend 寄信；寄信失败就撤回那一笔（不算次数）。
 // 回应规则（官方）：拒绝寄信回 429；签名错回 401；寄信失败回 500（不能回 503，会被重试）。
 import { normalizeEmail } from '../_shared/normalize.ts';
-import { verifyWebhook } from '../_shared/webhook.ts';
+import { verifyWebhook, webhookKeyOk } from '../_shared/webhook.ts';
 import { json, secretKey, rpc } from '../_shared/http.ts';
 
 type Deps = {
@@ -50,6 +50,7 @@ export async function handleSendEmail(req: Request, deps: Deps): Promise<Respons
 
   const hookSecret = env('SEND_EMAIL_HOOK_SECRET');
   if (!hookSecret) { logFail('设定', '缺 SEND_EMAIL_HOOK_SECRET'); return hookError(500, '服务器设定不完整'); }
+  if (!webhookKeyOk(hookSecret)) logFail('设定', 'SEND_EMAIL_HOOK_SECRET 格式不对或太短（要完整保留 v1,whsec_…）');
   if (!(await verifyWebhook(hookSecret, req.headers, body, deps.nowSec()))) {
     return hookError(401, '签名不对');
   }

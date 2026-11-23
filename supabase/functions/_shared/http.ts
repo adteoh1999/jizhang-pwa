@@ -28,19 +28,31 @@ export function adminHeaders(key: string): Record<string, string> {
   return { apikey: key, 'Content-Type': 'application/json' };
 }
 
-// 调用 svc schema 的函数；非 2xx 或超时就 throw
+// 调用 svc schema 的函数；非 2xx、超时、内容坏掉就 throw。
+// 抛出的讯息一律是自己写的固定文字（函数名 + 状态码或错误种类），不会带出 key 或回应内容，可以放心写进日志。
 export async function rpc(
   fetchFn: typeof fetch, baseUrl: string, key: string, name: string, args: unknown, timeoutMs = 1000,
 ): Promise<unknown> {
-  const res = await fetchFn(`${baseUrl}/rest/v1/rpc/${name}`, {
-    method: 'POST',
-    headers: { apikey: key, 'Content-Profile': 'svc', 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const text = await res.text();
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetchFn(`${baseUrl}/rest/v1/rpc/${name}`, {
+      method: 'POST',
+      headers: { apikey: key, 'Content-Profile': 'svc', 'Content-Type': 'application/json' },
+      body: JSON.stringify(args),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    text = await res.text();
+  } catch (e) {
+    throw new Error(`rpc ${name} 失败：${e instanceof Error ? e.name : '连线错误'}`);
+  }
   if (!res.ok) throw new Error(`rpc ${name} 失败：HTTP ${res.status}`);
-  return text === '' ? null : JSON.parse(text);
+  if (text === '') return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`rpc ${name} 失败：回传内容不是 JSON`);
+  }
 }
 
 // 取用户 IP（给注册的 IP 限流用）。

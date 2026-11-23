@@ -10,6 +10,15 @@ function webhookB64(s: string) {
   return out;
 }
 
+// 检查 secret 格式（贴错时给日志用，不会印出内容）
+export function webhookKeyOk(secret: string): boolean {
+  try {
+    return webhookB64(secret.replace(/^v1,/, '').replace(/^whsec_/, '')).length >= WEBHOOK_MIN_KEY_BYTES;
+  } catch {
+    return false;
+  }
+}
+
 // secret 格式 v1,whsec_<base64>；签名内容「id.timestamp.body」；
 // webhook-signature 可能有多个（空白隔开），任一相符即可；时间差超过 300 秒不收
 export async function verifyWebhook(secret: string, headers: Headers, body: string, nowSec: number): Promise<boolean> {

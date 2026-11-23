@@ -173,6 +173,13 @@ for (const [label, mod] of await loadBoth('register')) {
     assert.equal(f.callsTo('svc_refund_invite').length, 0);
   });
 
+  test(`${label}：建账号回 408（请求超时，结果不明）→ 不退码`, async () => {
+    const f = routes({ create: () => jsonRes(408, {}) });
+    const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);
+    assert.equal(res.status, 500);
+    assert.equal(f.callsTo('svc_refund_invite').length, 0);
+  });
+
   test(`${label}：检查的 rpc 失败 → 500`, async () => {
     const f = fakeFetch([['/rpc/svc_register_check', () => jsonRes(500, {})]]);
     const res = await run(req({ email: 'me@x.com', invite_code: 'K7MPQ4XZ' }), f);

@@ -73,3 +73,20 @@ test('rpc：超时 → throw（假 fetch 等到被中断才失败）', async () 
   await assert.rejects(rpc(f, 'https://p', 'K', 'x', {}, 50));
   assert.ok(Date.now() - t0 < 1000);
 });
+
+test('rpc：fetch 自己抛的错（可能带 key）→ 只抛固定讯息', async () => {
+  const f = async () => { throw new TypeError('Invalid header value: "sb_secret_LEAK\n"'); };
+  await assert.rejects(rpc(f, 'https://p', 'sb_secret_LEAK', 'svc_x', {}), (e) => {
+    assert.doesNotMatch(e.message, /LEAK/);
+    assert.match(e.message, /svc_x/);
+    return true;
+  });
+});
+
+test('rpc：2xx 但内容不是 JSON → 只抛固定讯息，不带回应原文', async () => {
+  const f = async () => new Response('secret-body-LEAK', { status: 200 });
+  await assert.rejects(rpc(f, 'https://p', 'K', 'svc_x', {}), (e) => {
+    assert.doesNotMatch(e.message, /LEAK/);
+    return true;
+  });
+});

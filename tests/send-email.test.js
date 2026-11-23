@@ -165,6 +165,20 @@ for (const [label, mod] of await loadBoth('send-email')) {
     for (const l of logs) assert.doesNotMatch(l, /me@x\.com|123456|re_test|sb_secret/);
   });
 
+  test(`${label}：钩子 secret 贴错（太短）→ 401，日志写「设定」但不含内容`, async () => {
+    const logs = [];
+    const orig = console.error;
+    console.error = (...a) => logs.push(a.map(String).join(' '));
+    let res;
+    try {
+      const env = (k) => (k === 'SEND_EMAIL_HOOK_SECRET' ? 'v1,whsec_QUJD' : ENV(k));
+      res = await mod.handleSendEmail(signedRequest(payload(), NOW), { env, fetch: routes(), nowSec: () => NOW });
+    } finally { console.error = orig; }
+    assert.equal(res.status, 401);
+    assert.ok(logs.some((l) => /设定/.test(l)));
+    for (const l of logs) assert.doesNotMatch(l, /QUJD/);
+  });
+
   test(`${label}：信件内容只放验证码，HTML 不会被注入`, () => {
     assert.doesNotMatch(mod.emailHtml('<b>1</b>'), /<b>1<\/b>/);
     assert.match(mod.emailText('654321'), /654321/);

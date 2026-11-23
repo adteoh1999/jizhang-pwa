@@ -70,3 +70,14 @@ test('打包：_shared 档自己再 import 或 export from → 报错', () => {
     finally { rmSync(dir, { recursive: true, force: true }); }
   }
 });
+
+test('打包：_shared 里不带空格或跨多行的 import / export from 也挡得住', () => {
+  for (const shared of ["import'./b.ts';\nexport const A = 1;\n", "export * from'./b.ts';\nexport const A = 1;\n", "export {\n  y,\n} from './b.ts';\nexport const A = 1;\n"]) {
+    const dir = tmpFunctions({
+      '_shared/a.ts': shared,
+      'demo/index.ts': "import { A } from '../_shared/a.ts';\nexport const x = A;\n",
+    });
+    try { assert.throws(() => bundle(dir, 'demo'), /不能再/, shared); }
+    finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+});

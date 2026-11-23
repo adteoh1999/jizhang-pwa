@@ -45,7 +45,7 @@ async function createUser(deps: Deps, base: string, key: string, email: string):
   if (res.ok) return { kind: 'created', id: typeof data?.id === 'string' ? data.id : undefined };
   const code = String(data?.error_code ?? data?.code ?? '');
   logFail('建账号', `HTTP ${res.status} ${code.slice(0, 40)}`);
-  if (res.status >= 500) return { kind: 'unknown' };
+  if (res.status >= 500 || res.status === 408) return { kind: 'unknown' };  // 408 请求超时：结果不明
   const msg = String(data?.msg ?? data?.message ?? '');
   if (code === 'email_exists' || /already (been )?registered/i.test(msg)) return { kind: 'exists' };
   return { kind: 'failed' };
