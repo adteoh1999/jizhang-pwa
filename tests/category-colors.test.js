@@ -108,7 +108,7 @@ test('there is a dark @media block with the icon rules, and the attr rules sit o
 });
 
 test('colour use sites carry a grey fallback', () => {
-  assert.doesNotMatch(css, /var\(--cat-(bg|fg)\)/);
+  assert.doesNotMatch(css, /var\(--cat-(bg|fg|ink)\)/);
 });
 
 // v2.4 统计页百分比胶囊：字压在 --cat-bg 上。浅色用加深的 --cat-ink；深色用通用规则 --cat-ink = --cat-fg

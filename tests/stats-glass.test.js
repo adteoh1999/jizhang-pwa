@@ -7,6 +7,15 @@ import { css, blockAfter, light, mediaDark, attrDark } from './helpers/css-token
 const root = new URL('../', import.meta.url);
 const statsJs = readFileSync(new URL('js/ui/stats-view.js', root), 'utf8');
 
+// 区块里「声明符合 decl」的那几条规则的选择器（逗号拆开、去空白）
+const selectorsWith = (block, decl) => {
+  const out = [];
+  for (const m of block.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (decl.test(m[2])) out.push(...m[1].split(',').map((x) => x.trim()));
+  }
+  return out;
+};
+
 test('glass card: same glass tokens as the balance card, no blur, own stacking context', () => {
   const card = blockAfter(css, '\n.glass-card {');
   assert.ok(!/backdrop-filter|filter:/.test(card));
@@ -40,10 +49,14 @@ test('increase contrast / reduce transparency: rims off, stats glass opaque (rul
   const at = css.indexOf(marker, css.indexOf('\n.stats-body .segmented {'));
   assert.ok(at > css.indexOf('\n.glass-card {'), 'fallback must come after the glass rules');
   const fb = blockAfter(css, marker, css.indexOf('\n.stats-body .segmented {'));
-  assert.match(fb, /\.glass-card::before/);
-  assert.match(fb, /\.stats-body \.segmented::after/);
-  assert.match(fb, /display:\s*none/);
-  assert.match(fb, /background:\s*var\(--glass\)/);
+  const hidden = selectorsWith(fb, /display:\s*none/);
+  for (const sel of ['.glass-card::before', '.stats-body .segmented::after', '.stats-month::after']) {
+    assert.ok(hidden.includes(sel), `${sel} must be display:none in the fallback`);
+  }
+  const opaque = selectorsWith(fb, /background:\s*var\(--glass\)/);
+  for (const sel of ['.glass-card', '.stats-body .segmented']) {
+    assert.ok(opaque.includes(sel), `${sel} must be opaque in the fallback`);
+  }
 });
 
 test('stats card shadow token exists in light and both dark blocks', () => {
@@ -75,7 +88,24 @@ test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from 
   assert.match(statsJs, /summaryIsLong\(/);
   assert.match(statsJs, /'sr-only'/);
   assert.match(statsJs, /rmParts\(/);
-  assert.match(statsJs, /'aria-hidden': 'true'/);
+  // 三格看得到的金额都要 aria-hidden，各自配一个 sr-only
+  assert.equal((statsJs.match(/class: 'stats-sum-v[^']*', 'aria-hidden': 'true'/g) || []).length, 3);
+  assert.equal((statsJs.match(/class: 'stats-sum-v/g) || []).length, 3);
+  assert.equal((statsJs.match(/class: 'sr-only'/g) || []).length, 4, '3 summary + 1 row sr-only');
+  // sr-only 真的填了完整金额，而且真的放进每一格
+  assert.match(statsJs, /sr\.textContent = formatRM\(minor, \{ sign \}\)/);
+  assert.match(statsJs, /const cell = \(label, el, sr\) => h\([^;]*\bel, sr\)/);
+  for (const k of ['income', 'expense', 'balance']) {
+    assert.match(statsJs, new RegExp(`cell\\('[^']+', ${k}El, ${k}Sr\\)`), `${k} cell wires el + sr`);
+  }
+});
+
+test('month row stays outside .stats-body (glow must not ride on the animated body)', () => {
+  assert.match(statsJs, /const switcher = h\('div', \{ class: 'stats-month' \}/);
+  const body = /const body = h\('div', \{ class: 'stats-body' \}, ([^)]*)\)/.exec(statsJs);
+  assert.ok(body, 'stats-body construction');
+  assert.ok(!/\bswitcher\b/.test(body[1]), 'switcher must not be a child of .stats-body');
+  assert.match(statsJs, /root\.replaceChildren\(switcher, body\)/);
 });
 
 test('category bar: gradient lives on .stats-bar-fill (old [data-icon] override gone); ::before never inherits', () => {
@@ -102,6 +132,7 @@ test('category rows JS: data-icon on the row, bar width shared with slideX, RM s
   assert.match(statsJs, /'--bar-w'/);
   assert.match(statsJs, /class: 'stats-row', 'data-icon': iconAttr/);
   assert.match(statsJs, /class: 'stats-row-pct'/);
+  assert.match(statsJs, /class: 'stats-row-amount', 'aria-hidden': 'true'[^\n]*\n\s*h\('span', \{ class: 'sr-only' \}, formatRM\(/);
 });
 
 test('pill colours carry grey fallbacks; high contrast turns the bar solid', () => {
@@ -109,5 +140,8 @@ test('pill colours carry grey fallbacks; high contrast turns the bar solid', () 
   assert.match(pill, /background:\s*var\(--cat-bg, var\(--ink-tint\)\)/);
   assert.match(pill, /color:\s*var\(--cat-ink, var\(--ink-2\)\)/);
   const fb = blockAfter(css, '\n@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {', css.indexOf('\n.stats-bar-fill::before {'));
-  assert.match(fb, /\.stats-bar-fill/);
+  const solid = selectorsWith(fb, /background:\s*var\(--cat-fg, var\(--secondary-label\)\)/);
+  for (const sel of ['.stats-bar-fill', '.stats-bar-fill::before']) {
+    assert.ok(solid.includes(sel), `${sel} must be solid in high contrast`);
+  }
 });
