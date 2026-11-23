@@ -4,3 +4,6 @@
 
 # 设计文件与开发计划只留在本机，不上传
 docs/
+
+# Edge Function 打包结果（贴进后台用），不进 git
+supabase/dist/
