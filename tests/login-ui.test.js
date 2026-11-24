@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { keyboardLift, codeCells, LOGIN_TEXT } from '../js/ui/login.js';
+import { keyboardLift, codeCells, splitTail, makeErrorWriter, LOGIN_TEXT } from '../js/ui/login.js';
 import { css } from './helpers/css-tokens.js';
 
 const base = { blockTop: 300, currentLift: 0, vvOffsetTop: 0, minTop: 60 };
@@ -52,6 +52,65 @@ test('文字照预览', () => {
   assert.equal(LOGIN_TEXT.codeButton, '进入记账');
   assert.equal(LOGIN_TEXT.sentTo('me@x.com'), '已寄到 me@x.com，10 分钟内有效。');
   assert.equal(LOGIN_TEXT.resendIn(42), '没收到？42 秒后可以重新发送');
+});
+
+test('splitTail：句尾那一段拆出来（整组不断行）；对不上就原样', () => {
+  assert.deepEqual(splitTail(LOGIN_TEXT.welcomeSub, LOGIN_TEXT.welcomeSubTail), ['手机和 Telegram 共用同一本账，', '换设备也不会丢。']);
+  assert.deepEqual(splitTail(LOGIN_TEXT.emailSub, LOGIN_TEXT.emailSubTail), ['我们会寄一组 6 位数验证码', '到你的邮箱。']);
+  assert.deepEqual(splitTail(LOGIN_TEXT.sentTo('me@x.com'), LOGIN_TEXT.sentToTail), ['已寄到 me@x.com，', '10 分钟内有效。']);
+  assert.deepEqual(splitTail('别的句子', '有效。'), ['别的句子', null]);
+  assert.deepEqual(splitTail('有效。', '有效。'), ['有效。', null]);
+});
+
+test('login.js：邮箱、邀请码一改动就通知流程清掉该栏位的错误', () => {
+  const s = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
+  assert.match(s, /emailInput\.addEventListener\('input', \(\) => flow\.editField\('email'\)\)/);
+  assert.match(s, /inviteInput\.addEventListener\('input', \(\) => flow\.editField\('invite'\)\)/);
+});
+
+test('CSS：说明文字里不断行的那段，过宽时仍可在段内换行（不撑出横向卷动）', () => {
+  const [r] = rulesMatching(/^\.login-sub \.nowrap$/);
+  assert.ok(r, '.login-sub .nowrap 规则存在');
+  assert.match(r.body, /display\s*:\s*inline-block/);
+  assert.match(r.body, /white-space\s*:\s*normal/);
+});
+
+function fakeTimers() {
+  const q = [];
+  return { schedule: (fn) => q.push(fn), flush: () => { while (q.length) q.shift()(); } };
+}
+
+test('makeErrorWriter：同一句再出现 → 先清空、稍后写回（会重念）', () => {
+  const t = fakeTimers();
+  const say = makeErrorWriter({ schedule: t.schedule });
+  const node = { textContent: '' };
+  say(node, '请输入正确的邮箱', true);
+  assert.equal(node.textContent, '请输入正确的邮箱');
+  say(node, '请输入正确的邮箱', true);
+  assert.equal(node.textContent, '');
+  t.flush();
+  assert.equal(node.textContent, '请输入正确的邮箱');
+});
+
+test('makeErrorWriter：延迟写回期间错误被清掉 → 旧句子不会复活（审核必须改）', () => {
+  const t = fakeTimers();
+  const say = makeErrorWriter({ schedule: t.schedule });
+  const node = { textContent: '请输入正确的邮箱' };
+  say(node, '请输入正确的邮箱', true);  // 再按一次送出：清空、排程写回
+  say(node, '', false);                 // 60ms 内打字：错误清掉（节点本来就是空的）
+  t.flush();
+  assert.equal(node.textContent, '');
+});
+
+test('makeErrorWriter：页面已关掉 → 不写回', () => {
+  const t = fakeTimers();
+  let alive = true;
+  const say = makeErrorWriter({ schedule: t.schedule, alive: () => alive });
+  const node = { textContent: 'X' };
+  say(node, 'X', true);
+  alive = false;
+  t.flush();
+  assert.equal(node.textContent, '');
 });
 
 // ---------- CSS ----------

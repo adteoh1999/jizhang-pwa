@@ -16,6 +16,11 @@ const FIELD_OF = {
   '需要有效的邀请码': 'invite',
   '这个邮箱还没注册，请填邀请码': 'invite',
 };
+// 改动哪些栏位会清掉这句错误（没列的：只有改 errorField 那一栏才清）
+// 「还没注册」虽然聚焦邀请码，但也可能是邮箱打错：改邮箱也清
+const CLEARED_BY = {
+  '这个邮箱还没注册，请填邀请码': ['email', 'invite'],
+};
 const warn = (step) => (e) => console.warn(`[login] ${step} 失败：${e && e.name ? e.name : '未知'}`);
 const clampRetry = (sec) => Math.max(0, Math.min(RESEND_SEC, sec));
 
@@ -122,6 +127,15 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
       setNotice(EXPIRED);
       set({ step: 'email', code: '', sentAt: null });
       return true;
+    },
+
+    /** 用户改动某个栏位（'email' | 'invite'）：错误跟这个栏位有关就清掉；网络错等没有栏位的错误保留。没有错误时不 emit。 */
+    editField(field) {
+      if (!state.error) return;
+      const fields = CLEARED_BY[state.error] || (state.errorField ? [state.errorField] : []);
+      if (!fields.includes(field)) return;
+      setError('');
+      emit();
     },
 
     resendLeft(nowMs = now()) {

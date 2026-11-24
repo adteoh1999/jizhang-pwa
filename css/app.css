@@ -2009,6 +2009,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .login-body .login-title { margin: 8px 0; }
 .login-sub { font: var(--font-body); line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
 .login-body .login-sub { margin-bottom: 24px; }
+.login-sub .nowrap { display: inline-block; white-space: normal; } /* 句尾整组换行；过宽（大字级 / 窄屏）才在段内换行 */
 .login-primary {
   width: 100%;
   min-height: 52px;

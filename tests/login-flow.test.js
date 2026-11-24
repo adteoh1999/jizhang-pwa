@@ -467,3 +467,97 @@ test('换账号按取消后再送同一邮箱 → 真的重寄（那组验证码
   await flow.submitEmail('me@x.com', '');
   assert.equal(calls.requestOtp.length, 2);
 });
+
+test('editField：改动出错的栏位 → 错误清掉（序号不变，不会重念）；改别的栏位不清', async () => {
+  const { flow } = setup();
+  await flow.start();
+  flow.goEmail();
+  await flow.submitEmail('abc', '');
+  assert.equal(flow.state.error, '请输入正确的邮箱');
+  assert.equal(flow.state.errorField, 'email');
+  const seq = flow.state.errorSeq;
+  flow.editField('invite');
+  assert.equal(flow.state.error, '请输入正确的邮箱');
+  flow.editField('email');
+  assert.equal(flow.state.error, '');
+  assert.equal(flow.state.errorField, null);
+  assert.equal(flow.state.errorSeq, seq);
+});
+
+test('editField：没有对应栏位的错误（网络错）不会被清掉', async () => {
+  const { flow } = setup({ handlers: { registerEmail: () => ({ ok: false, message: NET }) } });
+  await flow.start();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(flow.state.error, NET);
+  flow.editField('email');
+  flow.editField('invite');
+  assert.equal(flow.state.error, NET);
+});
+
+test('editField：邀请码错误只在改邀请码时清掉', async () => {
+  const { flow } = setup({ handlers: { registerEmail: () => ({ ok: false, message: '需要有效的邀请码' }) } });
+  await flow.start();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', 'XXXX');
+  assert.equal(flow.state.errorField, 'invite');
+  flow.editField('email');
+  assert.equal(flow.state.error, '需要有效的邀请码');
+  flow.editField('invite');
+  assert.equal(flow.state.error, '');
+});
+
+test('editField：「还没注册」改邮箱或改邀请码都会清掉', async () => {
+  for (const field of ['email', 'invite']) {
+    const { flow } = setup({ handlers: { registerEmail: () => ({ ok: false, message: '这个邮箱还没注册，请填邀请码' }) } });
+    await flow.start();
+    flow.goEmail();
+    await flow.submitEmail('me@x.com', '');
+    assert.equal(flow.state.errorField, 'invite');
+    flow.editField(field);
+    assert.equal(flow.state.error, '', field);
+  }
+});
+
+test('editField：没有错误时不 emit（不会每个按键都重画）', async () => {
+  const { flow } = setup();
+  await flow.start();
+  flow.goEmail();
+  let n = 0;
+  flow.subscribe(() => { n += 1; });
+  flow.editField('email');
+  flow.editField('invite');
+  assert.equal(n, 0);
+});
+
+test('editField：送出中是空操作；结果回来的错误照常出现、序号加一', async () => {
+  const d = deferred();
+  const { flow } = setup({ handlers: { registerEmail: () => d.p } });
+  await flow.start();
+  flow.goEmail();
+  const seq = flow.state.errorSeq;
+  const p = flow.submitEmail('me@x.com', 'XXXX');
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(flow.state.busy, 'send');
+  flow.editField('invite');
+  d.resolve({ ok: false, message: '需要有效的邀请码' });
+  await p;
+  assert.equal(flow.state.error, '需要有效的邀请码');
+  assert.equal(flow.state.errorSeq, seq + 1);
+});
+
+test('editField：清掉后再犯同样的错 → 序号加一（会重念、重新聚焦）；提示不受影响', async () => {
+  const { flow, store } = setup();
+  await savePending(store, { email: 'me@x.com', sentAt: T0 - 601_000 });
+  await flow.start();
+  assert.equal(flow.state.notice, '验证码已过期，请重新发送');
+  const noticeSeq = flow.state.noticeSeq;
+  await flow.submitEmail('abc', '');
+  const seq = flow.state.errorSeq;
+  flow.editField('email');
+  assert.equal(flow.state.error, '');
+  assert.equal(flow.state.noticeSeq, noticeSeq);
+  await flow.submitEmail('abc', '');
+  assert.equal(flow.state.error, '请输入正确的邮箱');
+  assert.equal(flow.state.errorSeq, seq + 1);
+});

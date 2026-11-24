@@ -14,10 +14,12 @@ import { registerEmail, requestOtp, verifyOtp } from '../auth.js';
 export const LOGIN_TEXT = Object.freeze({
   welcomeTitle: '每一笔钱，都记得清清楚楚',
   welcomeSub: '手机和 Telegram 共用同一本账，换设备也不会丢。',
+  welcomeSubTail: '换设备也不会丢。', // 换行时整组移到下一行，不留「会丢。」落单、不拆开「换设备」
   welcomeButton: '用邮箱登录',
   welcomeFoot: '第一次使用需要邀请码',
   emailTitle: '登录',
   emailSub: '我们会寄一组 6 位数验证码到你的邮箱。',
+  emailSubTail: '到你的邮箱。',
   emailLabel: '邮箱',
   inviteLabel: '邀请码（第一次使用才需要）',
   invitePlaceholder: '例如 K7MP-Q4XZ',
@@ -35,6 +37,7 @@ export const LOGIN_TEXT = Object.freeze({
   switchMessage: '继续登录的话，新账号会看到这些记录。',
   switchConfirm: '继续',
   sentTo: (email) => `已寄到 ${email}，10 分钟内有效。`,
+  sentToTail: '10 分钟内有效。',
   resendIn: (sec) => `没收到？${sec} 秒后可以重新发送`,
 });
 
@@ -52,6 +55,31 @@ export function keyboardLift({ blockTop, blockBottom, currentLift = 0, vvHeight,
   let cap = top - minTop;
   if (Number.isFinite(focusTop)) cap = Math.min(cap, focusTop + currentLift - (vvOffsetTop + 8));
   return Math.max(0, Math.min(need, cap));
+}
+
+/**
+ * 错误区写入器（可注入计时器，方便测试）。fresh：同一句再出现也要重念（先清空、delay 后写回）。
+ * 每次调用都作废还没写回的那一次——包括「目标文字和现在一样」直接返回的情况：
+ * 否则延迟写回期间错误被清掉（节点本来就是空的），旧句子仍会在 delay 后复活。
+ */
+export function makeErrorWriter({ alive = () => true, delay = 60, schedule = setTimeout } = {}) {
+  let seq = 0;
+  return function sayError(node, text, fresh) {
+    const my = ++seq;
+    if (!fresh && node.textContent === text) return;
+    if (fresh && text && node.textContent === text) {
+      node.textContent = '';
+      schedule(() => { if (alive() && my === seq) node.textContent = text; }, delay);
+      return;
+    }
+    node.textContent = text;
+  };
+}
+
+/** 把句尾 tail 拆出来（整组不断行用）：[前段, tail]；句子不是以 tail 结尾、或整句就是 tail → [原句, null]。 */
+export function splitTail(text, tail) {
+  if (typeof text !== 'string' || !tail || text === tail || !text.endsWith(tail)) return [text, null];
+  return [text.slice(0, -tail.length), tail];
 }
 
 /** 验证码 6 格的显示内容：下一个要输入的那格 active。 */
@@ -123,6 +151,11 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     notice: h('p', { class: 'login-notice' }),   // 提示改走 announce()，这里不设 aria-live（免得念两次）
     error: h('p', { class: 'login-error', role: 'alert' }),
   });
+  // 句尾那一段包成 .nowrap（过宽时 CSS 仍让它在段内换行）
+  const withTail = (text, tail) => {
+    const [head, t] = splitTail(text, tail);
+    return t ? [head, h('span', { class: 'nowrap' }, t)] : [head];
+  };
   const safariHint = () => (isIosBrowserTab()
     ? h('div', { class: 'install-hint login-hint', role: 'note' },
       h('span', { class: 'install-hint-icon' }, icon('square-arrow-up', 20)),
@@ -136,7 +169,7 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   const welcome = h('section', { class: 'login-step login-welcome', 'data-step': 'welcome', 'aria-labelledby': 'login-title-welcome' },
     safariHint(),
     hero,
-    h('div', { class: 'login-welcome-text' }, welcomeTitle, h('p', { class: 'login-sub' }, T.welcomeSub)),
+    h('div', { class: 'login-welcome-text' }, welcomeTitle, h('p', { class: 'login-sub' }, withTail(T.welcomeSub, T.welcomeSubTail))),
     primary(T.welcomeButton, { type: 'button', on: { click: () => flow.goEmail() } }),
     h('p', { class: 'login-footnote' }, T.welcomeFoot));
 
@@ -164,9 +197,12 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   emailInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inviteInput.focus(); }
   });
+  // 改动出错的栏位：红字与红框立刻消失（不用等再按一次送出）
+  emailInput.addEventListener('input', () => flow.editField('email'));
+  inviteInput.addEventListener('input', () => flow.editField('invite'));
   emailForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitEmail(emailInput.value, inviteInput.value); });
   // Safari 提示放在 .login-body 里：键盘上移时和标题一起移动，不会叠在一起
-  const emailBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回'), emailTitle, h('p', { class: 'login-sub' }, T.emailSub), emailForm);
+  const emailBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回'), emailTitle, h('p', { class: 'login-sub' }, withTail(T.emailSub, T.emailSubTail)), emailForm);
   const emailStep = h('section', { class: 'login-step', 'data-step': 'email', 'aria-labelledby': 'login-title-email' }, emailBody);
 
   // ---------- 3. 验证码 ----------
@@ -211,17 +247,7 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
 
   // ---------- 文字区 ----------
   // 错误：同一句再出现（序号变了）先清空再写，role=alert 才会再念
-  let errorWrite = 0; // 每次写错误区加一；延迟写回前比对，避免 60ms 内错误已被清掉还写回旧句子
-  function sayError(node, text, fresh) {
-    if (!fresh && node.textContent === text) return;
-    const my = ++errorWrite;
-    if (fresh && text && node.textContent === text) {
-      node.textContent = '';
-      setTimeout(() => { if (!destroyed && my === errorWrite) node.textContent = text; }, 60);
-      return;
-    }
-    node.textContent = text;
-  }
+  const sayError = makeErrorWriter({ alive: () => !destroyed });
 
   // ---------- 倒数 ----------
   function updateResend() {
@@ -302,6 +328,7 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
   let prevBusy = false;
   let prevErrorSeq = 0;
   let prevNoticeSeq = 0;
+  let sentText = null;
   function render(s) {
     if (destroyed || !s.ready) return;
     const step = s.step === 'done' ? 'code' : s.step;
@@ -310,7 +337,8 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     // 邮箱页：回来时预先填好
     if (step === 'email' && changed && !emailInput.value && s.email) emailInput.value = s.email;
     // 验证码页
-    codeDesc.textContent = T.sentTo(s.email);
+    const sent = T.sentTo(s.email);
+    if (sent !== sentText) { sentText = sent; codeDesc.replaceChildren(...withTail(sent, T.sentToTail)); }
     if (codeInput.value.replace(/\D/g, '').slice(0, 6) !== s.code) codeInput.value = s.code;
     codeCells(s.code).forEach((c, i) => {
       cells[i].textContent = c.v;
