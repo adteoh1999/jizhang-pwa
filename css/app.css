@@ -1922,6 +1922,20 @@ button.inset-row:active { background: var(--press-bg); }
   background: var(--btn-bg); color: var(--btn-fg); font: var(--font-headline);
 }
 .invite-action.is-secondary { background: var(--ink-tint); color: var(--ink); }
+.nav-page-title.invite-code { font: var(--font-headline); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.invite-detail-note { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.invite-users-box { padding: 20px 16px; }
+.use-row { gap: 12px; }
+.use-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.use-row-title { font: var(--font-body); overflow-wrap: anywhere; }
+.use-row-detail { font: var(--font-footnote); color: var(--secondary-label); }
+.use-row:focus-visible { outline-offset: -2px; }
+.use-tag {
+  flex: none; padding: 2px 8px; border-radius: 999px;
+  background: var(--fill); color: var(--secondary-label); font: var(--font-footnote);
+}
+.use-remove { flex: none; min-height: var(--hit); min-width: var(--hit); padding: 0 4px; color: var(--red-text); font: var(--font-body); }
+.use-remove:active { opacity: 0.5; }
 
 /* 设置页「有新版本 · 更新」：行高保持 44pt，点击区用 ::after 扩大 */
 button.update-action {

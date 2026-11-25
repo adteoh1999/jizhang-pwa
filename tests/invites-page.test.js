@@ -177,3 +177,177 @@ test('copyInvite：复制带横线的码；没有剪贴簿或被拒 → false', 
   assert.equal(await copyInvite('K7MPQ4XZ', { writeText: async () => { throw new Error('denied'); } }), false);
   assert.equal(await copyInvite('K7MPQ4XZ', undefined), false);
 });
+
+// ======================= Task 9：明细、停用／启用、移除用户 =======================
+import { loadUses, useRowView, activeActionLabel, toggleInviteActive, runRemoveUser } from '../js/ui/invites-page.js';
+
+const USE = { id: 5, email: 'b@example.invalid', used_at: '2026-12-01T16:30:00+00:00', deleted: false, owner: false, pending: false };
+
+test('ownerCall：超时（timeout）→ reason timeout，跟断网分开', async () => {
+  const hang = (u, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('a', 'AbortError'))));
+  const { deps } = await setup({ reply: hang });
+  const orig = globalThis.setTimeout;
+  globalThis.setTimeout = (cb, ms, ...a) => orig(cb, Math.min(ms, 20), ...a); // 让 10 秒的计时器马上到期
+  let r;
+  try { r = await loadInvites(deps); } finally { globalThis.setTimeout = orig; }
+  assert.deepEqual(r, { ok: false, reason: 'timeout', message: INVITE_TEXT.timeout });
+});
+
+test('loadUses：送 {action:uses, code}，回 uses 阵列；不是阵列当通用失败', async () => {
+  const a = await setup({ reply: () => res(200, { uses: [USE] }) });
+  assert.deepEqual(await loadUses(a.deps, 'K7MPQ4XZ'), { ok: true, uses: [USE] });
+  assert.deepEqual(a.calls[0].body, { code: 'K7MPQ4XZ', action: 'uses' });
+  const b = await setup({ reply: () => res(200, { uses: null }) });
+  assert.equal((await loadUses(b.deps, 'K7MPQ4XZ')).reason, 'error');
+});
+
+test('useRowView：一般用户 → 邮箱、注册于 M月D日（马来西亚时间）、可以移除，按钮名称带邮箱', () => {
+  assert.deepEqual(useRowView(USE), {
+    title: 'b@example.invalid', detail: '注册于 12月2日', owner: false, removable: true, removeLabel: '移除 b@example.invalid',
+  });
+});
+
+test('useRowView：已删除 → 「已删除的用户」、不显示邮箱、没有移除', () => {
+  const v = useRowView({ ...USE, deleted: true, email: 'leak@example.invalid' });
+  assert.equal(v.title, '已删除的用户');
+  assert.equal(v.detail, '注册于 12月2日');
+  assert.equal(v.removable, false);
+  assert.ok(!JSON.stringify(v).includes('leak@'));
+});
+
+test('useRowView：站主 → 标站主、没有移除；注册未完成（pending）→ 没有移除', () => {
+  const o = useRowView({ ...USE, owner: true });
+  assert.equal(o.owner, true);
+  assert.equal(o.removable, false);
+  const p = useRowView({ ...USE, pending: true });
+  assert.equal(p.detail, '注册未完成');
+  assert.equal(p.removable, false);
+});
+
+test('useRowView：邮箱已清空但还没标已删除（删除未完成，S6）→ 「删除未完成的用户」、可以再移除', () => {
+  const v = useRowView({ ...USE, email: '' });
+  assert.equal(v.title, '删除未完成的用户');
+  assert.equal(v.removable, true);
+  assert.equal(v.removeLabel, '移除 删除未完成的用户');
+});
+
+test('activeActionLabel：有效时「停用这个邀请码」，停用后「重新启用」', () => {
+  assert.equal(activeActionLabel({ active: true }), '停用这个邀请码');
+  assert.equal(activeActionLabel({ active: false }), '重新启用');
+});
+
+test('toggleInviteActive：送 set_active（相反的值），再拉清单拿服务器算的状态；停用后按钮变「重新启用」', async () => {
+  const after = { ...INV, active: false, status: 'disabled' };
+  const { calls, deps } = await setup({ reply: (u, init, n) => (n === 1 ? res(200, { ok: true }) : res(200, { invites: [after] })) });
+  const r = await toggleInviteActive(deps, INV);
+  assert.deepEqual(calls[0].body, { code: 'K7MPQ4XZ', active: false, action: 'set_active' });
+  assert.deepEqual(calls[1].body, { action: 'list' });
+  assert.deepEqual(r, { ok: true, invite: after });
+  assert.equal(activeActionLabel(r.invite), '重新启用');
+});
+
+test('toggleInviteActive：改成功但重拉清单失败 → 用本地推算（停用 → disabled）', async () => {
+  const { deps } = await setup({ reply: (u, init, n) => (n === 1 ? res(200, { ok: true }) : res(500, {})) });
+  const r = await toggleInviteActive(deps, INV);
+  assert.equal(r.ok, true);
+  assert.equal(r.invite.active, false);
+  assert.equal(r.invite.status, 'disabled');
+});
+
+test('toggleInviteActive：服务器说找不到 → 失败、不改', async () => {
+  const { deps } = await setup({ reply: () => res(404, { error: '找不到这个邀请码' }) });
+  assert.deepEqual(await toggleInviteActive(deps, INV), { ok: false, reason: 'error', message: '找不到这个邀请码' });
+});
+
+async function removeSetup({ choice = 'continue', confirm = true, reply = () => res(200, { ok: true }) } = {}) {
+  const ctx = await setup({ reply });
+  const log = [];
+  const dialogs = {
+    choiceDialog: async (o) => { log.push(`choice:${o.title}`); dialogs.lastChoice = o; return choice; },
+    confirmDialog: async (o) => { log.push(`confirm:${o.title}`); dialogs.lastConfirm = o; return confirm; },
+    messageDialog: async (o) => { log.push(`message:${o.title}`); dialogs.lastMessage = o; },
+  };
+  const block = () => { log.push('block'); return () => log.push('unblock'); };
+  return { ...ctx, log, dialogs, block };
+}
+
+test('移除：两次确认（第二次要输入「删除」）才叫 remove_user，带 code 与 use_id', async () => {
+  const { calls, log, dialogs, block, deps } = await removeSetup();
+  assert.equal(await runRemoveUser(deps, { code: 'K7MPQ4XZ', use: USE, dialogs, block }), 'done');
+  const c = dialogs.lastChoice;
+  assert.equal(c.title, '移除这个用户？');
+  assert.equal(c.message, '会永久删除 b@example.invalid 的账号和全部数据，无法复原。对方想再用需要新的邀请码。');
+  assert.deepEqual(c.buttons.map((b) => b.label), ['取消', '继续']);
+  assert.equal(c.buttons[0].focus, true);
+  assert.equal(c.buttons[1].destructive, true);
+  const k = dialogs.lastConfirm;
+  assert.equal(k.requireText, '删除');
+  assert.equal(k.confirmLabel, '永久删除');
+  assert.equal(k.destructive, true);
+  assert.deepEqual(calls.map((x) => x.body), [{ code: 'K7MPQ4XZ', use_id: 5, action: 'remove_user' }]);
+  assert.deepEqual(log, ['choice:移除这个用户？', 'confirm:确定永久删除？', 'block', 'unblock']);
+});
+
+test('移除：第一步取消、第二步取消 → 都不叫服务器、回 cancel', async () => {
+  for (const o of [{ choice: null }, { confirm: false }]) {
+    const { calls, dialogs, block, deps } = await removeSetup(o);
+    assert.equal(await runRemoveUser(deps, { code: 'K7MPQ4XZ', use: USE, dialogs, block }), 'cancel');
+    assert.equal(calls.length, 0);
+  }
+});
+
+test('移除：已删除、站主、注册未完成的列 → 不问也不叫', async () => {
+  for (const use of [{ ...USE, deleted: true }, { ...USE, owner: true }, { ...USE, pending: true }]) {
+    const { calls, log, dialogs, block, deps } = await removeSetup();
+    assert.equal(await runRemoveUser(deps, { code: 'K7MPQ4XZ', use, dialogs, block }), 'cancel');
+    assert.equal(calls.length, 0);
+    assert.deepEqual(log, []);
+  }
+});
+
+test('移除：删除未完成的列，确认文字用「这个用户」', async () => {
+  const { dialogs, block, deps } = await removeSetup();
+  await runRemoveUser(deps, { code: 'K7MPQ4XZ', use: { ...USE, email: '' }, dialogs, block });
+  assert.equal(dialogs.lastChoice.message, '会永久删除这个用户的账号和全部数据，无法复原。对方想再用需要新的邀请码。');
+});
+
+test('移除：服务器失败 → 放开画面后显示服务器的中文、回 fail', async () => {
+  const { log, dialogs, block, deps } = await removeSetup({ reply: () => res(403, { error: '不能移除站主' }) });
+  // 403 在这里是「不能移除站主」，不是没有权限：照样显示服务器的句子
+  assert.equal(await runRemoveUser(deps, { code: 'K7MPQ4XZ', use: USE, dialogs, block }), 'fail');
+  assert.equal(dialogs.lastMessage.title, '没能移除这个用户');
+  assert.ok(log.indexOf('unblock') < log.indexOf('message:没能移除这个用户'));
+  assert.equal(dialogs.lastMessage.message, '不能移除站主');
+  assert.equal(await readOwnerFlag(deps.store, 'u-A'), true, '「不能移除站主」不是没有权限：站主快取不能被改掉');
+});
+
+test('移除：超时 → 说明「可能已经移除」（列表会重新载入）、回 fail', async () => {
+  const hang = (u, init) => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('a', 'AbortError'))));
+  const { dialogs, block, deps } = await removeSetup({ reply: hang });
+  const orig = globalThis.setTimeout;
+  globalThis.setTimeout = (cb, ms, ...a) => orig(cb, Math.min(ms, 20), ...a);
+  let r;
+  try { r = await runRemoveUser(deps, { code: 'K7MPQ4XZ', use: USE, dialogs, block }); } finally { globalThis.setTimeout = orig; }
+  assert.equal(r, 'fail');
+  assert.equal(dialogs.lastMessage.title, '没收到回应');
+  assert.equal(dialogs.lastMessage.message, INVITE_TEXT.removeTimeout);
+});
+
+test('移除：连按两次只跑一次', async () => {
+  const { calls, dialogs, block, deps } = await removeSetup();
+  const [a, b] = await Promise.all([
+    runRemoveUser(deps, { code: 'K7MPQ4XZ', use: USE, dialogs, block }),
+    runRemoveUser(deps, { code: 'K7MPQ4XZ', use: USE, dialogs, block }),
+  ]);
+  assert.deepEqual([a, b].sort(), ['cancel', 'done']);
+  assert.equal(calls.length, 1);
+});
+
+test('toggleInviteActive：重新启用一个已过期的码 → 用服务器算的「已过期」，不是本地猜的「有效」', async () => {
+  const before = { ...INV, active: false, status: 'disabled', expires_at: '2026-11-01T00:00:00+00:00' };
+  const after = { ...before, active: true, status: 'expired' };
+  const { deps } = await setup({ reply: (u, init, n) => (n === 1 ? res(200, { ok: true }) : res(200, { invites: [after] })) });
+  const r = await toggleInviteActive(deps, before);
+  assert.equal(r.invite.status, 'expired');
+  assert.equal(activeActionLabel(r.invite), '停用这个邀请码');
+});

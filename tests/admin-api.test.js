@@ -45,11 +45,11 @@ test('callInvites：args 里的 action 不能盖掉第三个参数', async () =>
   assert.equal(f.calls[0].body.action, 'list');
 });
 
-test('callInvites：网络错误或超时 → status 0、「需要网络」', async () => {
+test('callInvites：网络错误 → status 0、「需要网络」；超时另外标 timeout:true（2f-3：移除用户超时时服务器可能已删）', async () => {
   const f = fake(() => { throw new TypeError('Failed to fetch'); });
   assert.deepEqual(await callInvites(f, TOKEN, 'list'), { ok: false, status: 0, error: '需要网络' });
   const g = fake(hangUntilAbort);
-  assert.deepEqual(await callInvites(g, TOKEN, 'list', {}, { timeoutMs: 20 }), { ok: false, status: 0, error: '需要网络' });
+  assert.deepEqual(await callInvites(g, TOKEN, 'list', {}, { timeoutMs: 20 }), { ok: false, status: 0, error: '需要网络', timeout: true });
 });
 
 test('callInvites：500 没有内容 → 固定中文', async () => {

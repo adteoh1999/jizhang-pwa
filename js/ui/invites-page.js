@@ -5,7 +5,7 @@ import { h } from './dom.js';
 import { icon } from './icons.js';
 import { pushLayer } from './nav.js';
 import { openSheet } from './sheet.js';
-import { messageDialog, trapFocus } from './dialogs.js';
+import { messageDialog, choiceDialog, confirmDialog, busyOverlay, trapFocus } from './dialogs.js';
 import { optionSegmented, confirmDiscard } from './components.js';
 import { announce } from './announce.js';
 import { callInvites } from '../admin-api.js';
@@ -13,7 +13,7 @@ import { getValidSession } from '../auth.js';
 import { OWNER_FLAG_KEY } from '../owner-check.js';
 import {
   formatCode, spokenCode, inviteMeta, shareText, VALIDITY_OPTIONS, DEFAULT_DAYS, clampUses,
-  USES_MIN, USES_MAX, NOTE_MAX,
+  USES_MIN, USES_MAX, NOTE_MAX, statusLabel, usesLabel, expiryLabel, dateLabelMY,
 } from '../invite-format.js';
 
 export const INVITE_TEXT = Object.freeze({
@@ -22,6 +22,7 @@ export const INVITE_TEXT = Object.freeze({
   loading: '正在载入…',
   offline: '需要网络才能管理邀请码',
   retry: '暂时连不上，请稍后再试',
+  timeout: '没收到服务器的回应，请稍后再试',
   denied: '没有权限',
   relogin: '登录已过期，请先在设置页「同步」那一列重新登录。',
   switched: '账号已更换，请重新整理。',
@@ -50,6 +51,34 @@ export const INVITE_TEXT = Object.freeze({
   copyFail: '请长按邀请码手动复制',
   share: '分享',
   shareFail: '没能打开分享，请改用复制。',
+  // ---- 明细（Task 9）----
+  detailBack: '邀请码',
+  statusRow: '状态',
+  usesRow: '使用次数',
+  expiryRow: '有效期',
+  noteRow: '备注',
+  disable: '停用这个邀请码',
+  enable: '重新启用',
+  toggleFailTitle: '没能更新邀请码',
+  usersHeader: '用这个码注册的人',
+  usersEmpty: '还没有人用这个邀请码注册',
+  usersFooter: '移除会永久删除对方的账号和全部数据。',
+  deletedUser: '已删除的用户',
+  unfinishedUser: '删除未完成的用户',
+  pendingUser: '注册未完成',
+  ownerTag: '站主',
+  remove: '移除',
+  removeTitle: '移除这个用户？',
+  removeContinue: '继续',
+  removeConfirmTitle: '确定永久删除？',
+  removeConfirmMessage: '请输入「删除」以确认。',
+  removeRequire: '删除',
+  removeConfirmLabel: '永久删除',
+  removing: '正在移除…',
+  removed: '已移除',
+  removeFailTitle: '没能移除这个用户',
+  removeTimeoutTitle: '没收到回应',
+  removeTimeout: '没收到服务器的回应，这个用户可能已经移除。列表已重新载入，请看一下。',
 });
 const T = INVITE_TEXT;
 
@@ -58,8 +87,8 @@ const fail = (reason, message) => ({ ok: false, reason, message });
 
 /**
  * 以站主身分叫 invites（每个动作共用）：离线先挡 → 拿可用的 session（必须是 userId）→ 叫 → 401 刷新一次再叫。
- * 回 {ok:true, data} 或 {ok:false, reason, message}；reason：offline（含断网、超时）| relogin | switched | denied | error。
- * 403 → 站主快取改成 false（设置页的入口会消失）。不会 reject。
+ * 回 {ok:true, data} 或 {ok:false, reason, message}；reason：offline（断网）| timeout | relogin | switched | denied | error。
+ * 403「没有权限」→ 站主快取改成 false（设置页的入口会消失）；别的 403（例如「不能移除站主」）只是一般失败。不会 reject。
  * deps：store、fetchFn、userId、isOnline、now；测试可注入 getSession(failedToken)。
  */
 export async function ownerCall(deps, action, args = {}) {
@@ -76,8 +105,8 @@ export async function ownerCall(deps, action, args = {}) {
     const r = await callInvites(fetchFn, token, action, args);
     if (r.ok) return r;
     if (r.status === 401) continue;
-    if (r.status === 0) return fail('offline', T.offline);
-    if (r.status === 403) {
+    if (r.status === 0) return r.timeout ? fail('timeout', T.timeout) : fail('offline', T.offline);
+    if (r.status === 403 && r.error === T.denied) {
       try {
         await store.setMeta(OWNER_FLAG_KEY, { userId, value: false, checkedAt: now() });
       } catch (e) {
@@ -135,6 +164,88 @@ export async function shareInvite(code, nav = globalThis.navigator) {
   }
 }
 
+// ----------------------- 明细（Task 9） -----------------------
+
+/** 使用明细：{ok:true, uses} 或失败。 */
+export async function loadUses(deps, code) {
+  const r = await ownerCall(deps, 'uses', { code });
+  if (!r.ok) return r;
+  return Array.isArray(r.data.uses) ? { ok: true, uses: r.data.uses } : fail('error', T.generic);
+}
+
+/**
+ * 明细一列要显示什么（纯函数）。已删除：不显示邮箱（用户决定 6）、没有移除；站主、注册未完成：没有移除；
+ * 邮箱已清空但还没标已删除（删除做到一半，S6）：「删除未完成的用户」、可以再移除（服务器会接着删）。
+ */
+export function useRowView(u) {
+  const when = dateLabelMY(u.used_at);
+  const registered = when ? `注册于 ${when}` : '';
+  if (u.deleted) return { title: T.deletedUser, detail: registered, owner: false, removable: false, removeLabel: '' };
+  if (u.pending) return { title: u.email || T.unfinishedUser, detail: T.pendingUser, owner: false, removable: false, removeLabel: '' };
+  const title = u.email || T.unfinishedUser;
+  if (u.owner) return { title, detail: registered, owner: true, removable: false, removeLabel: '' };
+  return { title, detail: registered, owner: false, removable: true, removeLabel: `${T.remove} ${title}` };
+}
+
+export const activeActionLabel = (inv) => (inv.active ? T.disable : T.enable);
+
+/**
+ * 停用／重新启用：改完再拉一次清单，拿服务器算的状态（启用后可能是已过期、已用完）；
+ * 拉不到就用本地推算。回 {ok:true, invite} 或失败。
+ */
+export async function toggleInviteActive(deps, inv) {
+  const active = !inv.active;
+  const r = await ownerCall(deps, 'set_active', { code: inv.code, active });
+  if (!r.ok) return r;
+  const list = await loadInvites(deps);
+  const fresh = list.ok ? list.invites.find((x) => x.code === inv.code) : null;
+  if (fresh) return { ok: true, invite: fresh };
+  return { ok: true, invite: { ...inv, active, status: active ? (inv.status === 'disabled' ? 'active' : inv.status) : 'disabled' } };
+}
+
+let removing = false;
+/**
+ * 移除用户：两次确认（第二次输入「删除」）→ 挡住画面 → remove_user {code, use_id} → 放开 → 失败才说明。
+ * 回 'done' | 'cancel' | 'fail'。不能移除的列（已删除、站主、注册未完成）直接回 'cancel'。正在跑时再叫回 'cancel'。
+ * 呼叫者在 'cancel' 以外都要重新载入明细（以服务器为准，S4）。
+ * opts.dialogs、opts.block（挡画面，回放开的函数）测试可注入。
+ */
+export async function runRemoveUser(deps, { code, use, dialogs = { choiceDialog, confirmDialog, messageDialog }, block = () => busyOverlay(T.removing) }) {
+  const view = useRowView(use);
+  if (!view.removable || removing) return 'cancel';
+  removing = true;
+  try {
+    const who = use.email ? ` ${use.email} 的` : '这个用户的';
+    const first = await dialogs.choiceDialog({
+      title: T.removeTitle,
+      message: `会永久删除${who}账号和全部数据，无法复原。对方想再用需要新的邀请码。`,
+      buttons: [
+        { label: T.cancel, value: null, focus: true },
+        { label: T.removeContinue, value: 'continue', destructive: true },
+      ],
+    });
+    if (first !== 'continue') return 'cancel';
+    const sure = await dialogs.confirmDialog({
+      title: T.removeConfirmTitle, message: T.removeConfirmMessage, requireText: T.removeRequire,
+      confirmLabel: T.removeConfirmLabel, destructive: true,
+    });
+    if (!sure) return 'cancel';
+    const unblock = block();
+    let r;
+    try {
+      r = await ownerCall(deps, 'remove_user', { code, use_id: use.id });
+    } finally {
+      unblock();
+    }
+    if (r.ok) return 'done';
+    if (r.reason === 'timeout') await dialogs.messageDialog({ title: T.removeTimeoutTitle, message: T.removeTimeout });
+    else await dialogs.messageDialog({ title: T.removeFailTitle, message: r.message });
+    return 'fail';
+  } finally {
+    removing = false;
+  }
+}
+
 // ======================= 画面（DOM；Task 11 headless 截图确认） =======================
 
 let seq = 0;
@@ -171,6 +282,7 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
     h('span', { class: 'cat-row-name' }, T.add));
   const list = h('ul', { class: 'inset-group cat-list invite-list', role: 'list', 'aria-label': T.title, hidden: true });
   const footer = h('p', { class: 'settings-footer', hidden: true }, T.footer);
+  let pendingReload = false; // 载入中又要求重新载入（例如明细页改了东西）：这次完了再载一次，才拿得到最新的
 
   function showStatus(text, button) {
     statusText.textContent = text;
@@ -182,13 +294,23 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
     }
   }
 
+  // 每次重画都是新节点：明细页关闭时焦点放回同一个码那一列（data-code），不在了就放到「新增邀请码」
   function rowOf(inv) {
     return h('li', { class: 'cat-row' },
-      h('div', { class: 'cat-row-main invite-row' },
-        h('span', { class: 'invite-row-text' },
-          codeLabel(inv.code, 'invite-code'),
-          h('span', { class: 'invite-meta' }, inviteMeta(inv)),
-          inv.note ? h('span', { class: 'invite-note' }, inv.note) : null)));
+      h('button', {
+        type: 'button', class: 'cat-row-main invite-row', 'data-code': inv.code,
+        on: { click: () => openInviteDetail(deps, inv, { onChanged: () => reload(), onOwnerChanged, restoreFocus: () => focusRow(inv.code) }) },
+      },
+      h('span', { class: 'invite-row-text' },
+        codeLabel(inv.code, 'invite-code'),
+        h('span', { class: 'invite-meta' }, inviteMeta(inv)),
+        inv.note ? h('span', { class: 'invite-note' }, inv.note) : null),
+      h('span', { class: 'cat-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16))));
+  }
+  function focusRow(code) {
+    if (closed) return;
+    const row = [...list.querySelectorAll('[data-code]')].find((b) => b.dataset.code === code);
+    (row || addMain).focus({ preventScroll: true });
   }
 
   function renderList(invites) {
@@ -202,7 +324,8 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
   }
 
   async function reload() {
-    if (loading || closed) return;
+    if (closed) return;
+    if (loading) { pendingReload = true; return; }
     loading = true;
     if (list.hidden) showStatus(T.loading);
     let r;
@@ -212,11 +335,12 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
       loading = false;
     }
     if (closed) return;
+    if (pendingReload) { pendingReload = false; reload(); return; }
     if (r.ok) { renderList(r.invites); return; }
     list.hidden = true;
     footer.hidden = true;
     if (r.reason === 'denied') onOwnerChanged();
-    if (r.reason === 'offline' || r.reason === 'error') showStatus(r.message, { label: T.retryButton, onClick: () => reload() });
+    if (r.reason === 'offline' || r.reason === 'timeout' || r.reason === 'error') showStatus(r.message, { label: T.retryButton, onClick: () => reload() });
     else if (r.reason === 'switched') showStatus(r.message, { label: T.reloadButton, onClick: () => location.reload() });
     else showStatus(r.message);
   }
@@ -247,6 +371,161 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
   requestAnimationFrame(() => requestAnimationFrame(() => { if (!closed) page.classList.add('is-visible'); }));
   reload();
   return { close };
+}
+
+/**
+ * 明细子画面（推入在邀请码页上面）：码的资料、停用／重新启用、用这个码注册的人（可移除）。
+ * onChanged()：有改动（停用、移除）时叫，邀请码页重新载入；restoreFocus()：关闭后焦点放回列表那一列。
+ */
+function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocus }) {
+  const uid = `invdet-${++seq}`;
+  let inv = invite;
+  let closed = false;
+  let toggling = false;
+
+  const backBtn = h('button', { type: 'button', class: 'nav-back', on: { click: () => close() } },
+    h('span', { class: 'nav-back-chevron', 'aria-hidden': 'true' }, icon('chevron-left', 22)),
+    h('span', null, T.detailBack));
+  const title = h('h2', { class: 'nav-page-title invite-code', id: `${uid}-title` });
+  const bar = h('header', { class: 'nav-page-bar' }, backBtn, title, h('span', { 'aria-hidden': 'true' }));
+
+  const infoRow = (label) => {
+    const detail = h('span', { class: 'inset-row-detail' });
+    return { el: h('div', { class: 'inset-row' }, h('span', { class: 'inset-row-label' }, label), detail), detail };
+  };
+  const rStatus = infoRow(T.statusRow);
+  const rUses = infoRow(T.usesRow);
+  const rExpiry = infoRow(T.expiryRow);
+  const rNote = infoRow(T.noteRow);
+  rNote.detail.classList.add('invite-detail-note');
+  const toggleLabel = h('span', { class: 'inset-row-label' });
+  const toggleBtn = h('button', { type: 'button', class: 'inset-row is-action', on: { click: () => onToggle() } }, toggleLabel);
+
+  function renderInfo() {
+    title.replaceChildren(h('span', { 'aria-hidden': 'true' }, formatCode(inv.code)), h('span', { class: 'sr-only' }, `邀请码 ${spokenCode(inv.code)}`));
+    rStatus.detail.textContent = statusLabel(inv.status);
+    rUses.detail.textContent = usesLabel(inv.used_count, inv.max_uses);
+    rExpiry.detail.textContent = expiryLabel(inv.expires_at);
+    rNote.detail.textContent = inv.note || '';
+    rNote.el.hidden = !inv.note;
+    toggleLabel.textContent = activeActionLabel(inv);
+  }
+
+  async function onToggle() {
+    if (toggling) return;
+    toggling = true;
+    toggleBtn.setAttribute('aria-disabled', 'true');
+    let r;
+    try {
+      r = await toggleInviteActive(deps, inv);
+    } finally {
+      toggling = false;
+      toggleBtn.removeAttribute('aria-disabled');
+    }
+    if (closed) return;
+    if (r.ok) {
+      inv = r.invite;
+      renderInfo();
+      announce(statusLabel(inv.status));
+      onChanged();
+      return;
+    }
+    if (r.reason === 'denied') onOwnerChanged();
+    await messageDialog({ title: T.toggleFailTitle, message: r.message });
+  }
+
+  // ---------- 用这个码注册的人 ----------
+  const usersStatus = h('p', { class: 'invites-status-text invite-users-status', role: 'status' });
+  const usersRetry = h('button', { type: 'button', class: 'invites-status-button pressable', hidden: true, on: { click: () => loadUsers() } }, T.retryButton);
+  const usersBox = h('div', { class: 'invites-status invite-users-box' }, usersStatus, usersRetry);
+  const usersList = h('ul', { class: 'inset-group invite-users', role: 'list', 'aria-labelledby': `${uid}-users`, hidden: true });
+  const usersFooter = h('p', { class: 'settings-footer', hidden: true }, T.usersFooter);
+  let usersLoading = false;
+
+  function userRow(u) {
+    const v = useRowView(u);
+    const tail = v.owner
+      ? h('span', { class: 'use-tag' }, T.ownerTag)
+      : v.removable
+        ? h('button', { type: 'button', class: 'use-remove', 'aria-label': v.removeLabel, on: { click: () => onRemove(u) } }, T.remove)
+        : null;
+    return h('li', { class: 'inset-row use-row', 'data-use': String(u.id) },
+      h('span', { class: 'use-row-text' },
+        h('span', { class: 'use-row-title' }, v.title),
+        v.detail ? h('span', { class: 'use-row-detail' }, v.detail) : null),
+      tail);
+  }
+
+  async function loadUsers() {
+    if (usersLoading || closed) return;
+    usersLoading = true;
+    if (usersList.hidden) { usersStatus.textContent = T.loading; usersBox.hidden = false; usersRetry.hidden = true; }
+    let r;
+    try {
+      r = await loadUses(deps, inv.code);
+    } finally {
+      usersLoading = false;
+    }
+    if (closed) return;
+    if (!r.ok) {
+      if (r.reason === 'denied') onOwnerChanged();
+      usersList.hidden = true;
+      usersFooter.hidden = true;
+      usersStatus.textContent = r.message;
+      usersBox.hidden = false;
+      usersRetry.hidden = !(r.reason === 'offline' || r.reason === 'timeout' || r.reason === 'error');
+      return;
+    }
+    const hadFocus = usersList.contains(document.activeElement) ? document.activeElement.closest('[data-use]') : null;
+    usersList.replaceChildren(...r.uses.map(userRow));
+    usersList.hidden = r.uses.length === 0;
+    usersFooter.hidden = !r.uses.some((u) => useRowView(u).removable);
+    usersBox.hidden = r.uses.length > 0;
+    usersStatus.textContent = r.uses.length ? '' : T.usersEmpty;
+    usersRetry.hidden = true;
+    if (hadFocus) {
+      // 移除后那一列重画了：焦点放回同一列（已变成「已删除的用户」），不掉回页首
+      const again = usersList.querySelector(`[data-use="${hadFocus.dataset.use}"]`);
+      if (again) { again.tabIndex = -1; again.focus({ preventScroll: true }); }
+    }
+  }
+
+  async function onRemove(u) {
+    const r = await runRemoveUser(deps, { code: inv.code, use: u });
+    if (r === 'cancel' || closed) return;
+    if (r === 'done') announce(T.removed);
+    onChanged();
+    await loadUsers();
+  }
+
+  const body = h('div', { class: 'nav-page-body' },
+    h('section', { class: 'settings-section' },
+      h('div', { class: 'inset-group' }, rStatus.el, rUses.el, rExpiry.el, rNote.el)),
+    h('section', { class: 'settings-section' }, h('div', { class: 'inset-group' }, toggleBtn)),
+    h('section', { class: 'settings-section', 'aria-labelledby': `${uid}-users` },
+      h('h2', { class: 'settings-header', id: `${uid}-users` }, T.usersHeader),
+      usersBox, usersList, usersFooter));
+  const page = h('div', { class: 'nav-page', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${uid}-title` }, bar, body);
+  trapFocus(page, page);
+
+  const handle = pushLayer({
+    element: page,
+    onClose: () => {
+      closed = true;
+      page.classList.remove('is-visible');
+      const remove = () => page.remove();
+      page.addEventListener('transitionend', (e) => { if (e.target === page) remove(); });
+      setTimeout(remove, 450); // 后备
+      restoreFocus();
+    },
+  });
+  function close() { handle.close(); }
+
+  renderInfo();
+  document.body.append(page);
+  backBtn.focus({ preventScroll: true });
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (!closed) page.classList.add('is-visible'); }));
+  loadUsers();
 }
 
 /** 新增邀请码 sheet：次数（步进器）、有效期（分段 4 选 1）、备注 →「生成」→ 结果 sheet。 */

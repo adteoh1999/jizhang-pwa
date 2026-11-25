@@ -46,14 +46,17 @@ const failOf = ({ status, body }) => ({
 });
 const isOk = (status) => status >= 200 && status < 300;
 
-/** 叫 invites：{ok:true, data} 或 {ok:false, status, error}。2xx 但内容不是 JSON 当失败。 */
+/**
+ * 叫 invites：{ok:true, data} 或 {ok:false, status, error[, timeout:true]}。2xx 但内容不是 JSON 当失败。
+ * timeout：自己的计时器到期（2f-3：移除用户超时时服务器可能已经删了，画面要跟断网分开说）。
+ */
 export async function callInvites(fetchFn, accessToken, action, args = {}, { timeoutMs } = {}) {
   const ms = timeoutMs ?? (action === 'remove_user' ? REMOVE_USER_TIMEOUT_MS : INVITES_TIMEOUT_MS);
   const r = await post(fetchFn, 'invites', accessToken, { ...args, action }, ms);
   if (isOk(r.status) && r.body && typeof r.body === 'object') return { ok: true, data: r.body };
   if (isOk(r.status)) return { ok: false, status: r.status, error: GENERIC };
-  console.warn(`[admin] invites ${action} 失败：HTTP ${r.status}`);
-  return failOf(r);
+  console.warn(`[admin] invites ${action} 失败：HTTP ${r.status}${r.timeout ? '（超时）' : ''}`);
+  return r.timeout ? { ...failOf(r), timeout: true } : failOf(r);
 }
 
 /**
