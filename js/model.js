@@ -87,10 +87,13 @@ export function buildCategory(input, existing, { now, uuid }) {
   };
 }
 
+// sync_error（同步标记的坏资料）在用户再改动时清掉，让它重新上传一次
 export function markDeleted(rec, now) {
-  return { ...rec, deleted: true, dirty: 1, updated_at: nextUpdatedAt(rec.updated_at, now) };
+  const { sync_error: _drop, ...rest } = rec;
+  return { ...rest, deleted: true, dirty: 1, updated_at: nextUpdatedAt(rec.updated_at, now) };
 }
 
 export function markRestored(rec, now) {
-  return { ...rec, deleted: false, dirty: 1, updated_at: nextUpdatedAt(rec.updated_at, now) };
+  const { sync_error: _drop, ...rest } = rec;
+  return { ...rest, deleted: false, dirty: 1, updated_at: nextUpdatedAt(rec.updated_at, now) };
 }

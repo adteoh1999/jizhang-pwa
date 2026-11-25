@@ -11,7 +11,9 @@ export function createMemoryDb() {
     async write(changes) {
       if (failure) { const e = failure; failure = null; throw e; }
       calls.push(Object.keys(changes));
+      const rm = changes.remove || {};
       for (const s of ['transactions', 'categories']) {
+        for (const id of rm[s] || []) stores[s].delete(id);
         for (const r of changes[s] || []) stores[s].set(r.id, structuredClone(r));
       }
       for (const [k, v] of Object.entries(changes.meta || {})) meta.set(k, structuredClone(v));
