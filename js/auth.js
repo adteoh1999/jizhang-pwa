@@ -70,14 +70,14 @@ export function authErrorMessage(status, body, kind) {
 }
 
 /** POST JSON；回 {status, body}。网络错或超时 status 为 0。超时用 AbortController（iOS 15 没有 AbortSignal.timeout）。 */
-async function postJson(fetchFn, url, payload, timeoutMs = DEFAULT_TIMEOUT_MS) {
+async function postJson(fetchFn, url, payload, timeoutMs = DEFAULT_TIMEOUT_MS, extraHeaders = {}) {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetchFn(url, {
       method: 'POST',
-      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', ...extraHeaders },
+      body: JSON.stringify(payload ?? {}),
       signal: ctrl.signal,
     });
     let body = null;
@@ -132,8 +132,10 @@ export function toSession(body, fallbackEmail, nowMs) {
     || typeof userId !== 'string' || !userId) {
     throw new Error('session 不完整');
   }
-  const expiresAt = Number.isFinite(b.expires_at) ? b.expires_at * 1000
-    : nowMs + (Number.isFinite(b.expires_in) ? b.expires_in : 3600) * 1000;
+  // 优先「本机现在 + expires_in」：手机时钟不准时，用服务器的 expires_at 会让每轮都以为快过期（或一直不刷新）
+  const expiresAt = Number.isFinite(b.expires_in) ? nowMs + b.expires_in * 1000
+    : Number.isFinite(b.expires_at) ? b.expires_at * 1000
+    : nowMs + 3600 * 1000;
   return {
     access_token: b.access_token,
     refresh_token: b.refresh_token,
@@ -142,6 +144,88 @@ export function toSession(body, fallbackEmail, nowMs) {
     email: (b.user && typeof b.user.email === 'string' && b.user.email) || fallbackEmail,
     platform: 'pwa',
   };
+}
+
+// ---------- token 刷新（2e）----------
+// 查证（GitHub supabase/auth internal/api/token_refresh.go、internal/tokens/service.go、apierrors/errorcode.go）：
+// refresh token 失效一律 HTTP 400 + 下列 error_code。validation_failed（格式不对）不算失效，归「稍后重试」。
+export const INVALID_REFRESH_CODES = Object.freeze([
+  'refresh_token_not_found', 'refresh_token_already_used', 'session_not_found',
+  'session_expired', 'user_banned', 'user_not_found',
+]);
+const REFRESH_MARGIN_MS = 60_000; // 剩不到 60 秒就先刷新
+const LOGOUT_TIMEOUT_MS = 2_000;
+const AUTH_LOCK = 'jizhang-auth';
+
+/** 换新 token。回 {ok:true, session} | {ok:false, invalid, status}。只有 400 + 名单内的 error_code 才算 invalid。 */
+export async function refreshSession(fetchFn, refreshToken, email, nowMs, { timeoutMs } = {}) {
+  const r = await postJson(fetchFn, `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, { refresh_token: refreshToken }, timeoutMs);
+  const code = (r.body && typeof r.body.error_code === 'string') ? r.body.error_code : null;
+  if (isOk(r.status)) {
+    try {
+      return { ok: true, session: toSession(r.body, email, nowMs) };
+    } catch {
+      console.warn('[auth] 刷新回应缺栏位');
+      return { ok: false, invalid: false, status: r.status };
+    }
+  }
+  console.warn(`[auth] 刷新失败：HTTP ${r.status}${code ? ` ${code}` : ''}`);
+  return { ok: false, invalid: r.status === 400 && INVALID_REFRESH_CODES.includes(code), status: r.status };
+}
+
+// 分页内的后备锁（没有 navigator.locks 时，例如 iOS 15.4 以前或非 HTTPS）
+const localLocks = new Map();
+function localLock(name, fn) {
+  const prev = localLocks.get(name) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  const tail = run.catch(() => {});
+  localLocks.set(name, tail);
+  tail.then(() => { if (localLocks.get(name) === tail) localLocks.delete(name); });
+  return run;
+}
+/** 拿锁执行 fn（跨分页用 Web Locks；没有就用分页内的 Promise 锁）。 */
+export function withLock(name, fn, locks = globalThis.navigator && globalThis.navigator.locks) {
+  if (locks && typeof locks.request === 'function') return locks.request(name, () => fn());
+  return localLock(name, fn);
+}
+
+/**
+ * 拿到可以用的 session（必要时刷新）。回 {session} | {invalid:true} | {retry:true}。
+ * failedToken：刚被服务器 401 拒绝的 access token。锁内重读后若已不同（别的分页刚刷新）就直接用新的；相同就强制刷新。
+ * 失效时把 session 标成 invalid（不删：用户决定 1，账本照常用、同步暂停）；之后不再发刷新请求，直到重新登录。
+ */
+export function getValidSession(store, fetchFn, { now = Date.now, locks, failedToken = null } = {}) {
+  return withLock(AUTH_LOCK, async () => {
+    const s = await loadSession(store);
+    if (!s || s.invalid) return { invalid: true };
+    const t = now();
+    if (failedToken) {
+      if (s.access_token !== failedToken) return { session: s };
+    } else if (s.expires_at - t > REFRESH_MARGIN_MS) {
+      return { session: s };
+    }
+    const r = await refreshSession(fetchFn, s.refresh_token, s.email, t);
+    if (r.ok) {
+      await saveSession(store, r.session);
+      return { session: r.session };
+    }
+    if (r.invalid) {
+      try {
+        await saveSession(store, { ...s, invalid: true });
+      } catch (e) {
+        console.warn(`[auth] 标记登录失效失败：${e && e.name ? e.name : '未知'}`);
+      }
+      return { invalid: true };
+    }
+    return { retry: true };
+  }, locks);
+}
+
+/** 通知服务器作废这台设备的 refresh token（尽力而为，2 秒超时，结果不管）。 */
+export async function logoutServer(fetchFn, accessToken, { timeoutMs = LOGOUT_TIMEOUT_MS } = {}) {
+  const r = await postJson(fetchFn, `${SUPABASE_URL}/auth/v1/logout?scope=local`, {}, timeoutMs,
+    { Authorization: `Bearer ${accessToken}` });
+  if (!isOk(r.status)) console.warn(`[auth] 服务器登出失败：HTTP ${r.status}`);
 }
 
 // ---------- 存本机（IndexedDB meta）----------
@@ -181,16 +265,30 @@ export function bootTarget(session) {
 }
 
 /**
- * 登出（2d 最简单版）：只清登录状态，账本与 lastUserId 保留（用户决定：同步做好前账本是唯一一份）。
- * 清 session 成功才调 reload；失败回 false（呼叫者显示「登出失败」）。
+ * 登出：只清登录状态，账本与 lastUserId 保留（用户决定 4；清本地资料留到 2f）。
+ * 顺序：先停同步 → 拿 jizhang-auth 锁（不与刷新同时进行）→ 在线就通知服务器作废 token（最多 2 秒）→ 清 session。
+ * 清 session 成功才调 reload；失败回 false（呼叫者显示「登出失败」）。没给 fetchFn 就不通知服务器。
  */
-export async function signOut(store, reload) {
-  try {
-    await clearSession(store);
-  } catch (e) {
-    console.warn(`[auth] 登出写入失败：${e && e.name ? e.name : '未知'}`);
-    return false;
+export async function signOut(store, reload, { fetchFn, locks, stopSync, isOnline = () => globalThis.navigator ? globalThis.navigator.onLine !== false : true } = {}) {
+  if (stopSync) {
+    try { stopSync(); } catch { /* 停不了也照样登出 */ }
   }
+  const cleared = await withLock(AUTH_LOCK, async () => {
+    if (fetchFn && isOnline()) {
+      try {
+        const s = await loadSession(store);
+        if (s && !s.invalid) await logoutServer(fetchFn, s.access_token);
+      } catch { /* 尽力而为 */ }
+    }
+    try {
+      await clearSession(store);
+      return true;
+    } catch (e) {
+      console.warn(`[auth] 登出写入失败：${e && e.name ? e.name : '未知'}`);
+      return false;
+    }
+  }, locks);
+  if (!cleared) return false;
   // session 已清就算登出；pending 清不掉只记日志（下次打开登录页会照常判断过期）
   await clearPending(store).catch((e) => console.warn(`[auth] 清 pending 失败：${e && e.name ? e.name : '未知'}`));
   reload();

@@ -92,7 +92,7 @@ test('verifyOtp：body {type:email, email, token}；200 → session', async () =
   assert.deepEqual(f.calls[0].body, { type: 'email', email: 'me@x.com', token: '481203' });
   assert.equal(r.ok, true);
   assert.deepEqual(r.session, {
-    access_token: 'a.b.c', refresh_token: 'r1', expires_at: 1795000000 * 1000,
+    access_token: 'a.b.c', refresh_token: 'r1', expires_at: NOW + 3600 * 1000, // 优先「现在 + expires_in」
     user_id: 'u-1', email: 'me@x.com', platform: 'pwa',
   });
 });
@@ -109,6 +109,11 @@ test('verifyOtp：403 otp_expired（实测回应）→「验证码不对或已�
   const f = fakeFetch(() => jsonRes(403, { code: 403, error_code: 'otp_expired', msg: 'Token has expired or is invalid' }));
   const r = await verifyOtp(f, 'me@x.com', '123456', NOW);
   assert.deepEqual([r.ok, r.message], [false, '验证码不对或已过期']);
+});
+
+test('toSession：只有 expires_at 时用它（秒→毫秒）；都没有用 1 小时', () => {
+  assert.equal(toSession({ access_token: 'a', refresh_token: 'r', expires_at: 1795000000, user: { id: 'u' } }, 'me@x.com', NOW).expires_at, 1795000000 * 1000);
+  assert.equal(toSession({ access_token: 'a', refresh_token: 'r', user: { id: 'u' } }, 'me@x.com', NOW).expires_at, NOW + 3600 * 1000);
 });
 
 test('toSession：没有 expires_at 用 expires_in；没有 user.email 用输入的邮箱', () => {
@@ -215,11 +220,13 @@ function jsFiles(dir) {
   });
 }
 
-test('前端 js/ 没有 secret key、service_role、Authorization', () => {
+test('前端 js/ 没有 secret key、service_role；Authorization 只能带变量（用户自己的 token），不能写死', () => {
   for (const f of jsFiles(join(root, 'js'))) {
     const s = readFileSync(f, 'utf8');
     assert.doesNotMatch(s, /sb_secret_|service_role/i, f);
-    assert.doesNotMatch(s, /Authorization/, f);
+    for (const m of s.matchAll(/Authorization/g)) {
+      assert.match(s.slice(m.index, m.index + 40), /^Authorization: `Bearer \$\{[A-Za-z_.]+\}`/, f);
+    }
   }
 });
 
