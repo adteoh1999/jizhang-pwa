@@ -83,6 +83,10 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         const cat = cats.get(input.categoryId);
         if (!cat || cat.kind !== input.kind) throw new ValidationError('category');
         const existing = typeof input.id === 'string' ? txs.get(input.id) || null : null;
+        // 带的 id 本地找不到、又不是小写 uuid（例如认领换 id 后，开着的旧面板存档）→ 换新 uuid，不用怪 id 新建
+        if (!existing && typeof input.id === 'string' && !(isUuid(input.id) && input.id === input.id.toLowerCase())) {
+          input = { ...input, id: undefined };
+        }
         const rec = buildTransaction(input, existing, ctx());
         await commit({ transactions: [rec] }, { local: true });
         return copy(rec);
@@ -187,24 +191,25 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
           const local = map.get(s.id);
           if (!local || local.updated_at !== s.updated_at) continue;
           const rec = { ...withoutSyncError(local), dirty: 0 };
+          let changed = local.dirty !== 0 || !!local.sync_error;
           const r = back.get(s.id);
           if (r) {
             const ts = normalizeTs(r.updated_at);
             if (ts === null) console.warn(`[store] 回传时间看不懂（${table}），保留本地值`);
-            else if (ts !== local.updated_at) { rec.updated_at = ts; visible = true; }
+            else if (ts !== local.updated_at) { rec.updated_at = ts; visible = true; changed = true; }
           }
-          out.push(rec);
+          if (changed) out.push(rec);
         }
         if (out.length) await commit({ [table]: out }, { silent: !visible });
       });
     },
 
-    /** 标记坏资料（服务器回 22xxx / 23xxx）。sentUpdatedAt 给了而本地已改过 → 不标。dirty 保持 1。 */
+    /** 标记坏资料（服务器回 22xxx / 23xxx）。sentUpdatedAt 必填：本地已改过（或没传）→ 不标。dirty 保持 1。 */
     markSyncError(table, id, code, sentUpdatedAt) {
       return enqueue(async () => {
         const local = mapOf(table).get(id);
         if (!local || local.dirty !== 1) return;
-        if (sentUpdatedAt !== undefined && local.updated_at !== sentUpdatedAt) return;
+        if (typeof sentUpdatedAt !== 'string' || local.updated_at !== sentUpdatedAt) return;
         await commit({ [table]: [{ ...local, sync_error: { code: String(code), at: now().toISOString() } }] }, { silent: true });
       });
     },
@@ -240,7 +245,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
 
     /**
      * 认领：所有列标 dirty 1（不改 updated_at）；账目 id 不是小写 uuid 的换 key
-     * （大写 uuid 转小写；非 uuid 或转小写会撞到已有 key → 换新 uuid）。extra.meta 同一次写入（owner_user_id）。
+     * （大写 uuid 转小写；非 uuid 或转小写会撞到已有 key → 换新 uuid）。meta 同一次写入（owner_user_id）。
      */
     markAllForUpload({ meta } = {}) {
       return enqueue(async () => {

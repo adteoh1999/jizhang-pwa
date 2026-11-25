@@ -247,3 +247,125 @@ test('重新 init 后 sync_error 与 dirty 都还在', async () => {
   const { store: s2 } = await setup({ db });
   assert.deepEqual(s2.syncCounts(), { pending: 0, errors: 1, txPending: 0, txErrors: 1 });
 });
+
+// ---------- 任务 3 审核修正 ----------
+
+test('saveTransaction 带的 id 本地找不到、又不是小写 uuid（认领换 id 后旧面板存档）→ 换新 uuid，不用怪 id 新建', async () => {
+  const { store } = await setup();
+  for (const odd of ['abc', '3F2504E0-4F89-41D3-9A0C-0305E82C3301']) {
+    const r = await store.saveTransaction({ ...input(), id: odd });
+    assert.notEqual(r.id, odd);
+    assert.ok(isUuid(r.id) && r.id === r.id.toLowerCase());
+  }
+  const ok = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+  assert.equal((await store.saveTransaction({ ...input(), id: ok })).id, ok); // 合法小写 uuid 照用（新记一笔的正常路径）
+});
+
+test('saveTransaction 本地已有的怪 id（认领前）照常更新同一笔', async () => {
+  const db = createMemoryDb();
+  const base = { kind: 'expense', amount_minor: 1, category_id: 'food', occurred_on: '2026-11-20', note: '', created_at: '2026-11-20T00:00:00.000Z', updated_at: '2026-11-20T00:00:00.000Z', deleted: false, dirty: 0 };
+  await db.write({ transactions: [{ ...base, id: 'abc' }] });
+  const { store } = await setup({ db });
+  const r = await store.saveTransaction({ ...input({ amountMinor: 9 }), id: 'abc' });
+  assert.equal(r.id, 'abc');
+  assert.equal(store.transactions().length, 1);
+});
+
+test('markSyncError 没带 sentUpdatedAt → 不标', async () => {
+  const { db, store } = await setup();
+  const a = await store.saveTransaction(input());
+  await store.markSyncError('transactions', a.id, '23514');
+  assert.equal((await rowOf(db, 'transactions', a.id)).sync_error, undefined);
+});
+
+test('markSyncError 无动作：dirty 0 的列、不存在的 id', async () => {
+  const { db, store } = await setup();
+  const c = await rowOf(db, 'categories', 'food');
+  await store.markSyncError('categories', 'food', '23514', c.updated_at);
+  await store.markSyncError('transactions', 'nope', '23514', 'x');
+  assert.equal(store.syncCounts().errors, 0);
+});
+
+test('同一毫秒（时钟不动）上传途中修改 / 删除 / 还原 → 仍待上传', async () => {
+  const fixed = new Date('2026-11-25T10:00:00.000Z');
+  const db = createMemoryDb();
+  let n = 0;
+  const store = createStore({ db, now: () => fixed, uuid: () => fakeUuid(++n) });
+  await store.init();
+  const a = await store.saveTransaction(input());
+  for (const change of [
+    () => store.saveTransaction({ ...input({ amountMinor: 2 }), id: a.id }),
+    () => store.deleteTransaction(a.id),
+    () => store.restoreTransaction(a.id),
+  ]) {
+    const [sent] = await store.pendingRows('transactions');
+    await change();
+    await store.markUploaded('transactions', [sent], []);
+    assert.equal((await rowOf(db, 'transactions', a.id)).dirty, 1);
+  }
+});
+
+test('categories 表：markUploaded、markSyncError 用文字 id；未知表名 reject', async () => {
+  const { db, store } = await setup();
+  const c = await store.saveCategory({ kind: 'expense', name: '宠物' });
+  await store.markSyncError('categories', c.id, '23505', c.updated_at);
+  assert.equal(store.syncCounts().errors, 1);
+  await store.deleteCategory(c.id); // 再改 → 清掉错误
+  const [sent] = await store.pendingRows('categories');
+  await store.markUploaded('categories', [sent], [{ id: c.id, updated_at: sent.updated_at }]);
+  assert.equal((await rowOf(db, 'categories', c.id)).dirty, 0);
+  const food = await rowOf(db, 'categories', 'food');
+  await store.markAllForUpload();
+  const [f] = (await store.pendingRows('categories')).filter((r) => r.id === 'food');
+  await store.markUploaded('categories', [f], []);
+  assert.equal((await rowOf(db, 'categories', 'food')).updated_at, food.updated_at);
+  await assert.rejects(store.pendingRows('nope'));
+  await assert.rejects(store.markUploaded('nope', [], []));
+});
+
+test('静默方法不通知画面：markSyncError、clearSyncErrors、没换 id 的 markAllForUpload；再跑一次 markAllForUpload 0 次写入', async () => {
+  const { db, store } = await setup();
+  const a = await store.saveTransaction(input());
+  let hits = 0;
+  store.subscribe(() => hits++);
+  await store.markSyncError('transactions', a.id, '23514', a.updated_at);
+  await store.clearSyncErrors();
+  await store.markAllForUpload();
+  assert.equal(hits, 0);
+  const before = db.calls.length;
+  await store.markAllForUpload();
+  assert.equal(db.calls.length, before);
+});
+
+test('markUploaded：已经干净的列不重写；sent 里的 id 本地不存在 → 跳过', async () => {
+  const { db, store } = await setup();
+  const a = await store.saveTransaction(input());
+  const [sent] = await store.pendingRows('transactions');
+  await store.markUploaded('transactions', [sent], []);
+  const before = db.calls.length;
+  await store.markUploaded('transactions', [sent, { ...sent, id: 'ghost' }], []);
+  assert.equal(db.calls.length, before);
+  assert.equal((await rowOf(db, 'transactions', a.id)).dirty, 0);
+});
+
+test('markUploaded 写入失败 → 快取仍待上传', async () => {
+  const { db, store } = await setup();
+  await store.saveTransaction(input());
+  const sent = await store.pendingRows('transactions');
+  db.failNextWrite(new Error('disk'));
+  await assert.rejects(store.markUploaded('transactions', sent, []));
+  assert.equal(store.syncCounts().txPending, 1);
+});
+
+test('markAllForUpload 换 id 后其他栏位不变（含已删除、sync_error）', async () => {
+  const db = createMemoryDb();
+  const base = { kind: 'expense', amount_minor: 77, category_id: 'food', occurred_on: '2026-11-20', note: '备注', created_at: '2026-11-20T00:00:00.000Z', updated_at: '2026-11-21T00:00:00.000Z', deleted: true, dirty: 1, sync_error: { code: '22P02', at: 'x' } };
+  await db.write({ transactions: [{ ...base, id: 'abc' }] });
+  const { store } = await setup({ db });
+  await store.markAllForUpload();
+  const [t] = await db.getAll('transactions');
+  const { id, ...rest } = t;
+  const { ...expect } = base;
+  assert.ok(isUuid(id));
+  assert.deepEqual(rest, expect);
+});

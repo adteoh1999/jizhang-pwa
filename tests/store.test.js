@@ -94,8 +94,8 @@ test('同 id 连续 save 两次（不 await）只有一笔，created_at 不变',
   let n = 0;
   const store = createStore({ db, now: () => new Date((t += 1000)), uuid: () => fakeUuid(++n) });
   await store.init();
-  const p1 = store.saveTransaction(input({ id: 'x' }));
-  const p2 = store.saveTransaction(input({ id: 'x', amountMinor: 500 }));
+  const p1 = store.saveTransaction(input({ id: fakeUuid(901) }));
+  const p2 = store.saveTransaction(input({ id: fakeUuid(901), amountMinor: 500 }));
   const [a, b] = await Promise.all([p1, p2]);
   assert.equal(store.transactions().length, 1);
   assert.equal((await db.getAll('transactions')).length, 1);
@@ -106,9 +106,9 @@ test('同 id 连续 save 两次（不 await）只有一笔，created_at 不变',
 
 test('save 已删除纪录的 id 会复活它', async () => {
   const { store } = await setup();
-  const t = await store.saveTransaction(input({ id: 'r' }));
+  const t = await store.saveTransaction(input({ id: fakeUuid(902) }));
   await store.deleteTransaction(t.id);
-  const r = await store.saveTransaction(input({ id: 'r', amountMinor: 700 }));
+  const r = await store.saveTransaction(input({ id: fakeUuid(902), amountMinor: 700 }));
   assert.equal(r.deleted, false);
   assert.equal(store.transactions().length, 1);
 });
@@ -128,7 +128,7 @@ test('setMeta 不通知订阅者', async () => {
 
 test('init 与 save 并发：快取仍含已存的纪录', async () => {
   const { store } = await setup();
-  const p = store.saveTransaction(input({ id: 'c' }));
+  const p = store.saveTransaction(input({ id: fakeUuid(903) }));
   const q = store.init();
   await Promise.all([p, q]);
   assert.equal(store.transactions().length, 1);
