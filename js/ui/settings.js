@@ -1,29 +1,15 @@
 // 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、分类、数据（导出 / 导入 CSV）、关于。
 // 绑定、邀请码、删除账号是 2f、第 3 阶段的事，这里不放占位。
-// 注意：导出时 navigator.share 要在点击事件里同步呼叫（之前不能 await），否则会失去使用者手势。
+// 导出在 export-csv.js（提醒对话框也用）。
 import { h } from './dom.js';
 import { icon } from './icons.js';
 import { confirmDialog, messageDialog } from './dialogs.js';
 import { showToast } from './toast.js';
 import { openCategoriesPage } from './categories-page.js';
-import { todayLocal } from '../dates.js';
 import { APP_VERSION } from '../version.js';
 import { onUpdateAvailable, applyUpdate } from '../update.js';
 import { signOut } from '../auth.js';
-
-/** 导出档名：jizhang-YYYYMMDD.csv（当地日期）。 */
-export function exportFileName(now = new Date()) {
-  return `jizhang-${todayLocal(now).replaceAll('-', '')}.csv`;
-}
-
-function download(file) {
-  const url = URL.createObjectURL(file);
-  const a = h('a', { href: url, download: file.name, hidden: true });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000); // 给浏览器（尤其 iOS）时间开始下载再释放
-}
+import { createExporter } from './export-csv.js';
 
 /** 账号区要显示的列（纯函数）：有 session → 邮箱、登出；没有 → 不显示账号区。 */
 export function accountRows(session) {
@@ -52,41 +38,7 @@ export function mountSettings(root, store, { session = null } = {}) {
   chevron ? h('span', { class: 'inset-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16)) : null);
 
   // ---------- 导出 ----------
-  let shareSeq = 0; // 每次分享一个编号，旧分享迟到的 finally 不会清掉新的
-  let sharing = false; // 分享选单开着时再按一次「导出 CSV」不重复呼叫 navigator.share
-  function onExport() {
-    if (sharing) return;
-    if (store.transactions().length === 0) {
-      messageDialog({ title: '没有可导出的记录' });
-      return;
-    }
-    const file = new File([store.exportCSV()], exportFileName(), { type: 'text/csv' }); // exportCSV 已含 BOM
-    const data = { files: [file] }; // canShare 与 share 用同一个物件
-    let canShare = false;
-    try {
-      canShare = !!(navigator.canShare && navigator.canShare(data));
-    } catch { /* 部分浏览器对 files 会 throw → 当作不支援 */ }
-    if (!canShare) { download(file); return; }
-    sharing = true;
-    const startedAt = Date.now();
-    const myId = ++shareSeq;
-    const clear = () => {
-      document.removeEventListener('visibilitychange', onVisible);
-      if (myId === shareSeq) sharing = false;
-    };
-    // 只有 app 从背景回到前景才会触发（iOS 分享选单本身不改变 visibility）
-    const onVisible = () => { if (document.visibilityState === 'visible' && Date.now() - startedAt > 1000) clear(); };
-    document.addEventListener('visibilitychange', onVisible);
-    try {
-      navigator.share(data).catch((e) => {
-        if (e && e.name === 'AbortError') return; // 使用者在分享选单按取消，不算错误
-        download(file);
-      }).finally(clear);
-    } catch {
-      clear(); // 同步 throw → 改用下载
-      download(file);
-    }
-  }
+  const onExport = createExporter(store);
 
   // ---------- 导入 ----------
   const fileInput = h('input', {

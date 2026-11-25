@@ -109,6 +109,30 @@ export function confirmDialog({
   });
 }
 
+/**
+ * 多选一对话框。buttons：[{label, value, bold, keepOpen, onClick}]（HIG：主要动作放最后、粗体）。
+ * keepOpen 的按钮只在点击事件里同步呼叫 onClick、不关窗（例如导出 CSV：navigator.share 要在手势里）。
+ * 回传按下的 value；Esc 关掉回 null。
+ */
+export function choiceDialog({ title, message, buttons }) {
+  return new Promise((resolve) => {
+    let result = null;
+    let close = () => {};
+    const els = buttons.map((b) => alertButton(b.label, {
+      bold: !!b.bold,
+      onClick: () => {
+        if (b.keepOpen) { if (b.onClick) b.onClick(); return; }
+        result = b.value ?? null;
+        close();
+      },
+    }));
+    const panel = alertPanel({ title, message, buttons: els });
+    ({ close } = present({ kind: 'alert', panel, onClosed: () => resolve(result) }));
+    const idx = buttons.findIndex((b) => b.bold);
+    els[idx >= 0 ? idx : els.length - 1].focus({ preventScroll: true });
+  });
+}
+
 /** 只有「好」按钮的讯息对话框。 */
 export function messageDialog({ title, message }) {
   return new Promise((resolve) => {

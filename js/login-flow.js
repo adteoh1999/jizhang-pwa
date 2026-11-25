@@ -224,6 +224,11 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
           }
         }
         try {
+          // 换账号：本地账本还没归属就先记成上一个账号的（之后 claimState 回 other，不会上传到新账号）。
+          // 必须在盖掉 lastUserId 之前；写不进去就不登录（宁可重来，也不让新账号认领别人的账）。
+          if (last && last !== s.user_id && hasLocalData() && !(await store.getMeta('owner_user_id'))) {
+            await store.setMeta('owner_user_id', last);
+          }
           await saveSession(store, s);
         } catch (e) {
           warn('saveSession')(e);

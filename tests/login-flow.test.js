@@ -561,3 +561,44 @@ test('editField：清掉后再犯同样的错 → 序号加一（会重念、重
   assert.equal(flow.state.error, '请输入正确的邮箱');
   assert.equal(flow.state.errorSeq, seq + 1);
 });
+
+// ---------- 2e 任务 4（审核 M2）：换账号前先记下本地账本属于谁 ----------
+test('换账号：上次 A、没有 owner、本地有账、B 登录 → 先写 owner = A（B 不会认领 A 的账）', async () => {
+  const { flow, store, signed } = setup({ hasLocalData: () => true, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
+  await saveLastUserId(store, 'u-A');
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  await flow.inputCode('481203');
+  assert.equal(signed.length, 1);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-A');
+  assert.equal(await loadLastUserId(store), 'u-B');
+});
+
+test('换账号：已有 owner → 不改；本地没账 → 不写 owner；同一个账号 → 不写', async () => {
+  for (const [owner, local, last, expect] of [['u-X', true, 'u-A', 'u-X'], [undefined, false, 'u-A', undefined], [undefined, true, 'u-1', undefined]]) {
+    const { flow, store } = setup({ hasLocalData: () => local });
+    if (owner) await store.setMeta('owner_user_id', owner);
+    await saveLastUserId(store, last);
+    flow.goEmail();
+    await flow.submitEmail('me@x.com', '');
+    await flow.inputCode('481203');
+    assert.equal(await store.getMeta('owner_user_id'), expect, `${owner} ${local} ${last}`);
+  }
+});
+
+test('换账号：写 owner 失败 → 不登录（宁可重来，也不让 B 认领 A 的账）', async () => {
+  const db = createMemoryDb();
+  const { flow, store, signed } = setup({ db, hasLocalData: () => true, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
+  await saveLastUserId(store, 'u-A');
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  const real = store.setMeta;
+  store.setMeta = async (k, v) => { if (k === 'owner_user_id') throw new Error('disk'); return real(k, v); };
+  const orig = console.warn;
+  console.warn = () => {};
+  try { await flow.inputCode('481203'); } finally { console.warn = orig; store.setMeta = real; }
+  assert.equal(signed.length, 0);
+  assert.equal(await loadSession(store), null);
+  assert.equal(flow.state.step, 'email');
+  assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
+});

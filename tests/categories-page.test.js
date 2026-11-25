@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { checkCategoryName } from '../js/ui/categories-page.js';
-import { exportFileName } from '../js/ui/settings.js';
+import { exportFileName } from '../js/ui/export-csv.js';
 
 const cats = [
   { id: 'food', name: '餐饮' },
