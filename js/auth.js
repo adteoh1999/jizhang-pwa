@@ -240,7 +240,8 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
       // 标 invalid 前再读一次：途中别处（例如重新登录，不经过这把锁）已存了新的 → 用新的，不盖掉
       try {
         const cur = await loadSession(store);
-        if (cur && cur.refresh_token !== s.refresh_token) return cur.invalid ? { invalid: true } : { session: cur };
+        if (!cur) return { invalid: true }; // 途中被登出清掉：不写回旧的
+        if (cur.refresh_token !== s.refresh_token) return cur.invalid ? { invalid: true } : { session: cur };
         await saveSession(store, { ...s, invalid: true });
       } catch (e) {
         console.warn(`[auth] 标记登录失效失败：${errName(e)}`);

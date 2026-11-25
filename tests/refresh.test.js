@@ -355,3 +355,13 @@ test('日志只印规矩的 error_code（小写字母、数字、底线，≤64�
   assert.match(logs[0], /其他/);
   assert.match(logs[1], /session_expired/);
 });
+
+test('刷新途中 session 被别处清掉（登出）→ 回 invalid、不把旧的写回来', async () => {
+  const store = await setup();
+  const f = fakeFetch(async () => {
+    await store.setMeta('session', null);
+    return jsonRes(400, { error_code: 'session_not_found' });
+  });
+  assert.deepEqual(await getValidSession(store, f, opts()), { invalid: true });
+  assert.equal(await loadSession(store), null);
+});
