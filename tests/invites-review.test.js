@@ -210,3 +210,59 @@ test('审核 9：截完尾端是空白也去掉', async () => {
   await createInvite(deps, { maxUses: 1, days: 7, note: `${'字'.repeat(39)} 尾` });
   assert.equal(calls[0].body.note, '字'.repeat(39));
 });
+
+// ======================= 复核（r2）建议 A、B＋小事 =======================
+const keepFocus = (...a) => P.keepFocus(...a);
+const box = (inside) => ({ contains: (el) => inside.includes(el) });
+
+test('复核 A：keepFocus：改动前焦点不在页面里（had false）→ 不动', () => {
+  const t = { ...fakeEl('t'), focus: () => { throw new Error('不该动'); } };
+  keepFocus(box([]), false, [t], fakeEl('x'), {});
+});
+
+test('复核 A：keepFocus：焦点还在看得见的地方 → 不动；被藏起来、或变成 body → 放到第一个看得见的后备', () => {
+  const focused = [];
+  const mk = (name, o) => ({ ...fakeEl(name, o), focus: () => focused.push(name) });
+  const body = {};
+  const shown = mk('shown');
+  const hiddenEl = mk('hidden', { hiddenAncestor: true });
+  const fb1 = mk('fb1', { connected: false });
+  const fb2 = mk('fb2');
+  keepFocus(box([shown]), true, [fb2], shown, body);
+  assert.deepEqual(focused, []);
+  keepFocus(box([hiddenEl]), true, [fb1, fb2], hiddenEl, body);
+  assert.deepEqual(focused, ['fb2']);
+  keepFocus(box([]), true, [fb2], body, body);
+  assert.deepEqual(focused, ['fb2', 'fb2']);
+});
+
+test('复核 A：列表与明细载入成功那条路也经过 keepFocus（按「重试」后状态文字被藏起来）', () => {
+  const r = SRC.indexOf('function renderList(');
+  assert.ok(r >= 0 && SRC.slice(r, SRC.indexOf('\n  }\n', r)).includes('keepFocus(page,'));
+  const u = SRC.indexOf('async function loadUsers(');
+  const body = SRC.slice(u, SRC.indexOf('\n  }\n', u));
+  assert.ok(body.split('keepFocus(page,').length - 1 >= 3, 'loadUsers：载入中、失败、成功三处');
+});
+
+test('复核 B：新增超时 → 等列表重载完才弹说明（「列表已重新载入」要是真的）', () => {
+  const i = SRC.indexOf('async function generate()');
+  const body = SRC.slice(i, SRC.indexOf('\n  }\n', i));
+  const w = body.indexOf("if (next.reload) await (r.reason === 'denied' ? onDenied : onCreated)();");
+  assert.ok(w >= 0, '要 await 重载');
+  assert.ok(w < body.indexOf('await messageDialog('));
+  assert.ok(body.includes('afterExplain()'), '说明关掉后：列表若是失败状态，焦点交给「重试」');
+});
+
+test('复核小事：createGuardedRunner 的 onStart 丢错也会复位（之后还能再执行）', async () => {
+  let n = 0;
+  const run = createGuardedRunner({ onStart: () => { n += 1; if (n === 1) throw new Error('boom'); } });
+  assert.deepEqual(await run(async () => 'x'), { ok: false, reason: 'error', message: INVITE_TEXT.generic });
+  assert.equal(await run(async () => 'ok'), 'ok');
+});
+
+test('复核小事：ownerCall 遇到句子不认得的 403（平台层）→ error、站主快取不动', async () => {
+  const { store, deps } = await setup({ flag: { userId: 'u-A', value: true, checkedAt: NOW }, reply: () => res(403, { message: 'Forbidden' }) });
+  const r = await P.ownerCall(deps, 'list');
+  assert.equal(r.reason, 'error');
+  assert.equal((await store.getMeta(OWNER_FLAG_KEY)).value, true);
+});

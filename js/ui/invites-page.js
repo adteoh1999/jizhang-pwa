@@ -175,8 +175,8 @@ export function createGuardedRunner({ onStart = () => {}, onEnd = () => {} } = {
   return async (fn) => {
     if (busy) return null;
     busy = true;
-    onStart();
     try {
+      onStart(); // 在 try 里：它丢错也会复位（复核小事）
       return await fn();
     } catch (e) {
       console.warn(`[invites] 出错：${e && e.name ? e.name : '未知'}`);
@@ -314,11 +314,11 @@ const codeLabel = (code, cls) => h('span', { class: cls },
 /**
  * 有焦点的东西刚被藏起来或换掉（had：改动前焦点在 container 里）：焦点还在看得见的地方就不动，
  * 否则放到第一个看得见的后备（VoiceOver 才不会掉回页首，2f-3 审核 7）。
+ * 焦点变成 body 时 container.contains 就是 false，所以不用另外判断。a（目前焦点）测试可注入。
  */
-function keepFocus(container, had, fallbacks) {
+export function keepFocus(container, had, fallbacks, a = document.activeElement) {
   if (!had) return;
-  const a = document.activeElement;
-  if (a && a !== document.body && container.contains(a) && firstVisible([a])) return;
+  if (a && container.contains(a) && firstVisible([a])) return;
   const t = firstVisible(fallbacks);
   if (t) t.focus({ preventScroll: true });
 }
@@ -386,6 +386,7 @@ export function openInvitesPage(store, {
 
   function renderList(invites) {
     const a = document.activeElement;
+    const hadPage = page.contains(a); // 例如焦点在状态文字（刚按「重试」）：载入成功后它会被藏起来（复核 A）
     const hadFocus = list.contains(a);
     const code = hadFocus && a.dataset ? a.dataset.code : undefined; // 重画后放回同一个码那一列（审核 7）
     list.replaceChildren(h('li', { class: 'cat-row cat-row-add' }, addMain), ...invites.map(rowOf));
@@ -395,6 +396,7 @@ export function openInvitesPage(store, {
     else showStatus(T.empty);
     if (code) focusRow(code);
     else if (hadFocus && !list.contains(document.activeElement)) addMain.focus({ preventScroll: true });
+    keepFocus(page, hadPage, [addMain, backBtn]);
   }
 
   async function reload() {
@@ -426,7 +428,12 @@ export function openInvitesPage(store, {
   }
 
   function openNewInvite() {
-    openNewInviteSheet(deps, { onCreated: () => reload(), onDenied: () => { onOwnerChanged(); reload(); } });
+    openNewInviteSheet(deps, {
+      onCreated: () => reload(),
+      onDenied: () => { onOwnerChanged(); return reload(); },
+      // 超时说明关掉后：列表若载入失败（「新增邀请码」被藏），焦点交给「重试」（复核 B）
+      afterExplain: () => { if (!closed) keepFocus(page, true, [statusBtn, statusText, backBtn]); },
+    });
   }
 
   const body = h('div', { class: 'nav-page-body' }, status, list, footer);
@@ -565,6 +572,7 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
       keepFocus(page, had, [usersRetry, usersStatus, toggleBtn, backBtn]);
       return;
     }
+    const hadPage = page.contains(document.activeElement); // 焦点在状态文字（刚按「重试」）：成功后它会被藏起来（复核 A）
     const hadFocus = usersList.contains(document.activeElement) ? document.activeElement.closest('[data-use]') : null;
     usersList.replaceChildren(...r.uses.map(userRow));
     usersList.hidden = r.uses.length === 0;
@@ -577,6 +585,7 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
       const again = usersList.querySelector(`[data-use="${hadFocus.dataset.use}"]`);
       if (again) { again.tabIndex = -1; again.focus({ preventScroll: true }); }
     }
+    keepFocus(page, hadPage, [usersStatus, toggleBtn, backBtn]);
   }
 
   async function onRemove(u) {
@@ -616,7 +625,7 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
 }
 
 /** 新增邀请码 sheet：次数（步进器）、有效期（分段 4 选 1）、备注 →「生成」→ 结果 sheet。 */
-function openNewInviteSheet(deps, { onCreated, onDenied }) {
+function openNewInviteSheet(deps, { onCreated, onDenied, afterExplain = () => {} }) {
   const uid = `invnew-${++seq}`;
   let uses = USES_MIN;
   let days = DEFAULT_DAYS;
@@ -697,8 +706,10 @@ function openNewInviteSheet(deps, { onCreated, onDenied }) {
     const next = createFollowUp(r); // 超时：服务器可能已经生成 → 关表单、重载列表再说明（审核 3）
     if (next.close) sheet.close();
     if (r.ok) { openResultSheet(r.code, { onClosed: onCreated }); return; }
-    if (next.reload) (r.reason === 'denied' ? onDenied : onCreated)();
+    // 等列表重载完才说明（文案说「列表已重新载入」，复核 B；同移除用户的做法）
+    if (next.reload) await (r.reason === 'denied' ? onDenied : onCreated)();
     await messageDialog({ title: r.reason === 'timeout' ? T.noReplyTitle : T.createFailTitle, message: next.message });
+    if (next.close) afterExplain();
   }
 
   const sheet = openSheet({
