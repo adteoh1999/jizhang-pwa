@@ -254,6 +254,11 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
   }
 }
 
+/** 「重新登录」：只清本机 session（已失效，不通知服务器），走同一把锁，之后呼叫者重载到登录页。 */
+export function forgetSession(store, { locks } = {}) {
+  return withLock(AUTH_LOCK, () => clearSession(store), locks);
+}
+
 /** 通知服务器作废这台设备的 refresh token（尽力而为，2 秒超时，结果不管）。 */
 export async function logoutServer(fetchFn, accessToken, { timeoutMs = LOGOUT_TIMEOUT_MS } = {}) {
   const r = await postJson(fetchFn, `${SUPABASE_URL}/auth/v1/logout?scope=local`, {}, timeoutMs,

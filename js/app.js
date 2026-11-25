@@ -14,6 +14,10 @@ import { loadSession, bootTarget } from './auth.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
+import { createSync, ensureClaimed } from './sync.js';
+import { askSyncStart } from './ui/sync-prompt.js';
+import { messageDialog } from './ui/dialogs.js';
+import { APP_VERSION } from './version.js';
 import { animate, fade, cancelAnims, reducedMotion, clipSupported, DUR, EASE_OUT } from './ui/motion.js';
 
 const TABS = [
@@ -76,10 +80,30 @@ function mountShell(root, store, session) {
 
   const shell = h('div', { class: 'shell' }, hintSlot, main);
   root.replaceChildren(shell);
+
+  // 同步（2e）：背景上传；账本还没归属时先问一次（用户决定 3）
+  const sync = createSync({ store, fetchFn: (url, init) => fetch(url, init), userId: session.user_id, appVersion: APP_VERSION });
+  let claiming = null; // 同一时间只问一次
+  const runClaim = (fromUser) => {
+    if (claiming) return claiming;
+    claiming = ensureClaimed(store, session, { ask: (n) => askSyncStart(store, n), fromUser })
+      .then((st) => { if (st === 'mine') sync.schedule({ force: true }); }) // claim 不触发 onLocalWrite：自己排
+      .catch((e) => {
+        console.warn(`[sync] 认领失败：${e && e.name ? e.name : '未知'}`);
+        return messageDialog({ title: '没能开始同步', message: '请稍后再试一次。' });
+      })
+      .finally(() => { claiming = null; });
+    return claiming;
+  };
+
   const home = screens.get('home');
   mountHome(home.querySelector('.screen-content'), store, { monthEl: home.querySelector('.large-title-aside') });
   const stats = mountStats(screens.get('stats').querySelector('.screen-content'), store);
-  mountSettings(screens.get('settings').querySelector('.screen-content'), store, { session });
+  mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
+    session, sync, onStartSync: () => runClaim(true),
+  });
+  sync.start();
+  runClaim(false);
 
   const tabbar = mountTabBar(root, {
     tabs: TABS,

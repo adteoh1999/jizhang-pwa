@@ -143,6 +143,10 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         await db.write({ meta: { ...obj } });
       });
     },
+    /** 有 sync_error 的账目（设置页「无法同步」明细用），复制品。 */
+    syncErrorRows() {
+      return [...txs.values()].filter((t) => t.sync_error).sort(compareTx).map(copy);
+    },
     /** 这台设备有没有「属于某个人」的资料：任何账目列（含已删除），或自建 / 改过的分类（默认分类不算）。 */
     hasOwnedData() {
       if (txs.size > 0) return true;

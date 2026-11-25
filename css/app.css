@@ -496,7 +496,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 .alert-body { padding: 19px 16px 20px; }
 .alert-title { font: var(--font-headline); }
-.alert-message { font: var(--font-footnote); margin-top: 4px; }
+.alert-message { font: var(--font-footnote); margin-top: 4px; white-space: pre-line; }   /* 明细列表用 \n 分行 */
 .alert-field { /* 点击区 ≥44px，输入框视觉仍为 32px */
   min-height: var(--hit);
   margin-top: 8px;

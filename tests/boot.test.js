@@ -18,10 +18,11 @@ test('bootTarget：没有 session → 登录页；有 → App；过期的 sessio
 
 test('accountRows：有 session → 邮箱一列、登出一列；没有 → 空', () => {
   const rows = accountRows(SESSION);
-  assert.deepEqual(rows.map((r) => r.kind), ['email', 'signout']);
+  assert.deepEqual(rows.map((r) => r.kind), ['email', 'sync', 'signout']);
   assert.equal(rows[0].label, '邮箱');
   assert.equal(rows[0].detail, 'me@x.com');
-  assert.equal(rows[1].label, '登出');
+  assert.equal(rows[1].label, '同步');
+  assert.equal(rows[2].label, '登出');
   assert.deepEqual(accountRows(null), []);
 });
 
