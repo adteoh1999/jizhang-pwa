@@ -1,7 +1,8 @@
 // 设置页「登出」（2f Task 10，spec §8.6）：登出会清掉这台设备的账本（用户决定 1）。
 // 都传上去了 → 一个确认框；还有没同步的 → 先同步／导出 CSV／仍要登出（红）／取消（焦点）。
-// 「先同步」：还没归属先认领（审核 S12），再跑一轮同步，之后重新判断（审核 S13：失败说明原因）。
-// 登录已过期、只剩无法同步、账本属于别的账号时不提供「先同步」，改在内文说明。
+// 登出中挡住整个画面「正在登出…」（最长约 7 秒）。
+// 「先同步」：还没归属先认领（审核 S12；按了就当同意、不再问），再跑一轮同步，之后重新判断（审核 S13：失败说明原因）。
+// 登录已过期、只剩无法同步、账本属于别的账号、离线时不提供「先同步」，改在内文说明。
 import { choiceDialog, confirmDialog, messageDialog, busyOverlay } from './dialogs.js';
 import { createExporter } from './export-csv.js';
 import { HIDE_KEY } from './home.js';
@@ -24,6 +25,7 @@ export const SIGNOUT_TEXT = Object.freeze({
   reasonErrors: '这些记录上传不了，可以先导出 CSV 保存。',
   reasonOther: '这本账属于另一个账号，无法同步到这个账号。',
   reasonNoSync: '现在无法同步，请重新整理后再试。',
+  reasonOffline: '现在离线，无法同步，也要连上网络才能再登录。',
   syncingLabel: '正在同步…',
   needNetTitle: '请连上网络后再同步',
   needNetMessage: '连上网络后再按「先同步」。',
@@ -31,6 +33,8 @@ export const SIGNOUT_TEXT = Object.freeze({
   syncFailMessage: '暂时连不上服务器，请稍后再试。',
   syncSkipMessage: '另一个分页正在同步，请稍后再试。',
   syncHaltMessage: '现在无法同步，请稍后再试。',
+  syncLateTitle: '还在同步',
+  syncLateMessage: '同步还没完成，请稍后再试。',
   switchedTitle: '账号已更换',
   switchedMessage: '请重新整理后再试。',
   failTitle: '登出失败',
@@ -42,13 +46,14 @@ const T = SIGNOUT_TEXT;
 export const unsyncedTitle = (txCount) => (txCount > 0 ? `还有 ${txCount} 笔没同步` : '还有改动没同步');
 
 // 不能「先同步」的原因（null＝可以）
-function noSyncReason({ sync, owner, userId, store }) {
+function noSyncReason({ sync, owner, userId, store, online }) {
   if (!sync) return T.reasonNoSync;
   const st = sync.status().state;
   if (st === 'signed-out') return T.reasonSignedOut;
   if (owner && owner !== userId) return T.reasonOther;
   if (st === 'stopped' || st === 'stale') return T.reasonNoSync;
   if (owner && store.syncCounts().pending === 0) return T.reasonErrors; // 只剩无法同步的
+  if (!online) return T.reasonOffline; // 离线：按了也同步不了，直接说明（小事）
   return null;
 }
 
@@ -79,11 +84,19 @@ async function flow({
   exportCsv = createExporter(store),
   locks,
   block = (text) => busyOverlay(text),
+  syncWaitMs = 25_000, // 「正在同步…」最多挡这么久（审核 S-6：一轮上限 120 秒，不能挡那么久）
 }) {
   for (;;) {
     // 别的分页已换成另一个账号：不能替那个账号登出、清掉它的账本
     const cur = await loadSession(store);
-    if (!cur || cur.user_id !== userId) {
+    if (!cur) { reload(); return 'done'; } // 别的分页已登出：重新整理就会到登录页
+    if (cur.user_id !== userId) {
+      await dialogs.messageDialog({ title: T.switchedTitle, message: T.switchedMessage });
+      reload();
+      return 'fail';
+    }
+    // 先从资料库重读（审核 S-3：别的分页刚记的账，快取可能还没更新）；账本已被换掉 → 同账号已更换
+    if ((await store.reloadFromDb()) === 'ledger-changed') {
       await dialogs.messageDialog({ title: T.switchedTitle, message: T.switchedMessage });
       reload();
       return 'fail';
@@ -98,10 +111,11 @@ async function flow({
       if (!ok) return 'cancel';
       break;
     }
-    const reason = noSyncReason({ sync, owner, userId, store });
+    const reason = noSyncReason({ sync, owner, userId, store, online: !offlineNote });
     const answer = await dialogs.choiceDialog({
       title: unsyncedTitle(info.txCount),
-      message: T.unsyncedMessage + (reason || '') + offlineNote,
+      // 离线那句已含「要连上网络才能再登录」，不再重复
+      message: T.unsyncedMessage + (reason || '') + (reason === T.reasonOffline ? '' : offlineNote),
       // 直排四个（用户决定）；焦点放「取消」（登出会丢资料，Enter 不该往下走）
       buttons: [
         ...(reason ? [] : [{ label: T.syncLabel, value: 'sync' }]),
@@ -112,11 +126,14 @@ async function flow({
     });
     if (answer === 'signout') break;
     if (answer !== 'sync') return 'cancel';
-    await syncFirst({ sync, owner, onStartSync, isOnline, dialogs, block });
+    await syncFirst({ sync, owner, onStartSync, isOnline, dialogs, block, syncWaitMs });
     // 不管结果如何都回到上面重新判断（传完了就变成一个确认框）
   }
 
+  // 等锁最多 5 秒＋通知服务器最多 2 秒：先挡住整个画面（审核 S-5，同删号；免得这段时间记的账被清掉）
   onBusy(true);
+  let unblock = block(T.busyLabel);
+  const release = () => { if (unblock) { const u = unblock; unblock = null; try { u(); } catch { /* 忽略 */ } } };
   let done = false;
   try {
     done = await signOut(store, () => {
@@ -124,7 +141,7 @@ async function flow({
       try { announce(); } catch { /* 通知其他分页失败：这一页照常登出 */ } // 其他分页显示「需要重新载入」（审核 M5）
       reload();
     }, {
-      fetchFn, locks, isOnline,
+      fetchFn, locks, isOnline, userId, // userId：锁里清除前再核对（审核 S-1）
       stopSync: () => {
         try { if (sync) sync.stop(); } catch { /* 停不了也照样登出 */ }
         try { if (realtime) realtime.stop(); } catch { /* 同上 */ }
@@ -133,36 +150,51 @@ async function flow({
   } catch (e) {
     console.warn(`[sign-out] 出错：${e && e.name ? e.name : '未知'}`);
   }
-  if (done) return 'done';
+  if (done === true) return 'done';
+  if (done === 'gone') { reload(); return 'done'; } // 对话框开着时别的分页登出了
+  release();
   onBusy(false);
+  if (done === 'switched') {
+    await dialogs.messageDialog({ title: T.switchedTitle, message: T.switchedMessage });
+    reload();
+    return 'fail';
+  }
   // 同步已停：说明后重新整理，让它重新开始（账本与登录都还在）
   await dialogs.messageDialog({ title: T.failTitle, message: T.failMessage });
   reload();
   return 'fail';
 }
 
-// 「先同步」：离线先挡；还没归属先认领（认领可能先问一次，问完才挡画面）；同步中显示「正在同步…」
-async function syncFirst({ sync, owner, onStartSync, isOnline, dialogs, block }) {
+// 「先同步」：离线先挡；还没归属先认领（不再问，用户决定）；同步中显示「正在同步…」（最多 syncWaitMs）
+async function syncFirst({ sync, owner, onStartSync, isOnline, dialogs, block, syncWaitMs }) {
   if (!isOnline()) {
     await dialogs.messageDialog({ title: T.needNetTitle, message: T.needNetMessage });
     return;
   }
   if (!owner) {
     let st;
-    try { st = await onStartSync(); } catch { st = 'error'; }
+    try { st = await onStartSync({ consented: true }); } catch { st = 'error'; } // 按「先同步」＝已同意，不再弹认领提示
     if (st !== 'mine') return; // 关掉认领提示、或认领失败（认领自己会提示）
   }
   const unblock = block(T.syncingLabel);
   let res;
+  let timer = null;
   try {
-    res = await sync.syncNow();
+    // 到时限就不等了（同步照样在背景跑完）
+    const late = new Promise((r) => { timer = setTimeout(() => r('late'), syncWaitMs); });
+    res = await Promise.race([sync.syncNow(), late]);
   } catch (e) {
     console.warn(`[sign-out] 同步出错：${e && e.name ? e.name : '未知'}`);
     res = 'fail';
   } finally {
+    clearTimeout(timer);
     try { unblock(); } catch { /* 忽略 */ }
   }
   if (res === 'ok') return;
+  if (res === 'late') {
+    await dialogs.messageDialog({ title: T.syncLateTitle, message: T.syncLateMessage });
+    return;
+  }
   const message = res === 'skip' ? T.syncSkipMessage : res === 'halt' ? T.syncHaltMessage : T.syncFailMessage;
   await dialogs.messageDialog({ title: T.syncFailTitle, message });
 }

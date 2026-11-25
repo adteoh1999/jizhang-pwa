@@ -365,3 +365,31 @@ test('刷新途中 session 被别处清掉（登出）→ 回 invalid、不把�
   assert.deepEqual(await getValidSession(store, f, opts()), { invalid: true });
   assert.equal(await loadSession(store), null);
 });
+
+// ---------- 2f 整体审核 I-1：登出等锁超时直接清之后，卡住的刷新不能把登录写回去 ----------
+test('刷新卡住 → 登出等锁超时直接清 → 刷新回来也不写回 session（同一个分页、另一个分页都一样）', async () => {
+  for (const where of ['same', 'other']) {
+    const db = createMemoryDb();
+    const store = createStore({ db });
+    await store.init();
+    await store.setMetas({ session: OLD, owner_user_id: 'u-1', lastUserId: 'u-1' });
+    const refresher = where === 'same' ? store : createStore({ db });
+    if (refresher !== store) await refresher.init();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const f = fakeFetch(async () => { await gate; return jsonRes(200, NEW_BODY); });
+    const p1 = getValidSession(refresher, f, { now: () => NOW, locks: null });
+    while (f.calls.length === 0) await new Promise((r) => setTimeout(r, 1));
+    const orig = console.warn;
+    console.warn = () => {};
+    let ok;
+    try {
+      ok = await signOut(store, () => {}, { locks: null, waitMs: 20, isOnline: () => false });
+    } finally { console.warn = orig; }
+    assert.equal(ok, true, where);
+    release();
+    const r = await p1;
+    assert.equal(await loadSession(store), null, `${where}：登出后不能被刷新写回`);
+    assert.equal(r.session, undefined, `${where}：刷新不能回一个已被登出的 session`);
+  }
+});

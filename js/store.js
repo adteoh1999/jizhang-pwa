@@ -49,8 +49,10 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     }
   }
   // 旧引擎写回前核对：owner 给了却已不是 owner_user_id（别的分页换了账号）→ false（审核 5 S-4）
-  // owner 可以是 null：核对「还没归属」（写 syncPromptDismissed 时用，Task 10 前）
-  const ownerOk = async (owner) => owner === undefined || ((await db.getMeta('owner_user_id')) ?? null) === owner;
+  // owner 必须是账号 id；只有 setMeta 另外接受 null＝核对「还没归属」（写 syncPromptDismissed 用，Task 10 前；
+  // 资料列的写回不放宽，2f 整体审核小事）
+  const ownerOk = async (owner, { allowNull = false } = {}) => owner === undefined
+    || ((owner !== null || allowNull) && ((await db.getMeta('owner_user_id')) ?? null) === owner);
   // 先读一次（早点发现、不必写），写入时再在同一个 transaction 里核对一次（审核 S-1）。不符 → null
   async function ownerCommit(owner, changes, opts = {}) {
     if (owner === undefined) { await commit(changes, opts); return true; }
@@ -191,11 +193,22 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     /**
      * 写一个 meta 键。owner（同步引擎用，2f-2 审核小事）：写入前核对 owner_user_id 与账本代号，
      * 不符（别的分页登出／删号清掉了）→ 回 null、什么都不写；写了回 true。
+     * ledger（token 刷新写回 session 用，2f 整体审核 I-1）：同一次写入核对资料库的 ledgerId 还是它
+     * （读 session 时一起读的值）；登出／删号已换掉账本 → 回 null、不写。
      */
-    setMeta(key, value, { owner } = {}) {
+    setMeta(key, value, { owner, ledger } = {}) {
       return enqueue(async () => {
+        if (ledger !== undefined) {
+          try {
+            await db.write({ meta: { [key]: value }, expect: { ledgerId: ledger } });
+            return true;
+          } catch (e) {
+            if (e && e.name === 'MetaMismatch') return null;
+            throw e;
+          }
+        }
         if (owner === undefined) { await db.write({ meta: { [key]: value } }); return undefined; }
-        if (!(await ownerOk(owner))) return null;
+        if (!(await ownerOk(owner, { allowNull: true }))) return null;
         return ownerCommit(owner, { meta: { [key]: value } }, { silent: true });
       });
     },

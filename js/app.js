@@ -103,10 +103,11 @@ function mountShell(root, store, session) {
   });
   let userStarted = false; // 这次是不是用户自己按了「开始同步」
   const runClaim = createClaimRunner({
-    ensure: (fromUser) => {
+    // consented：用户已在别处同意（登出时按「先同步」），认领提示直接当成「开始」、不再问（用户 2026-11-25 决定）
+    ensure: (fromUser, { consented = false } = {}) => {
       userStarted = fromUser;
       return ensureClaimed(store, session, {
-        ask: async (n) => { const a = await askSyncStart(store, n); userStarted = userStarted || a === 'start'; return a; },
+        ask: consented ? async () => 'start' : async (n) => { const a = await askSyncStart(store, n); userStarted = userStarted || a === 'start'; return a; },
         fromUser,
       });
     },
@@ -131,7 +132,7 @@ function mountShell(root, store, session) {
   sync.subscribe(() => realtime.check()); // sync.stop() 也会最后通知一次（登出、重新登录）
   window.addEventListener('jizhang:blocked', () => { realtime.stop(); sync.stop(); }, { once: true });
   const settings = mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
-    session, sync, realtime, onStartSync: () => runClaim(true),
+    session, sync, realtime, onStartSync: (opts) => runClaim(true, opts),
   });
 
   const tabbar = mountTabBar(root, {

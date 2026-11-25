@@ -369,3 +369,22 @@ test('signOut：清除写入失败 → 回 false、不 reload、账本与 sessio
   assert.equal(store.transactions().length, 1);
   assert.equal((await loadSess(store)).user_id, 'u-1');
 });
+
+// ---------- 2f 整体审核 S-1：清除前（锁里）再核对一次账号 ----------
+test('signOut 带 userId：资料库里已是别的账号 → 回 switched、不清、不 reload', async () => {
+  const { db, store } = await soSetup({ ...SO_SESSION, user_id: 'u-B' });
+  let reloaded = false;
+  assert.equal(await signOut(store, () => { reloaded = true; }, { userId: 'u-1', fetchFn: noFetch, isOnline: () => false }), 'switched');
+  assert.equal(reloaded, false);
+  assert.equal((await db.getAll('transactions')).length, 1);
+  assert.equal((await loadSess(store)).user_id, 'u-B');
+});
+
+test('signOut 带 userId：session 已经没有（别的分页登出了）→ 回 gone、不清、不 reload', async () => {
+  const { db, store } = await soSetup();
+  await store.setMeta('session', null);
+  let reloaded = false;
+  assert.equal(await signOut(store, () => { reloaded = true; }, { userId: 'u-1', fetchFn: noFetch, isOnline: () => false }), 'gone');
+  assert.equal(reloaded, false);
+  assert.equal((await db.getAll('transactions')).length, 1);
+});

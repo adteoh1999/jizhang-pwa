@@ -301,7 +301,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       return;
     }
     const ok = await confirmDialog({
-      title: '要重新登录吗？', message: '需要网络和邮箱验证码。这台设备上的账本会保留。', confirmLabel: '重新登录',
+      title: '要重新登录吗？', message: '需要网络和邮箱验证码。这台设备上的账本会保留。账号若已删除，请取消后改按「登出」。', confirmLabel: '重新登录',
     });
     if (!ok) return;
     if (sync) sync.stop();

@@ -220,3 +220,18 @@ test('复审 S15：诊断行分段（每段整组换行；读屏用逗号停顿�
   assert.deepEqual(syncDiagParts(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok', lastAdopted: 1 }), { now, realtime: 'live' }),
     ['上次检查 14:32:05', '成功', '收到 1 笔', '即时连线']);
 });
+
+// ---------- 2f 整体审核后用户决定：登出时按「先同步」＝已同意认领，不再问 ----------
+test('createClaimRunner：第二个参数（consented）原样交给 ensure', async () => {
+  const got = [];
+  const run = createClaimRunner({ ensure: (fromUser, opts) => { got.push([fromUser, opts]); return 'mine'; }, onMine: () => {}, onError: () => {} });
+  await run(true, { consented: true });
+  assert.deepEqual(got, [[true, { consented: true }]]);
+});
+
+test('app.js：consented 时认领提示直接当成「开始」；设置页 onStartSync 把参数传给 runClaim', () => {
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /ensure: \(fromUser, \{ consented = false \} = \{\}\) =>/);
+  assert.match(app, /ask: consented \? async \(\) => 'start' :/);
+  assert.match(app, /onStartSync: \(opts\) => runClaim\(true, opts\)/);
+});

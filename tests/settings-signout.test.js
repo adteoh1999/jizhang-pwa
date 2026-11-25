@@ -93,7 +93,7 @@ test('离线、没有未同步 → 内文多一句「现在离线，要连上网
 test('确认登出 → 停同步与 Realtime、清掉账本、清隐藏金额、通知其他分页，最后才 reload', async () => {
   const { db, store, log, deps } = await setup({ confirms: [true] });
   assert.equal(await runSignOut(deps), 'done');
-  assert.ok(log.indexOf('sync.stop') > 0 && log.indexOf('realtime.stop') > 0);
+  assert.ok(log.includes('sync.stop') && log.includes('realtime.stop'));
   assert.ok(log.indexOf('realtime.stop') < log.indexOf('fetch:/auth/v1/logout?scope=local'));
   assert.equal(log.at(-1), 'reload:0');
   // 先断言有出现（indexOf 找不到是 -1，比先后会误过）
@@ -171,8 +171,12 @@ test('「先同步」后还有没传上去的 → 再问一次', async () => {
   assert.equal(log.filter((l) => l.startsWith('choice:')).length, 2);
 });
 
-test('「先同步」时离线 → 先挡「请连上网络后再同步」、不叫 syncNow，再回到选择', async () => {
-  const { log, deps } = await setup({ unsynced: 'tx', online: false, choices: ['sync', 'cancel'] });
+test('对话框开着时断网、再按「先同步」→ 先挡「请连上网络后再同步」、不叫 syncNow，再回到选择', async () => {
+  const { log, deps } = await setup({ unsynced: 'tx', choices: ['sync', 'cancel'] });
+  let online = true;
+  deps.isOnline = () => online;
+  const ask = deps.dialogs.choiceDialog;
+  deps.dialogs.choiceDialog = async (o) => { const a = await ask(o); online = false; return a; };
   await runSignOut(deps);
   assert.ok(log.includes('message:请连上网络后再同步'));
   assert.ok(!log.includes('syncNow'));
@@ -188,6 +192,7 @@ test('「先同步」失败／另一个分页在同步／被暂停 → 说明原
     const { log, dialogs, deps } = await setup({ unsynced: 'tx', choices: ['sync', 'cancel'], syncNow: async () => res });
     await runSignOut(deps);
     assert.ok(log.includes(`message:${title}`), res);
+    assert.ok(log.includes('unblock'), res);
     assert.equal(dialogs.lastMessage.message, msg, res);
     assert.ok(log.indexOf('unblock') < log.indexOf(`message:${title}`), `${res}：先放开「正在同步…」`);
     assert.equal(log.filter((l) => l.startsWith('choice:')).length, 2, res);
@@ -208,7 +213,7 @@ test('账本还没归属时「先同步」走认领（onStartSync），认领成
   await runSignOut(deps);
   assert.ok(log.indexOf('onStartSync') >= 0);
   assert.ok(log.indexOf('onStartSync') < log.indexOf('syncNow'));
-  assert.ok(log.indexOf('onStartSync') < log.indexOf(`block:${T.syncingLabel}`), '认领可能先问一次，问完才挡画面');
+  assert.ok(log.indexOf('onStartSync') < log.indexOf(`block:${T.syncingLabel}`), '认领完才挡画面');
 });
 
 test('认领没成功（用户在认领提示按了关掉）→ 不 syncNow，回到选择', async () => {
@@ -291,4 +296,163 @@ test('设置页接线：登出列交给 runSignOut（带挂载时的账号、rea
   for (const k of ['userId: session.user_id', 'realtime', 'onStartSync', 'onBusy']) assert.ok(call.includes(k), k);
   assert.doesNotMatch(s, /signOutBtn\.disabled/);
   assert.doesNotMatch(s, /这台设备上的账本会保留。', confirmLabel: '登出'/);
+});
+
+// ---------- 2f 整体审核 S-1、小事：对话框开着时别的分页换账号／登出 ----------
+test('确认框开着时别的分页换成另一个账号 → 按「登出」也不清那个账号的账本，说明后重新整理', async () => {
+  const { db, store, log, deps } = await setup();
+  const other = createStore({ db, uuid: () => fakeUuid(900) });
+  await other.init();
+  deps.dialogs.confirmDialog = async () => {
+    await other.setMetas({ session: { ...SESSION, user_id: 'u-B' } });
+    return true;
+  };
+  assert.equal(await runSignOut(deps), 'fail');
+  assert.ok(log.includes('message:账号已更换'));
+  assert.equal(log.at(-1), 'reload:1');
+  assert.equal((await db.getAll('transactions')).length, 1);
+  assert.equal((await loadSession(store)).user_id, 'u-B');
+});
+
+test('session 已经没有（别的分页登出了）→ 直接重新整理，不弹窗', async () => {
+  const { store, log, deps } = await setup();
+  await store.setMeta('session', null);
+  assert.equal(await runSignOut(deps), 'done');
+  assert.deepEqual(log, ['reload:1']);
+});
+
+test('确认框开着时别的分页登出了 → 按「登出」直接重新整理，不弹「登出失败」', async () => {
+  const { db, log, deps } = await setup();
+  const other = createStore({ db, uuid: () => fakeUuid(900) });
+  await other.init();
+  deps.dialogs.confirmDialog = async () => { await other.wipeLocal(); return true; };
+  assert.equal(await runSignOut(deps), 'done');
+  assert.ok(!ran(log, 'message:'));
+  assert.equal(log.at(-1).startsWith('reload:'), true);
+});
+
+// ---------- 2f 整体审核 S-3：判断前从资料库重读（别的分页刚记的账不能没提醒就丢掉）----------
+test('别的分页刚记了一笔（这个分页的快取还没更新）→ 仍提醒「还有 1 笔没同步」', async () => {
+  const { db, dialogs, deps } = await setup();
+  const other = createStore({ db, uuid: () => fakeUuid(900) });
+  await other.init();
+  await other.saveTransaction({ kind: 'expense', amountMinor: 100, categoryId: 'food', occurredOn: '2026-11-22', note: '' });
+  await runSignOut(deps);
+  assert.equal(dialogs.lastChoice && dialogs.lastChoice.title, '还有 1 笔没同步');
+});
+
+test('重读时发现账本已被换掉 → 说明「账号已更换」、重新整理，不清资料', async () => {
+  const { db, log, deps } = await setup({ confirms: [true] });
+  await db.write({ meta: { ledgerId: 'changed-elsewhere' } });
+  assert.equal(await runSignOut(deps), 'fail');
+  assert.ok(log.includes('message:账号已更换'));
+  assert.ok(!ran(log, 'confirm:'));
+  assert.equal((await db.getAll('transactions')).length, 1);
+});
+
+// ---------- 2f 整体审核 S-5：登出期间（最长约 7 秒）挡住整个画面 ----------
+test('确认登出 → 先挡画面「正在登出…」再停同步；成功就不放开（马上 reload）', async () => {
+  const { log, deps } = await setup({ confirms: [true] });
+  await runSignOut(deps);
+  assert.ok(log.includes(`block:${T.busyLabel}`));
+  assert.ok(log.indexOf(`block:${T.busyLabel}`) < log.indexOf('sync.stop'));
+  assert.ok(!log.includes('unblock'));
+});
+
+test('登出失败／账号已更换 → 先放开画面再说明', async () => {
+  const a = await setup({ confirms: [true] });
+  const real = a.db.write.bind(a.db);
+  a.db.write = async (c) => { if (c.clearMeta) throw new Error('disk'); return real(c); };
+  const orig = console.warn;
+  console.warn = () => {};
+  try { await runSignOut(a.deps); } finally { console.warn = orig; }
+  assert.ok(a.log.includes('unblock'));
+  assert.ok(a.log.indexOf('unblock') < a.log.indexOf('message:登出失败'));
+
+  const b = await setup();
+  const other = createStore({ db: b.db, uuid: () => fakeUuid(900) });
+  await other.init();
+  b.deps.dialogs.confirmDialog = async () => { await other.setMetas({ session: { ...SESSION, user_id: 'u-B' } }); return true; };
+  await runSignOut(b.deps);
+  assert.ok(b.log.includes('unblock'));
+  assert.ok(b.log.indexOf('unblock') < b.log.indexOf('message:账号已更换'));
+});
+
+// ---------- 2f 整体审核 S-6：「正在同步…」最多挡一段时间 ----------
+test('「先同步」一直没跑完 → 到时限放开画面、说明「还在同步」，回到选择', async () => {
+  const { log, dialogs, deps } = await setup({ unsynced: 'tx', choices: ['sync', 'cancel'], syncNow: () => new Promise(() => {}) });
+  deps.syncWaitMs = 20;
+  assert.equal(await runSignOut(deps), 'cancel');
+  assert.ok(log.includes('unblock'));
+  assert.ok(log.indexOf('unblock') < log.indexOf('message:还在同步'));
+  assert.equal(dialogs.lastMessage.message, '同步还没完成，请稍后再试。');
+  assert.equal(log.filter((l) => l.startsWith('choice:')).length, 2);
+});
+
+test('「先同步」默认最多等 25 秒', async () => {
+  assert.match(read('../js/ui/sign-out.js'), /syncWaitMs = 25_000/);
+});
+
+test('还没归属时「先同步」→ onStartSync 带 consented（用户已同意，不再弹认领提示）', async () => {
+  const { deps } = await setup({ owner: null, choices: ['sync', 'cancel'], syncNow: async () => 'ok' });
+  const args = [];
+  deps.onStartSync = async (o) => { args.push(o); return 'mine'; };
+  await runSignOut(deps);
+  assert.deepEqual(args, [{ consented: true }]);
+});
+
+// ---------- 2f 整体审核 S-4（文案用户选）：账号被删的人最常按「重新登录」，那里也要提示 ----------
+test('「要重新登录吗？」内文提示账号若已删除改按「登出」', () => {
+  assert.ok(read('../js/ui/settings.js').includes("message: '需要网络和邮箱验证码。这台设备上的账本会保留。账号若已删除，请取消后改按「登出」。'"));
+});
+
+test('离线时有没同步 → 不提供「先同步」，内文说明离线（小事）', async () => {
+  const { dialogs, deps } = await setup({ unsynced: 'tx', online: false });
+  await runSignOut(deps);
+  const o = dialogs.lastChoice;
+  assert.deepEqual(o.buttons.map((b) => b.label), ['导出 CSV', '仍要登出', '取消']);
+  assert.equal(o.message, '登出会遗失这些记录。现在离线，无法同步，也要连上网络才能再登录。');
+});
+
+test('登录已过期又离线 → 内文是过期说明＋离线那句', async () => {
+  const { dialogs, deps } = await setup({ unsynced: 'tx', online: false, syncState: 'signed-out', session: { ...SESSION, invalid: true } });
+  await runSignOut(deps);
+  assert.equal(dialogs.lastChoice.message, '登出会遗失这些记录。登录已过期，现在无法同步。账号若已删除，直接登出即可。现在离线，要连上网络才能再登录。');
+});
+
+// ---------- 2f 整体审核 S-2：用真的同步引擎——上传／拉取进行到一半按登出，旧一轮回来也写不回 ----------
+import { createSync } from '../js/sync.js';
+
+test('同步一轮进行到一半（上传或拉取卡住）按「登出」→ 清完后旧一轮回来什么都写不回（真的同步引擎）', async () => {
+  for (const phase of ['upload', 'pull']) {
+    const { db, store, deps } = await setup({ unsynced: phase === 'upload' ? 'tx' : 'none', choices: ['signout'], confirms: [true], online: false });
+    await store.setMetas({ syncErrorVersion: 'v-test', fullSyncAt: Date.now() });
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    let hit = false;
+    const remote = { id: '00000000-0000-4000-8000-000000000777', user_id: 'u-A', kind: 'expense', amount_minor: 5, category_id: 'food', occurred_on: '2026-11-23', note: '', deleted: false, updated_at: '2026-11-25T11:00:00.000Z', server_updated_at: '2026-11-25T11:00:00.000Z' };
+    const serverFetch = async (url, init = {}) => {
+      const isGet = (init.method || 'GET') === 'GET';
+      if ((phase === 'upload' && !isGet) || (phase === 'pull' && isGet && url.includes('/transactions'))) {
+        hit = true;
+        await gate;
+        if (!isGet) { const rows = JSON.parse(init.body); return new Response(JSON.stringify(rows.map((r) => ({ id: r.id, updated_at: r.updated_at }))), { status: 201 }); }
+        return new Response(JSON.stringify([remote]), { status: 200 });
+      }
+      return new Response('[]', { status: isGet ? 200 : 201 });
+    };
+    const sync = createSync({
+      store, fetchFn: serverFetch, userId: 'u-A', appVersion: 'v-test',
+      getSession: async () => ({ session: SESSION }), isOnline: () => true, locks: null,
+      win: null, doc: null, setTimer: () => 0, clearTimer: () => {},
+    });
+    const round = sync.syncNow();
+    while (!hit) await new Promise((r) => setTimeout(r, 1));
+    deps.sync = sync;
+    assert.equal(await runSignOut(deps), 'done', phase);
+    release();
+    await round;
+    assert.equal((await db.getAll('transactions')).length, 0, `${phase}：账不能被写回`);
+    assert.deepEqual(db.metaKeys(), ['ledgerId'], `${phase}：meta 只剩新的 ledgerId（游标、owner 等都没被写回）`);
+  }
 });

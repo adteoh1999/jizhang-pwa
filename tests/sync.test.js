@@ -173,3 +173,14 @@ test('ensureClaimed：ask 期间别的分页登出清掉账本、又用同一账
   assert.equal(await ensureClaimed(store, ME, { ask }), 'unclaimed');
   assert.equal(await store.getMeta('syncPromptDismissed'), undefined);
 });
+
+test('owner:null 只给 setMeta 用：applyRemote／markUploaded／markMissingForUpload 遇到 null 一律不写（2f 整体审核小事）', async () => {
+  const { db, store } = await setup({ txCount: 1 });
+  const row = { id: '00000000-0000-4000-8000-000000000999', kind: 'expense', amount_minor: 100, category_id: 'food', occurred_on: '2026-11-20', note: '', deleted: false, updated_at: '2026-11-25T10:00:00.000Z' };
+  assert.equal(await store.applyRemote('transactions', [row], { owner: null }), null);
+  assert.equal((await db.getAll('transactions')).length, 1);
+  const pending = await store.pendingRows('transactions');
+  assert.equal(await store.markUploaded('transactions', pending, [], { owner: null }), null);
+  assert.equal((await db.getAll('transactions'))[0].dirty, 1);
+  assert.equal(await store.markMissingForUpload('transactions', [], { owner: null }), null);
+});

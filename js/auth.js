@@ -254,8 +254,10 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
   try {
     return await withLock(AUTH_LOCK, async () => {
       let s;
+      let ledger; // 账本代号：写回前核对（登出等锁超时直接清了 → 不写回，2f 整体审核 I-1）
       try {
         s = await loadSession(store);
+        ledger = (await store.getMeta('ledgerId')) ?? null;
       } catch (e) {
         console.warn(`[auth] 读取登录状态失败：${errName(e)}`);
         return { retry: true };
@@ -267,7 +269,8 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
       const r = await refreshSession(fetchFn, s.refresh_token, s.email, t, { userId: s.user_id });
       if (r.ok) {
         try {
-          await saveSession(store, r.session);
+          // 等刷新的时候这台设备已登出（账本换了）→ 不写回、当作失效
+          if ((await store.setMeta('session', r.session, { ledger })) === null) return { invalid: true };
         } catch (e) {
           console.warn(`[auth] 存新登录状态失败：${errName(e)}`);
         }
@@ -279,7 +282,7 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
         const cur = await loadSession(store);
         if (!cur) return { invalid: true }; // 途中被登出清掉：不写回旧的
         if (cur.refresh_token !== s.refresh_token) return cur.invalid ? { invalid: true } : { session: cur };
-        await saveSession(store, { ...s, invalid: true });
+        await store.setMeta('session', { ...s, invalid: true }, { ledger });
       } catch (e) {
         console.warn(`[auth] 标记登录失效失败：${errName(e)}`);
       }
@@ -370,19 +373,26 @@ export function bootTarget(session) {
  * 连 session、pending、lastUserId 一起清，与全新安装相同）。
  * 顺序：先停同步 → 拿 jizhang-auth 锁（不与刷新同时进行）→ 在线且 session 还有效就通知服务器作废 token（最多 2 秒）
  * → 清本机。session 已失效或离线也照样清（删号后另一台设备只能靠登出离开）。
- * 等锁超过 waitMs（默认 5 秒）或拿锁失败 → 不用锁直接清。清成功才调 reload；失败回 false（资料不变，呼叫者显示「登出失败」）。
+ * 等锁超过 waitMs（默认 5 秒）或拿锁失败 → 不用锁直接清。清成功才调 reload、回 true；失败回 false（资料不变，呼叫者显示「登出失败」）。
+ * userId（设置页挂载时的账号）：锁里再核对一次，资料库已没有 session → 回 'gone'、已是别的账号 → 回 'switched'，都不清、不 reload。
  * 没给 fetchFn 就不通知服务器。
  */
-export async function signOut(store, reload, { fetchFn, locks, stopSync, waitMs = LOCK_WAIT_MS, isOnline = () => globalThis.navigator ? globalThis.navigator.onLine !== false : true } = {}) {
+export async function signOut(store, reload, { fetchFn, locks, stopSync, userId, waitMs = LOCK_WAIT_MS, isOnline = () => globalThis.navigator ? globalThis.navigator.onLine !== false : true } = {}) {
   if (stopSync) {
     try { stopSync(); } catch { /* 停不了也照样登出 */ }
   }
   const work = async () => {
-    if (fetchFn && isOnline()) {
-      try {
-        const s = await loadSession(store);
-        if (s && !s.invalid) await logoutServer(fetchFn, s.access_token);
-      } catch { /* 尽力而为 */ }
+    let s = null;
+    let readOk = true;
+    try { s = await loadSession(store); } catch { readOk = false; }
+    // 给了 userId：清除前（锁里）再核对一次（2f 整体审核 S-1）——别的分页已登出或换了账号，不能清掉那个账号的账本
+    if (userId !== undefined) {
+      if (!readOk) return false;
+      if (!s) return 'gone';
+      if (s.user_id !== userId) return 'switched';
+    }
+    if (fetchFn && isOnline() && s && !s.invalid) {
+      try { await logoutServer(fetchFn, s.access_token); } catch { /* 尽力而为 */ }
     }
     try {
       await store.wipeLocal();
@@ -400,7 +410,7 @@ export async function signOut(store, reload, { fetchFn, locks, stopSync, waitMs 
     console.warn(`[auth] 登出拿锁失败：${errName(e)}`);
     cleared = await work();
   }
-  if (!cleared) return false;
+  if (cleared !== true) return cleared; // false | 'gone' | 'switched'
   reload();
   return true;
 }
