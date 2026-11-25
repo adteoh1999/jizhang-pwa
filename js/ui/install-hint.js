@@ -1,8 +1,7 @@
 // 「添加到主屏幕」提示：只在 iOS Safari、尚未加到主屏幕时显示；关掉后记在 store meta。
 import { h } from './dom.js';
 import { icon } from './icons.js';
-
-const META_KEY = 'installHintDismissed';
+import { INSTALL_HINT_KEY as META_KEY } from '../store.js';
 
 export function isIosBrowserTab() {
   const ua = navigator.userAgent || '';

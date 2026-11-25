@@ -62,13 +62,15 @@ function makeAdapter(db) {
       // changes.remove = {transactions: [id…]}：再删（同步换 id 用）；最后写。同一个 transaction
       const rm = changes.remove || {};
       const cl = changes.clear || [];
+      // changes.clearMeta = true：清空整个 meta（登出、删号用），再写 changes.meta
       // changes.expect = {meta 键: 值}：同一个 transaction 里先读，不符就整个中止（MetaMismatch），什么都不写
       const exp = Object.entries(changes.expect || {});
-      const names = [...STORES.filter((s) => changes[s] || rm[s] || cl.includes(s)), ...(changes.meta || exp.length ? ['meta'] : [])];
+      const names = [...STORES.filter((s) => changes[s] || rm[s] || cl.includes(s)), ...(changes.meta || changes.clearMeta || exp.length ? ['meta'] : [])];
       if (names.length === 0) return Promise.resolve();
       return run(names, (tx, abortWith) => {
         const writeAll = () => {
           for (const s of STORES) if (cl.includes(s)) tx.objectStore(s).clear();
+          if (changes.clearMeta) tx.objectStore('meta').clear();
           for (const s of STORES) for (const id of rm[s] || []) tx.objectStore(s).delete(id);
           for (const s of STORES) for (const r of changes[s] || []) tx.objectStore(s).put(r);
           for (const [key, value] of Object.entries(changes.meta || {})) tx.objectStore('meta').put({ key, value });

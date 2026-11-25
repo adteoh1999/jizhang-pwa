@@ -10,6 +10,9 @@ import { shouldTakeRemote } from './merge.js';
 import { UPLOAD_COLUMNS } from './rest.js';
 
 const TABLES = ['transactions', 'categories'];
+// 设备设定（不属于任何账号）：清空本机账本时保留
+export const INSTALL_HINT_KEY = 'installHintDismissed';
+const DEVICE_META = [INSTALL_HINT_KEY];
 const withoutSyncError = (r) => { const { sync_error: _drop, ...rest } = r; return rest; };
 
 export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) {
@@ -363,6 +366,24 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
             syncPromptDismissed: null,
           },
         });
+        ledgerId = nextLedger;
+      });
+    },
+
+    /**
+     * 清空这台设备的账本（2f：登出、删号共用）。同一次写入：清空账、分类与全部 meta，重建默认分类
+     * （与全新安装相同、不标待上传），换新 ledgerId（别的分页的旧写入会被挡）。只保留设备设定（安装提示）。
+     * 不碰 localStorage（隐藏金额由呼叫的人清）。失败就 reject，资料库与快取都不变。
+     */
+    wipeLocal() {
+      return enqueue(async () => {
+        const nextLedger = uuid();
+        const keep = {};
+        for (const k of DEVICE_META) {
+          const v = await db.getMeta(k);
+          if (v !== undefined && v !== null) keep[k] = v;
+        }
+        await commit({ clear: TABLES, clearMeta: true, categories: defaultCategories(), meta: { ...keep, ledgerId: nextLedger } });
         ledgerId = nextLedger;
       });
     },

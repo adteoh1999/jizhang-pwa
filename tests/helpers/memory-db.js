@@ -15,6 +15,7 @@ export function createMemoryDb() {
       }
       calls.push(Object.keys(changes).filter((k) => k !== 'expect'));
       const rm = changes.remove || {};
+      if (changes.clearMeta) meta.clear();
       for (const s of changes.clear || []) stores[s].clear();
       for (const s of ['transactions', 'categories']) {
         for (const id of rm[s] || []) stores[s].delete(id);
@@ -22,6 +23,7 @@ export function createMemoryDb() {
       }
       for (const [k, v] of Object.entries(changes.meta || {})) meta.set(k, structuredClone(v));
     },
+    metaKeys() { return [...meta.keys()].sort(); },
     async getMeta(key) { return meta.has(key) ? structuredClone(meta.get(key)) : undefined; },
     async clear() { stores.transactions.clear(); stores.categories.clear(); meta.clear(); },
     close() {},
