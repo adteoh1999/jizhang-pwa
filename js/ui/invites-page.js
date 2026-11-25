@@ -487,6 +487,7 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
   const rExpiry = infoRow(T.expiryRow);
   const rNote = infoRow(T.noteRow);
   rNote.detail.classList.add('invite-detail-note');
+  rNote.el.classList.add('has-long-detail'); // 长备注不把「备注」挤成直排
   const toggleLabel = h('span', { class: 'inset-row-label' });
   const toggleBtn = h('button', { type: 'button', class: 'inset-row is-action', on: { click: () => onToggle() } }, toggleLabel);
 

@@ -228,7 +228,7 @@ test('登录已过期 → 不提供「先同步」，内文说明、提示账号
   await runSignOut(deps);
   const o = dialogs.lastChoice;
   assert.deepEqual(o.buttons.map((b) => b.label), ['导出 CSV', '仍要登出', '取消']);
-  assert.equal(o.message, '登出会遗失这些记录。登录已过期，现在无法同步。账号若已删除，直接登出即可。');
+  assert.equal(o.message, '登出会遗失这些记录。\n登录已过期，现在无法同步。\n账号若已删除，可直接登出。');
 });
 
 test('只剩「无法同步」的记录 → 不提供「先同步」，内文说明上传不了', async () => {
@@ -237,7 +237,7 @@ test('只剩「无法同步」的记录 → 不提供「先同步」，内文说
   const o = dialogs.lastChoice;
   assert.equal(o.title, '还有 1 笔没同步');
   assert.deepEqual(o.buttons.map((b) => b.label), ['导出 CSV', '仍要登出', '取消']);
-  assert.equal(o.message, '登出会遗失这些记录。这些记录上传不了，可以先导出 CSV 保存。');
+  assert.equal(o.message, '登出会遗失这些记录。\n这些记录上传不了，可以先导出 CSV 保存。');
 });
 
 test('登录已过期又离线 → 「仍要登出」不发请求、照样清掉', async () => {
@@ -252,7 +252,7 @@ test('账本属于另一个账号 → 不提供「先同步」，内文说明无
   await runSignOut(deps);
   const o = dialogs.lastChoice;
   assert.deepEqual(o.buttons.map((b) => b.label), ['导出 CSV', '仍要登出', '取消']);
-  assert.equal(o.message, '登出会遗失这些记录。这本账属于另一个账号，无法同步到这个账号。');
+  assert.equal(o.message, '登出会遗失这些记录。\n这本账属于另一个账号，无法同步到这个账号。');
 });
 
 test('别的分页已换成另一个账号 → 说明「账号已更换」、重新整理，不清资料', async () => {
@@ -411,13 +411,13 @@ test('离线时有没同步 → 不提供「先同步」，内文说明离线（
   await runSignOut(deps);
   const o = dialogs.lastChoice;
   assert.deepEqual(o.buttons.map((b) => b.label), ['导出 CSV', '仍要登出', '取消']);
-  assert.equal(o.message, '登出会遗失这些记录。现在离线，无法同步，也要连上网络才能再登录。');
+  assert.equal(o.message, '登出会遗失这些记录。\n现在离线，无法同步，也要连上网络才能再登录。');
 });
 
 test('登录已过期又离线 → 内文是过期说明＋离线那句', async () => {
   const { dialogs, deps } = await setup({ unsynced: 'tx', online: false, syncState: 'signed-out', session: { ...SESSION, invalid: true } });
   await runSignOut(deps);
-  assert.equal(dialogs.lastChoice.message, '登出会遗失这些记录。登录已过期，现在无法同步。账号若已删除，直接登出即可。现在离线，要连上网络才能再登录。');
+  assert.equal(dialogs.lastChoice.message, '登出会遗失这些记录。\n登录已过期，现在无法同步。\n账号若已删除，可直接登出。\n现在离线，要连上网络才能再登录。');
 });
 
 // ---------- 2f 整体审核 S-2：用真的同步引擎——上传／拉取进行到一半按登出，旧一轮回来也写不回 ----------

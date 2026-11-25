@@ -21,7 +21,7 @@ export const SIGNOUT_TEXT = Object.freeze({
   exportLabel: '导出 CSV',
   forceLabel: '仍要登出',
   cancelLabel: '取消',
-  reasonSignedOut: '登录已过期，现在无法同步。账号若已删除，直接登出即可。',
+  reasonSignedOut: '登录已过期，现在无法同步。\n账号若已删除，可直接登出。', // 一句一行，窄屏大字级不落单（2f 截图⑥）
   reasonErrors: '这些记录上传不了，可以先导出 CSV 保存。',
   reasonOther: '这本账属于另一个账号，无法同步到这个账号。',
   reasonNoSync: '现在无法同步，请重新整理后再试。',
@@ -58,6 +58,8 @@ function noSyncReason({ sync, owner, userId, store, online }) {
   if (!online) return T.reasonOffline; // 离线：按了也同步不了，直接说明（小事）
   return null;
 }
+
+const withBreak = (text) => (text ? `\n${text}` : ''); // 对话框内文是 pre-line，\n 会换行
 
 let running = false;
 
@@ -116,8 +118,8 @@ async function flow({
     const reason = noSyncReason({ sync, owner, userId, store, online: !offlineNote });
     const answer = await dialogs.choiceDialog({
       title: unsyncedTitle(info.txCount),
-      // 离线那句已含「要连上网络才能再登录」，不再重复
-      message: T.unsyncedMessage + (reason || '') + (reason === T.reasonOffline ? '' : offlineNote),
+      // 原因另起一行（2f 截图⑥：接在同一段句尾会落单）；离线那句已含「要连上网络才能再登录」，不再重复
+      message: T.unsyncedMessage + withBreak(reason) + withBreak(reason === T.reasonOffline ? '' : offlineNote),
       // 直排四个（用户决定）；焦点放「取消」（登出会丢资料，Enter 不该往下走）
       buttons: [
         ...(reason ? [] : [{ label: T.syncLabel, value: 'sync' }]),

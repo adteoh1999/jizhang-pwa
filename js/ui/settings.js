@@ -323,7 +323,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   const accountSection = () => {
     const rows = accountRows(session).map((r) => {
       if (r.kind === 'email') {
-        return h('div', { class: 'inset-row' },
+        return h('div', { class: 'inset-row has-long-detail' },
           h('span', { class: 'inset-row-label' }, r.label),
           h('span', { class: 'inset-row-detail account-email' }, r.detail));
       }
