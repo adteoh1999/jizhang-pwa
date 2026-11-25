@@ -33,6 +33,8 @@ export const SIGNOUT_TEXT = Object.freeze({
   syncFailMessage: '暂时连不上服务器，请稍后再试。',
   syncSkipMessage: '另一个分页正在同步，请稍后再试。',
   syncHaltMessage: '现在无法同步，请稍后再试。',
+  claimFailTitle: '没能开始同步',
+  claimFailMessage: '请稍后再试一次。',
   syncLateTitle: '还在同步',
   syncLateMessage: '同步还没完成，请稍后再试。',
   switchedTitle: '账号已更换',
@@ -174,7 +176,11 @@ async function syncFirst({ sync, owner, onStartSync, isOnline, dialogs, block, s
   if (!owner) {
     let st;
     try { st = await onStartSync({ consented: true }); } catch { st = 'error'; } // 按「先同步」＝已同意，不再弹认领提示
-    if (st !== 'mine') return; // 关掉认领提示、或认领失败（认领自己会提示）
+    if (st === 'error') { // 认领失败：这里说明完才回到选择（复核 3）
+      await dialogs.messageDialog({ title: T.claimFailTitle, message: T.claimFailMessage });
+      return;
+    }
+    if (st !== 'mine') return; // 账本已属于别的账号等：回到选择，内文会说明
   }
   const unblock = block(T.syncingLabel);
   let res;

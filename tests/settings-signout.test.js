@@ -216,7 +216,7 @@ test('账本还没归属时「先同步」走认领（onStartSync），认领成
   assert.ok(log.indexOf('onStartSync') < log.indexOf(`block:${T.syncingLabel}`), '认领完才挡画面');
 });
 
-test('认领没成功（用户在认领提示按了关掉）→ 不 syncNow，回到选择', async () => {
+test('认领没成功（没变成这个账号的）→ 不 syncNow，回到选择', async () => {
   const { log, deps } = await setup({ owner: null, choices: ['sync', 'cancel'], onStartSync: async () => 'unclaimed' });
   await runSignOut(deps);
   assert.ok(!log.includes('syncNow'));
@@ -455,4 +455,19 @@ test('同步一轮进行到一半（上传或拉取卡住）按「登出」→ �
     assert.equal((await db.getAll('transactions')).length, 0, `${phase}：账不能被写回`);
     assert.deepEqual(db.metaKeys(), ['ledgerId'], `${phase}：meta 只剩新的 ledgerId（游标、owner 等都没被写回）`);
   }
+});
+
+// ---------- 2f 复核建议 3：认领失败由登出流程自己说明（不叠两个对话框） ----------
+test('「先同步」认领失败 → 先说明「没能开始同步」，再回到选择', async () => {
+  const { log, deps } = await setup({ owner: null, choices: ['sync', 'cancel'], onStartSync: async () => 'error' });
+  await runSignOut(deps);
+  assert.ok(log.includes('message:没能开始同步'));
+  assert.ok(!log.includes('syncNow'));
+  const msgAt = log.indexOf('message:没能开始同步');
+  assert.equal(log.filter((l, i) => l.startsWith('choice:') && i > msgAt).length, 1, '说明之后才再出现选择');
+});
+
+test('app.js：consented 时认领失败不另外弹「没能开始同步」（由登出流程说明）', () => {
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /userStarted = fromUser && !consented;/);
 });

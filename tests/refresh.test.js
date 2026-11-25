@@ -393,3 +393,71 @@ test('刷新卡住 → 登出等锁超时直接清 → 刷新回来也不写回 
     assert.equal(r.session, undefined, `${where}：刷新不能回一个已被登出的 session`);
   }
 });
+
+// ---------- 2f 复核建议 1、2 ----------
+test('读 session 与读账本代号之间刚好被登出清掉 → 刷新回来也不写回（先读代号再读 session）', async () => {
+  const db = createMemoryDb();
+  const store = createStore({ db });
+  await store.init();
+  await store.setMetas({ session: OLD, owner_user_id: 'u-1' });
+  const other = createStore({ db });
+  await other.init();
+  const real = store.getMeta;
+  let wiped = false;
+  store.getMeta = async (k) => {
+    const v = await real(k);
+    if (k === 'session' && !wiped) { wiped = true; await other.wipeLocal(); }
+    return v;
+  };
+  const r = await getValidSession(store, fakeFetch(() => jsonRes(200, NEW_BODY)), { now: () => NOW, locks: null });
+  store.getMeta = real;
+  assert.equal(wiped, true);
+  assert.equal(await loadSession(store), null, '不能写回已清空的账本');
+  assert.equal(r.session, undefined);
+});
+
+test('刷新卡住时别的分页换成另一个账号（resetForAccount）→ 不写回、新账号的 session 不被盖掉', async () => {
+  const db = createMemoryDb();
+  const store = createStore({ db });
+  await store.init();
+  await store.setMetas({ session: OLD, owner_user_id: 'u-1' });
+  const other = createStore({ db });
+  await other.init();
+  let release;
+  const gate = new Promise((res) => { release = res; });
+  const f = fakeFetch(async () => { await gate; return jsonRes(200, NEW_BODY); });
+  const p = getValidSession(store, f, { now: () => NOW, locks: null });
+  while (f.calls.length === 0) await new Promise((res) => setTimeout(res, 1));
+  const B = { ...OLD, access_token: 'b-access', refresh_token: 'b-refresh', user_id: 'u-2', email: 'b@x.com' };
+  await other.resetForAccount('u-2', { meta: { session: B } });
+  release();
+  const r = await p;
+  assert.equal((await loadSession(store)).user_id, 'u-2');
+  assert.equal((await loadSession(store)).access_token, 'b-access');
+  assert.equal(r.session, undefined);
+});
+
+test('刷新回「失效」、标失效前刚好被登出清掉 → 不把失效的 session 写回已清空的账本', async () => {
+  const db = createMemoryDb();
+  const store = createStore({ db });
+  await store.init();
+  await store.setMetas({ session: OLD, owner_user_id: 'u-1' });
+  const other = createStore({ db });
+  await other.init();
+  const real = store.getMeta;
+  let reads = 0;
+  store.getMeta = async (k) => {
+    const v = await real(k);
+    if (k === 'session' && ++reads === 2) await other.wipeLocal(); // 第二次是标失效前的重读
+    return v;
+  };
+  const orig = console.warn;
+  console.warn = () => {};
+  let r;
+  try {
+    r = await getValidSession(store, fakeFetch(() => jsonRes(400, { error_code: 'session_expired' })), { now: () => NOW, locks: null });
+  } finally { console.warn = orig; store.getMeta = real; }
+  assert.equal(reads, 2);
+  assert.deepEqual(r, { invalid: true });
+  assert.equal(await db.getMeta('session'), undefined);
+});

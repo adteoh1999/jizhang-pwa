@@ -105,7 +105,7 @@ function mountShell(root, store, session) {
   const runClaim = createClaimRunner({
     // consented：用户已在别处同意（登出时按「先同步」），认领提示直接当成「开始」、不再问（用户 2026-11-25 决定）
     ensure: (fromUser, { consented = false } = {}) => {
-      userStarted = fromUser;
+      userStarted = fromUser && !consented; // consented 的失败由登出流程自己说明（复核 3：不叠两个对话框）
       return ensureClaimed(store, session, {
         ask: consented ? async () => 'start' : async (n) => { const a = await askSyncStart(store, n); userStarted = userStarted || a === 'start'; return a; },
         fromUser,

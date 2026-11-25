@@ -256,8 +256,9 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
       let s;
       let ledger; // 账本代号：写回前核对（登出等锁超时直接清了 → 不写回，2f 整体审核 I-1）
       try {
-        s = await loadSession(store);
+        // 先读代号再读 session（复核 1）：清除落在两次读之间 → 读到空 session（回 invalid）；落在之后 → 写回被挡
         ledger = (await store.getMeta('ledgerId')) ?? null;
+        s = await loadSession(store);
       } catch (e) {
         console.warn(`[auth] 读取登录状态失败：${errName(e)}`);
         return { retry: true };
