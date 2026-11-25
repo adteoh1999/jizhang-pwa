@@ -8,7 +8,7 @@ import { openSheet } from './sheet.js';
 import { messageDialog, choiceDialog, confirmDialog, busyOverlay, trapFocus } from './dialogs.js';
 import { optionSegmented, confirmDiscard } from './components.js';
 import { announce } from './announce.js';
-import { callInvites } from '../admin-api.js';
+import { callInvites, DENIED_ERROR } from '../admin-api.js';
 import { getValidSession } from '../auth.js';
 import { OWNER_FLAG_KEY } from '../owner-check.js';
 import {
@@ -23,6 +23,9 @@ export const INVITE_TEXT = Object.freeze({
   offline: '需要网络才能管理邀请码',
   retry: '暂时连不上，请稍后再试',
   timeout: '没收到服务器的回应，请稍后再试',
+  createTimeout: '没收到服务器的回应，邀请码可能已经生成。列表已重新载入，请先看一下再决定要不要再生成。',
+  noReplyTitle: '没收到回应',
+  generating: '正在生成…',
   denied: '没有权限',
   relogin: '登录已过期，请先在设置页「同步」那一列重新登录。',
   switched: '账号已更换，请重新整理。',
@@ -106,7 +109,7 @@ export async function ownerCall(deps, action, args = {}) {
     if (r.ok) return r;
     if (r.status === 401) continue;
     if (r.status === 0) return r.timeout ? fail('timeout', T.timeout) : fail('offline', T.offline);
-    if (r.status === 403 && r.error === T.denied) {
+    if (r.status === 403 && r.error === DENIED_ERROR) {
       try {
         await store.setMeta(OWNER_FLAG_KEY, { userId, value: false, checkedAt: now() });
       } catch (e) {
@@ -133,9 +136,9 @@ const CODE_RE = /^[A-Z0-9]{8}$/;
  */
 export async function createInvite(deps, { maxUses, days, note }) {
   const okDays = VALIDITY_OPTIONS.some((o) => o.days === days) ? days : DEFAULT_DAYS;
-  const r = await ownerCall(deps, 'create', {
-    max_uses: clampUses(maxUses), days: okDays, note: String(note ?? '').trim().slice(0, NOTE_MAX),
-  });
+  // 按字符截（服务器也按字符数）：不能把表情符号切成半个（2f-3 审核 9）
+  const cleanNote = [...String(note ?? '').trim()].slice(0, NOTE_MAX).join('').trim();
+  const r = await ownerCall(deps, 'create', { max_uses: clampUses(maxUses), days: okDays, note: cleanNote });
   if (!r.ok) return r;
   return typeof r.data.code === 'string' && CODE_RE.test(r.data.code) ? { ok: true, code: r.data.code } : fail('error', T.generic);
 }
@@ -153,6 +156,43 @@ export async function copyInvite(code, clipboard = globalThis.navigator && globa
 
 export const canShare = (nav) => !!nav && typeof nav.share === 'function';
 
+/**
+ * 新增之后要做什么（纯函数，2f-3 审核 3）：成功 → 关表单、显示码；超时（服务器可能已经生成）→ 关表单、重载列表、说明；
+ * 没有权限 → 关表单、重载（入口另外藏）；其他 → 表单留着、说明原因。
+ */
+export function createFollowUp(r) {
+  if (r.ok) return { close: true, reload: false, showCode: true, message: null };
+  if (r.reason === 'timeout') return { close: true, reload: true, showCode: false, message: T.createTimeout };
+  if (r.reason === 'denied') return { close: true, reload: true, showCode: false, message: r.message };
+  return { close: false, reload: false, showCode: false, message: r.message };
+}
+
+/**
+ * 防重入、保证复位的执行器（2f-3 审核 6）：执行中再叫回 null；fn 丢错也会叫 onEnd，回通用失败。
+ */
+export function createGuardedRunner({ onStart = () => {}, onEnd = () => {} } = {}) {
+  let busy = false;
+  return async (fn) => {
+    if (busy) return null;
+    busy = true;
+    onStart();
+    try {
+      return await fn();
+    } catch (e) {
+      console.warn(`[invites] 出错：${e && e.name ? e.name : '未知'}`);
+      return fail('error', T.generic);
+    } finally {
+      busy = false;
+      onEnd();
+    }
+  };
+}
+
+/** 候选里第一个还在画面上、自己和祖先都没被 hidden 的元素（找焦点的下一站，2f-3 审核 7）。 */
+export function firstVisible(cands) {
+  return cands.find((el) => el && el.isConnected && !el.closest('[hidden]')) || null;
+}
+
 /** iPhone 分享面板（必须在点击当下叫）：'done' | 'cancel'（使用者关掉，不算错）| 'fail'。 */
 export async function shareInvite(code, nav = globalThis.navigator) {
   if (!canShare(nav)) return 'fail';
@@ -160,7 +200,8 @@ export async function shareInvite(code, nav = globalThis.navigator) {
     await nav.share({ text: shareText(code) });
     return 'done';
   } catch (e) {
-    return e && e.name === 'AbortError' ? 'cancel' : 'fail';
+    // AbortError：使用者关掉；InvalidStateError：上一个分享面板还开着（连按）。都不算错（2f-3 审核 8）
+    return e && (e.name === 'AbortError' || e.name === 'InvalidStateError') ? 'cancel' : 'fail';
   }
 }
 
@@ -189,6 +230,13 @@ export function useRowView(u) {
 
 export const activeActionLabel = (inv) => (inv.active ? T.disable : T.enable);
 
+/** 停用／启用，成功就通知列表重载——不管明细页关了没（2f-3 审核 2：回应没到就按返回，列表也要更新）。 */
+export async function toggleAndNotify(deps, inv, { onChanged }) {
+  const r = await toggleInviteActive(deps, inv);
+  if (r.ok) onChanged();
+  return r;
+}
+
 /**
  * 停用／重新启用：改完再拉一次清单，拿服务器算的状态（启用后可能是已过期、已用完）；
  * 拉不到就用本地推算。回 {ok:true, invite} 或失败。
@@ -207,10 +255,13 @@ let removing = false;
 /**
  * 移除用户：两次确认（第二次输入「删除」）→ 挡住画面 → remove_user {code, use_id} → 放开 → 失败才说明。
  * 回 'done' | 'cancel' | 'fail'。不能移除的列（已删除、站主、注册未完成）直接回 'cancel'。正在跑时再叫回 'cancel'。
- * 呼叫者在 'cancel' 以外都要重新载入明细（以服务器为准，S4）。
+ * 'cancel' 以外：放开画面后先 await onSettled()（重新载入明细，以服务器为准，S4），再弹失败或超时说明
+ *（2f-3 审核 4：说明里「列表已重新载入」要是真的）。onSettled 丢错只记下，照样说明。
  * opts.dialogs、opts.block（挡画面，回放开的函数）测试可注入。
  */
-export async function runRemoveUser(deps, { code, use, dialogs = { choiceDialog, confirmDialog, messageDialog }, block = () => busyOverlay(T.removing) }) {
+export async function runRemoveUser(deps, {
+  code, use, dialogs = { choiceDialog, confirmDialog, messageDialog }, block = () => busyOverlay(T.removing), onSettled = async () => {},
+}) {
   const view = useRowView(use);
   if (!view.removable || removing) return 'cancel';
   removing = true;
@@ -237,6 +288,11 @@ export async function runRemoveUser(deps, { code, use, dialogs = { choiceDialog,
     } finally {
       unblock();
     }
+    try {
+      await onSettled();
+    } catch (e) {
+      console.warn(`[invites] 重新载入明细出错：${e && e.name ? e.name : '未知'}`);
+    }
     if (r.ok) return 'done';
     if (r.reason === 'timeout') await dialogs.messageDialog({ title: T.removeTimeoutTitle, message: T.removeTimeout });
     else await dialogs.messageDialog({ title: T.removeFailTitle, message: r.message });
@@ -256,10 +312,25 @@ const codeLabel = (code, cls) => h('span', { class: cls },
   h('span', { class: 'sr-only' }, `邀请码 ${spokenCode(code)}`));
 
 /**
- * openInvitesPage(store, { userId, fetchFn, onOwnerChanged? }) → { close }
- * onOwnerChanged()：服务器说「没有权限」时叫（设置页把入口藏起来）。
+ * 有焦点的东西刚被藏起来或换掉（had：改动前焦点在 container 里）：焦点还在看得见的地方就不动，
+ * 否则放到第一个看得见的后备（VoiceOver 才不会掉回页首，2f-3 审核 7）。
  */
-export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(url, init), onOwnerChanged = () => {} } = {}) {
+function keepFocus(container, had, fallbacks) {
+  if (!had) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && container.contains(a) && firstVisible([a])) return;
+  const t = firstVisible(fallbacks);
+  if (t) t.focus({ preventScroll: true });
+}
+
+/**
+ * openInvitesPage(store, { userId, fetchFn, onOwnerChanged?, restoreFocus? }) → { close }
+ * onOwnerChanged()：服务器说「没有权限」时叫（设置页把入口藏起来）。
+ * restoreFocus()：关闭时开启者（设置页那一列）已被藏起来，改由它放焦点。
+ */
+export function openInvitesPage(store, {
+  userId, fetchFn = (url, init) => fetch(url, init), onOwnerChanged = () => {}, restoreFocus = () => {},
+} = {}) {
   const opener = document.activeElement;
   const uid = `invpage-${++seq}`;
   const deps = { store, fetchFn, userId };
@@ -273,7 +344,7 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
     backBtn, h('h2', { class: 'nav-page-title', id: `${uid}-title` }, T.title), h('span', { 'aria-hidden': 'true' }));
 
   // 状态（载入中／离线／没有权限…）：role=status，文字变了读屏会念
-  const statusText = h('p', { class: 'invites-status-text' });
+  const statusText = h('p', { class: 'invites-status-text', tabindex: '-1' }); // 重试按钮被藏起来时焦点的下一站
   const statusBtn = h('button', { type: 'button', class: 'invites-status-button pressable', hidden: true });
   const status = h('div', { class: 'invites-status', role: 'status' }, statusText, statusBtn);
 
@@ -314,20 +385,27 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
   }
 
   function renderList(invites) {
-    const hadFocus = list.contains(document.activeElement);
+    const a = document.activeElement;
+    const hadFocus = list.contains(a);
+    const code = hadFocus && a.dataset ? a.dataset.code : undefined; // 重画后放回同一个码那一列（审核 7）
     list.replaceChildren(h('li', { class: 'cat-row cat-row-add' }, addMain), ...invites.map(rowOf));
     list.hidden = false;
     footer.hidden = false;
     if (invites.length) status.hidden = true;
     else showStatus(T.empty);
-    if (hadFocus && !list.contains(document.activeElement)) addMain.focus({ preventScroll: true });
+    if (code) focusRow(code);
+    else if (hadFocus && !list.contains(document.activeElement)) addMain.focus({ preventScroll: true });
   }
 
   async function reload() {
     if (closed) return;
     if (loading) { pendingReload = true; return; }
     loading = true;
-    if (list.hidden) showStatus(T.loading);
+    if (list.hidden) {
+      const had = page.contains(document.activeElement); // 例如刚按「重试」：按钮会被藏起来
+      showStatus(T.loading);
+      keepFocus(page, had, [statusBtn, statusText, backBtn]);
+    }
     let r;
     try {
       r = await loadInvites(deps);
@@ -337,12 +415,14 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
     if (closed) return;
     if (pendingReload) { pendingReload = false; reload(); return; }
     if (r.ok) { renderList(r.invites); return; }
+    const had = page.contains(document.activeElement);
     list.hidden = true;
     footer.hidden = true;
     if (r.reason === 'denied') onOwnerChanged();
     if (r.reason === 'offline' || r.reason === 'timeout' || r.reason === 'error') showStatus(r.message, { label: T.retryButton, onClick: () => reload() });
     else if (r.reason === 'switched') showStatus(r.message, { label: T.reloadButton, onClick: () => location.reload() });
     else showStatus(r.message);
+    keepFocus(page, had, [statusBtn, statusText, backBtn]);
   }
 
   function openNewInvite() {
@@ -361,7 +441,9 @@ export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(
       const remove = () => page.remove();
       page.addEventListener('transitionend', (e) => { if (e.target === page) remove(); });
       setTimeout(remove, 450); // 后备
-      if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus({ preventScroll: true });
+      // 设置页那一列可能已被藏起来（服务器说没有权限）：focus 没作用，改用后备
+      if (opener && typeof opener.focus === 'function' && firstVisible([opener])) opener.focus({ preventScroll: true });
+      else restoreFocus();
     },
   });
   function close() { handle.close(); }
@@ -417,7 +499,7 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
     toggleBtn.setAttribute('aria-disabled', 'true');
     let r;
     try {
-      r = await toggleInviteActive(deps, inv);
+      r = await toggleAndNotify(deps, inv, { onChanged }); // 成功就通知列表，就算这页已经关了（审核 2）
     } finally {
       toggling = false;
       toggleBtn.removeAttribute('aria-disabled');
@@ -427,7 +509,6 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
       inv = r.invite;
       renderInfo();
       announce(statusLabel(inv.status));
-      onChanged();
       return;
     }
     if (r.reason === 'denied') onOwnerChanged();
@@ -435,7 +516,7 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
   }
 
   // ---------- 用这个码注册的人 ----------
-  const usersStatus = h('p', { class: 'invites-status-text invite-users-status', role: 'status' });
+  const usersStatus = h('p', { class: 'invites-status-text invite-users-status', role: 'status', tabindex: '-1' });
   const usersRetry = h('button', { type: 'button', class: 'invites-status-button pressable', hidden: true, on: { click: () => loadUsers() } }, T.retryButton);
   const usersBox = h('div', { class: 'invites-status invite-users-box' }, usersStatus, usersRetry);
   const usersList = h('ul', { class: 'inset-group invite-users', role: 'list', 'aria-labelledby': `${uid}-users`, hidden: true });
@@ -459,7 +540,13 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
   async function loadUsers() {
     if (usersLoading || closed) return;
     usersLoading = true;
-    if (usersList.hidden) { usersStatus.textContent = T.loading; usersBox.hidden = false; usersRetry.hidden = true; }
+    if (usersList.hidden) {
+      const had = page.contains(document.activeElement); // 刚按「重试」：按钮会被藏起来
+      usersStatus.textContent = T.loading;
+      usersBox.hidden = false;
+      usersRetry.hidden = true;
+      keepFocus(page, had, [usersRetry, usersStatus, toggleBtn, backBtn]);
+    }
     let r;
     try {
       r = await loadUses(deps, inv.code);
@@ -468,12 +555,14 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
     }
     if (closed) return;
     if (!r.ok) {
+      const had = page.contains(document.activeElement);
       if (r.reason === 'denied') onOwnerChanged();
       usersList.hidden = true;
       usersFooter.hidden = true;
       usersStatus.textContent = r.message;
       usersBox.hidden = false;
       usersRetry.hidden = !(r.reason === 'offline' || r.reason === 'timeout' || r.reason === 'error');
+      keepFocus(page, had, [usersRetry, usersStatus, toggleBtn, backBtn]);
       return;
     }
     const hadFocus = usersList.contains(document.activeElement) ? document.activeElement.closest('[data-use]') : null;
@@ -491,11 +580,9 @@ function openInviteDetail(deps, invite, { onChanged, onOwnerChanged, restoreFocu
   }
 
   async function onRemove(u) {
-    const r = await runRemoveUser(deps, { code: inv.code, use: u });
-    if (r === 'cancel' || closed) return;
-    if (r === 'done') announce(T.removed);
-    onChanged();
-    await loadUsers();
+    // 先重新载入明细、再弹失败说明（审核 4）；列表页也跟着重载
+    const r = await runRemoveUser(deps, { code: inv.code, use: u, onSettled: async () => { onChanged(); await loadUsers(); } });
+    if (r === 'done' && !closed) announce(T.removed);
   }
 
   const body = h('div', { class: 'nav-page-body' },
@@ -535,6 +622,19 @@ function openNewInviteSheet(deps, { onCreated, onDenied }) {
   let days = DEFAULT_DAYS;
   let saving = false;
   let confirming = false;
+  // 生成中：按钮用 aria-disabled＋「正在生成…」（不用 disabled：Safari 会丢焦点）；出意外也一定复位（审核 6）
+  const run = createGuardedRunner({
+    onStart: () => {
+      saving = true;
+      sheet.rightButton.setAttribute('aria-disabled', 'true');
+      sheet.rightButton.textContent = T.generating;
+    },
+    onEnd: () => {
+      saving = false;
+      sheet.rightButton.removeAttribute('aria-disabled');
+      sheet.rightButton.textContent = T.generate;
+    },
+  });
 
   // ---------- 次数：数值放在按钮中间（HIG：步进器影响的值要一眼看得到）----------
   const value = h('span', { class: 'stepper-value', id: `${uid}-uses`, 'aria-live': 'polite' }, String(uses));
@@ -591,19 +691,14 @@ function openNewInviteSheet(deps, { onCreated, onDenied }) {
   }
 
   async function generate() {
-    if (saving || confirming) return;
-    saving = true;
-    sheet.rightButton.disabled = true;
-    const r = await createInvite(deps, { maxUses: uses, days, note: note.value });
-    saving = false;
-    sheet.rightButton.disabled = false;
-    if (!r.ok) {
-      if (r.reason === 'denied') { sheet.close(); onDenied(); }
-      await messageDialog({ title: T.createFailTitle, message: r.message });
-      return;
-    }
-    sheet.close();
-    openResultSheet(r.code, { onClosed: onCreated });
+    if (confirming) return;
+    const r = await run(() => createInvite(deps, { maxUses: uses, days, note: note.value }));
+    if (r === null) return; // 已经在生成
+    const next = createFollowUp(r); // 超时：服务器可能已经生成 → 关表单、重载列表再说明（审核 3）
+    if (next.close) sheet.close();
+    if (r.ok) { openResultSheet(r.code, { onClosed: onCreated }); return; }
+    if (next.reload) (r.reason === 'denied' ? onDenied : onCreated)();
+    await messageDialog({ title: r.reason === 'timeout' ? T.noReplyTitle : T.createFailTitle, message: next.message });
   }
 
   const sheet = openSheet({
@@ -618,9 +713,10 @@ function openNewInviteSheet(deps, { onCreated, onDenied }) {
 
 /** 生成结果：大字码＋复制＋分享（有分享面板才显示）。关闭后列表重新载入。 */
 function openResultSheet(code, { onClosed }) {
-  const big = h('p', { class: 'invite-big-code' },
-    h('span', { 'aria-hidden': 'true' }, formatCode(code)),
-    h('span', { class: 'sr-only' }, `邀请码 ${spokenCode(code)}`));
+  // 长按只选得到看得见的码（读屏那段不可选取，审核 1）
+  const bigText = h('span', { class: 'invite-big-code-text', 'aria-hidden': 'true' }, formatCode(code));
+  const big = h('p', { class: 'invite-big-code' }, bigText, h('span', { class: 'sr-only' }, `邀请码 ${spokenCode(code)}`));
+  let sharing = false;
   let copyTimer = null;
   const copyBtn = h('button', { type: 'button', class: 'invite-action pressable', on: { click: () => onCopy() } }, T.copy);
   const shareBtn = canShare(globalThis.navigator)
@@ -641,7 +737,7 @@ function openResultSheet(code, { onClosed }) {
     const sel = globalThis.getSelection && globalThis.getSelection();
     if (sel) {
       const range = document.createRange();
-      range.selectNodeContents(big.firstChild);
+      range.selectNodeContents(bigText);
       sel.removeAllRanges();
       sel.addRange(range);
     }
@@ -649,8 +745,12 @@ function openResultSheet(code, { onClosed }) {
     announce(T.copyFail);
   }
   function onShare() {
+    if (sharing) return; // 分享面板还开着（审核 8）
+    sharing = true;
     // shareInvite 会在这次点击里同步叫 navigator.share（iOS 要在手势当下）
-    shareInvite(code).then((r) => { if (r === 'fail') messageDialog({ title: T.share, message: T.shareFail }); });
+    shareInvite(code)
+      .then((r) => { if (r === 'fail') messageDialog({ title: T.share, message: T.shareFail }); })
+      .finally(() => { sharing = false; });
   }
 
   const content = h('div', { class: 'entry invite-result' },

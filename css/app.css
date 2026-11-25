@@ -1913,8 +1913,10 @@ button.inset-row:active { background: var(--press-bg); }
 .invite-big-code {
   margin: 12px 0 0; color: var(--label);
   font: 700 2.2rem/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em;
-  -webkit-user-select: all; user-select: all; /* 复制失败时可以长按整段选取 */
 }
+/* 复制失败时可以长按选取：只有看得见的码可选，读屏用的 .sr-only 不可选（不然会一起被复制） */
+.invite-big-code-text { -webkit-user-select: all; user-select: all; }
+.invite-big-code .sr-only { -webkit-user-select: none; user-select: none; }
 .invite-result-hint { margin: 0; padding: 0 8px; font: var(--font-subhead); color: var(--secondary-label); }
 .invite-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .invite-action {

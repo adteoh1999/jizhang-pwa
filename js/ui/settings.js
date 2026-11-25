@@ -374,7 +374,13 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
 
   // ---------- 管理（只有站主）：先藏起来，读到快取才显示；enter()（启动、回前景、打开设置页）时需要才问服务器 ----------
   const adminSection = section('管理', adminRows(true).map((r) => buttonRow(r.label, () => openInvitesPage(store, {
-    userId: session.user_id, onOwnerChanged: () => { renderAdmin().catch(() => {}); },
+    userId: session.user_id,
+    onOwnerChanged: () => { renderAdmin().catch(() => {}); },
+    // 那一列被藏起来了（服务器说没有权限）：关页时焦点放到设置页大标题
+    restoreFocus: () => {
+      const t = root.closest('.screen') && root.closest('.screen').querySelector('.large-title');
+      if (t) { t.tabIndex = -1; t.focus({ preventScroll: true }); }
+    },
   }), { chevron: true })));
   adminSection.hidden = true;
   const renderAdmin = async () => {

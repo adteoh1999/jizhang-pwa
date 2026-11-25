@@ -3,10 +3,12 @@
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 const NET = '需要网络';
+/** invites 对「不是站主」回的 403 句子（服务器协议；跟别的 403，例如「不能移除站主」、平台层的 403 分开）。 */
+export const DENIED_ERROR = '没有权限';
 const GENERIC = '暂时无法完成，请稍后再试';
 // 服务器会回的中文句子（supabase/functions/invites、delete-account）；只有这几句原样显示，其他换成 GENERIC
 const SERVER_MESSAGES = [
-  '请重新登录后再试', '暂时无法删除，请稍后再试', GENERIC, '没有权限', '设定不正确',
+  '请重新登录后再试', '暂时无法删除，请稍后再试', GENERIC, DENIED_ERROR, '设定不正确',
   '找不到这个邀请码', '找不到这个用户', '不能移除站主', '看不懂这个请求',
 ];
 const INVITES_TIMEOUT_MS = 10_000;
