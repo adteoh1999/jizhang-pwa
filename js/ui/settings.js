@@ -1,5 +1,5 @@
-// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、分类、数据（导出 / 导入 CSV）、关于、删除账号（2f，最下面）。
-// 邀请码管理是 2f-3、绑定是第 3 阶段的事，这里不放占位。
+// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、管理（2f-3：只有站主看得到的邀请码管理）、
+// 分类、数据（导出 / 导入 CSV）、关于、删除账号（2f，最下面）。绑定是第 3 阶段的事，这里不放占位。
 // 导出在 export-csv.js（提醒对话框也用）。
 import { h } from './dom.js';
 import { icon } from './icons.js';
@@ -12,6 +12,7 @@ import { signOut, forgetSession } from '../auth.js';
 import { formatRM } from '../money.js';
 import { createExporter } from './export-csv.js';
 import { runDeleteAccount, dangerRows, busyRowHandler } from './delete-account.js';
+import { refreshOwnerFlag, readOwnerFlag } from '../owner-check.js';
 
 /**
  * 设置页「同步」列的文字（纯函数）。回 {text, action}；action：可点时做什么（'relogin' | 'errors' | 'start' | 'reload'），不能点为 null。
@@ -109,12 +110,16 @@ export function accountRows(session) {
   ];
 }
 
+/** 「管理」区的列（纯函数）：只有站主有「邀请码管理」（快取只决定显不显示，权限由服务器判断）。 */
+export function adminRows(isOwner) {
+  return isOwner ? [{ kind: 'invites', label: '邀请码管理' }] : [];
+}
 
 /**
  * opts.session：目前登录的 session（没有就不显示账号区）。
  * opts.sync：同步引擎（status / subscribe / stop）；opts.onStartSync()：设置页按「开始」（认领，回 promise）。
  */
-export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null } = {}) {
+export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null, openInvites = () => {} } = {}) {
   let seq = 0;
   // title 空字串：不放标题（iOS 设置里单独一列的红字区就是这样），也不设 aria-labelledby
   const section = (title, rows, footer) => {
@@ -366,8 +371,23 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     return rows.length ? section('', rows) : null;
   };
 
+  // ---------- 管理（只有站主）：先藏起来，读到快取才显示；enter()（启动、回前景、打开设置页）时需要才问服务器 ----------
+  const adminSection = section('管理', adminRows(true).map((r) => buttonRow(r.label, () => openInvites(), { chevron: true })));
+  adminSection.hidden = true;
+  const renderAdmin = async () => {
+    adminSection.hidden = !(session && adminRows(await readOwnerFlag(store, session.user_id)).length);
+  };
+  const enter = () => {
+    if (!session) return Promise.resolve();
+    return refreshOwnerFlag(store, { fetchFn: (url, init) => fetch(url, init), userId: session.user_id })
+      .then(renderAdmin)
+      .catch((e) => console.warn(`[settings] 站主判断出错：${e && e.name ? e.name : '未知'}`));
+  };
+  renderAdmin().catch((e) => console.warn(`[settings] 读站主快取出错：${e && e.name ? e.name : '未知'}`));
+
   root.replaceChildren(
     ...[accountSection()].filter(Boolean),
+    adminSection,
     section('分类', [
       buttonRow('管理分类', () => openCategoriesPage(store, { from: 'settings' }), { chevron: true }),
     ]),
@@ -379,4 +399,5 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     ...[dangerSection()].filter(Boolean),
     fileInput,
   );
+  return { enter };
 }

@@ -130,7 +130,7 @@ function mountShell(root, store, session) {
   });
   sync.subscribe(() => realtime.check()); // sync.stop() 也会最后通知一次（登出、重新登录）
   window.addEventListener('jizhang:blocked', () => { realtime.stop(); sync.stop(); }, { once: true });
-  mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
+  const settings = mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
     session, sync, realtime, onStartSync: () => runClaim(true),
   });
 
@@ -162,6 +162,7 @@ function mountShell(root, store, session) {
           { duration: DUR.tab, easing: EASE_OUT, id: 'tab' });
       }
       if (id === 'stats') stats.enter();
+      if (id === 'settings') settings.enter(); // 站主判断（最多一天问一次服务器，S16）
     },
   });
 
@@ -179,6 +180,8 @@ function mountShell(root, store, session) {
   sync.start();
   realtime.start();
   runClaim(false);
+  settings.enter(); // 站主判断：启动时、回前景时（S16）
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) settings.enter(); });
 }
 
 /** 注册 Service Worker；本机网址默认不注册（方便开发），加 ?sw=1 才注册。失败只 warn，不影响 App。 */

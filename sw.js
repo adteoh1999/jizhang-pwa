@@ -8,6 +8,7 @@ const ASSETS = [
   './manifest.webmanifest',
   './css/app.css',
   './js/admin-api.js',
+  './js/owner-check.js',
   './js/app.js',
   './js/auth.js',
   './js/chart.js',
