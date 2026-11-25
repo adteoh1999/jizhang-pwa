@@ -536,6 +536,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .alert-button.is-destructive { color: var(--red-text); }
 .alert-button:disabled { color: var(--tertiary-label); }
 .alert-button:active:not(:disabled) { background: var(--fill); }
+.alert-button:focus-visible { outline-offset: -4px; } /* 画在按钮里：对话框的圆角与 overflow 不会切掉焦点框。不能小于 4px（.alert 圆角 14px） */
+.alert-message .nowrap { display: inline-block; white-space: normal; } /* 句尾整组换行；过宽（大字级）才在段内换行 */
 
 /* ---------- 9. Action sheet（底部） ---------- */
 .overlay-sheet {
@@ -642,6 +644,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 /* 阻挡画面：晨雾底（不透明，盖住后面不可操作的内容）+ 黑色胶囊按钮 */
 .overlay-blocking { z-index: 300; opacity: 1; }   /* 底色：整页晨雾渐变（与 .sky 共用，见 §3 .sky 规则），不透明 */
 .overlay-blocking .alert-buttons { box-shadow: none; padding: 0 16px 16px; }
+.overlay-blocking .alert-button:focus-visible { outline-offset: 2px; } /* 黑色药丸四周有留白：焦点框画在外面才看得到 */
 .overlay-blocking .alert-button { border-radius: 999px; background: var(--btn-bg); color: var(--btn-fg); }
 .overlay-blocking .alert-button:active:not(:disabled) { background: var(--btn-bg); opacity: 0.7; }
 

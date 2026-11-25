@@ -223,3 +223,16 @@ test('复审 5、6：阻挡画面出现后不再叠对话框；换账号的阻�
   assert.match(app, /store\.onLedgerChanged\(showLedgerChangedNotice\)/);
   assert.match(app, /onLedgerResetElsewhere\(showLedgerChangedNotice\)/);
 });
+
+test('Task 11 无头检查：阻挡画面说明的句尾整组换行；对话框按钮焦点框画在按钮里（不被圆角切掉）', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /showBlockingNotice\('这台设备已换成另一个账号，', '请重新整理。'\)/);
+  assert.match(app, /showBlockingNotice\('请重新整理', '以继续使用。'\)/);
+  assert.match(app.slice(app.indexOf('function showBlockingNotice')), /class: 'nowrap'/);
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.match(css, /\.alert-message \.nowrap \{ display: inline-block; white-space: normal; \}/);
+  assert.match(css, /\.alert-button:focus-visible \{ outline-offset: -\d+px; \}/);
+  // 阻挡画面的按钮是黑色药丸、四周有留白：焦点框画在外面（画在里面会是黑框叠黑底）
+  assert.match(css, /\.overlay-blocking \.alert-button:focus-visible \{ outline-offset: 2px; \}/);
+});

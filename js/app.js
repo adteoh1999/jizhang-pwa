@@ -41,15 +41,16 @@ export function renderDbError(root, err) {
 
 /** 资料库被其他分页升级 / 删除：连线已关闭，写入会失败 → 不可关闭的阻挡画面（不入 nav 栈，Esc 关不掉）。 */
 export function showDbClosedNotice() {
-  showBlockingNotice('请重新整理以继续使用。');
+  showBlockingNotice('请重新整理', '以继续使用。');
 }
 
 /** 别的分页换账号清除了账本（复审 6：写清楚原因）。 */
 export function showLedgerChangedNotice() {
-  showBlockingNotice('这台设备已换成另一个账号，请重新整理。');
+  showBlockingNotice('这台设备已换成另一个账号，', '请重新整理。');
 }
 
-function showBlockingNotice(message) {
+// tail：句尾整组换行（窄的对话框里「理。」不会单独落到下一行）
+function showBlockingNotice(head, tail) {
   if (document.querySelector('[data-db-closed]')) return;
   for (const el of document.body.children) el.inert = true;
   const btn = h('button', {
@@ -61,7 +62,7 @@ function showBlockingNotice(message) {
   },
   h('div', { class: 'alert-body' },
     h('h2', { class: 'alert-title', id: 'db-closed-title' }, '需要重新载入'),
-    h('p', { class: 'alert-message', id: 'db-closed-msg' }, message)),
+    h('p', { class: 'alert-message', id: 'db-closed-msg' }, head, h('span', { class: 'nowrap' }, tail))),
   h('div', { class: 'alert-buttons' }, btn));
   const overlay = h('div', { class: 'overlay overlay-alert overlay-blocking is-visible', 'data-db-closed': '' }, panel);
   document.body.append(overlay);
