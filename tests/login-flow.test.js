@@ -12,17 +12,17 @@ const session = (id = 'u-1') => ({ access_token: 'a', refresh_token: 'r', expire
 
 // 可控制的假 api：每个方法记录调用；回应由 handlers 决定（可回 Promise 延迟）
 function fakeApi(handlers = {}) {
-  const calls = { registerEmail: [], requestOtp: [], verifyOtp: [] };
+  const calls = { registerEmail: [], requestOtp: [], verifyOtp: [], discardSession: [] };
   const api = {
     registerEmail: (...a) => { calls.registerEmail.push(a); return (handlers.registerEmail || (() => ({ ok: true })))(...a); },
     requestOtp: (...a) => { calls.requestOtp.push(a); return (handlers.requestOtp || (() => ({ ok: true })))(...a); },
     verifyOtp: (...a) => { calls.verifyOtp.push(a); return (handlers.verifyOtp || (() => ({ ok: true, session: session() })))(...a); },
+    discardSession: (...a) => { calls.discardSession.push(a); return Promise.resolve(); },
   };
   return { api, calls };
 }
 
-function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmReset = async () => true } = {}) {
-  const store = createStore({ db });
+function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmReset = async () => true, store = createStore({ db }), onReset } = {}) {
   const { api, calls } = fakeApi(handlers);
   const signed = [];
   const switches = [];
@@ -30,6 +30,7 @@ function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmRes
     api, store, now: () => nowRef.t,
     confirmReset: async (info) => { switches.push(info); return confirmReset(info); },
     onSignedIn: (s) => signed.push(s),
+    onReset,
   });
   return { flow, store, db, calls, signed, switches, nowRef };
 }
@@ -635,7 +636,7 @@ test('换账号：只剩已删除的账或自建分类还没上传 → 照样问
     await prep(store, { owner: 'u-A', last: 'u-A', synced: true });
     if (kind === 'deletedTx') { const t = await tx(store); await store.deleteTransaction(t.id); } else { await store.saveCategory({ kind: 'expense', name: '宠物' }); }
     await login(flow);
-    assert.deepEqual(switches, [{ txCount: kind === 'deletedTx' ? 1 : 0 }], kind);
+    assert.deepEqual(switches, [{ txCount: 0 }], kind); // S-8：N 只数看得到的账
   }
 });
 
@@ -674,4 +675,80 @@ test('换账号：清除写入失败 → 不登录、账本 / owner / session / 
   assert.equal(await store.getMeta('owner_user_id'), 'u-A');
   assert.equal(await loadLastUserId(store), 'u-A');
   assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
+});
+
+// ---------- 任务 9 审核修正 ----------
+test('审核 S-2：B 的默认分类还没传上去就换回 A → 不问（没改过的默认分类不算）', async () => {
+  const { flow, store, switches, signed } = setup();
+  await prep(store, { owner: 'u-B', last: 'u-B', synced: true });
+  await store.resetForAccount('u-B'); // 默认分类 dirty 1
+  await login(flow);
+  assert.equal(switches.length, 0);
+  assert.equal(signed.length, 1);
+});
+
+test('审核 S-3：对话框开着（验证中）时 checkExpiry 不把页面切走', async () => {
+  const nowRef = { t: T0 };
+  let flowRef;
+  const { flow, store } = setup({ ...B(), nowRef, confirmReset: async () => { nowRef.t += 11 * 60_000; assert.equal(flowRef.checkExpiry(), false); assert.equal(flowRef.state.step, 'code'); return false; } });
+  flowRef = flow;
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 1 });
+  await login(flow);
+  assert.equal(flow.state.step, 'welcome');
+});
+
+test('审核 S-4：要弹对话框前就清掉 pending（码已用掉）', async () => {
+  let seen = 'x';
+  const box = {};
+  const { flow, store } = setup({ ...B(), confirmReset: async () => { seen = await loadPending(box.store, T0); return false; } });
+  box.store = store;
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 1 });
+  await login(flow);
+  assert.equal(seen, null);
+});
+
+test('审核 S-5：取消登录 → 尽力作废这次的 session', async () => {
+  const { flow, store, calls } = setup({ ...B(), confirmReset: async () => false });
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 1 });
+  await login(flow);
+  assert.equal(calls.discardSession.length, 1);
+  assert.equal(calls.discardSession[0][0].user_id, 'u-B');
+});
+
+test('清除成功 → onReset 通知（广播给其他分页）；没换账号 → 不通知', async () => {
+  let n = 0;
+  const a = setup({ ...B(), onReset: () => n++ });
+  await prep(a.store, { owner: 'u-A', last: 'u-A', txs: 1, synced: true });
+  await login(a.flow);
+  assert.equal(n, 1);
+  const b = setup({ onReset: () => n++ });
+  await prep(b.store, { owner: 'u-1', last: 'u-1' });
+  await login(b.flow);
+  assert.equal(n, 1);
+});
+
+test('审核 M-1：别的分页之后记的账 → 登录时重新载入、算进去、要问', async () => {
+  const db = createMemoryDb();
+  const store1 = createStore({ db });
+  await prep(store1, { owner: 'u-A', last: 'u-A', synced: true });
+  const store2 = createStore({ db });
+  await store2.init();
+  await tx(store2, { amountMinor: 9 });
+  const { flow, switches } = setup({ ...B(), db, store: store1 });
+  await login(flow);
+  assert.deepEqual(switches, [{ txCount: 1 }]);
+});
+
+test('审核 M-1：别的分页已清除成 B，这个分页（旧快取有 A 的账）再用 B 登录 → 快取重新载入、A 的账不会传到 B', async () => {
+  const db = createMemoryDb();
+  const store1 = createStore({ db });
+  await prep(store1, { owner: 'u-A', last: 'u-A', txs: 2 });
+  const store2 = createStore({ db });
+  await store2.init();
+  await store1.resetForAccount('u-B', { meta: { lastUserId: 'u-B' } });
+  const { flow, signed } = setup({ ...B(), db, store: store2 });
+  await login(flow);
+  assert.equal(signed.length, 1);
+  assert.equal(store2.transactions().length, 0);
+  assert.equal((await store2.pendingRows('transactions')).length, 0);
 });

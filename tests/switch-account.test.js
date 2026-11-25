@@ -89,26 +89,98 @@ test('上传途中别的分页换了账号（owner 变 B）→ 旧引擎不写�
   assert.equal(gets, 0);
 });
 
-test('换账号对话框文字（HIG：具体动词、取消在最下、清除用红字、二次确认）', async () => {
+test('换账号对话框文字（HIG：标题短、说清楚会丢什么、给出安全出路）', async () => {
   const { LOGIN_TEXT: T } = await import('../js/ui/login.js');
-  assert.equal(T.switchTitle(3), '这台设备上有 3 笔另一个账号还没上传的记录');
-  assert.equal(T.switchTitle(0), '这台设备上有另一个账号还没上传的记录');
-  assert.equal(T.switchMessage, '登录新账号会清除这台设备上的账本。请先导出 CSV 备份。');
+  assert.equal(T.switchTitle(3), '还有 3 笔记录没上传');
+  assert.equal(T.switchTitle(0), '还有没上传的改动');
+  assert.equal(T.switchMessage, '换成新账号会清除这台设备上的账本。已上传的记录还在原来的账号里，没上传的会消失。可以先导出 CSV，或取消后用原来的账号登录、等它上传完。');
   assert.equal(T.switchExport, '导出 CSV');
   assert.equal(T.switchClear, '清除并登录');
   assert.equal(T.switchCancel, '取消登录');
-  assert.equal(T.clearTitle, '清除这台设备上的账本？');
+  assert.equal(T.clearTitle, '清除没上传的记录？');
   assert.equal(T.clearMessage, 'CSV 存好了吗？清除后无法恢复。');
   assert.equal(T.clearConfirm, '清除');
-  const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
-  const body = src.slice(src.indexOf('export async function askReset'));
-  assert.match(body, /createExporter\(store\)/);
-  assert.match(body, /keepOpen: true, onClick: exportCsv/);
-  assert.match(body, /destructive: true, value: 'clear'/);
-  assert.match(body, /value: 'cancel', focus: true/);
-  assert.match(body, /confirmDialog\(\{[^}]*destructive: true/);
-  assert.match(src, /confirmReset: \(info\) => askReset\(store, info\)/);
-  const dialogs = readFileSync(new URL('../js/ui/dialogs.js', import.meta.url), 'utf8');
-  assert.match(dialogs.slice(dialogs.indexOf('export function choiceDialog')), /style: b\.destructive \? 'destructive' : 'default'/);
+});
+
+function fakeDialogs(choices, confirms) {
+  const log = [];
+  return {
+    log,
+    choice: async (opts) => { log.push(['choice', opts]); return choices.shift(); },
+    confirm: async (opts) => { log.push(['confirm', opts]); return confirms.shift(); },
+    exporter: () => () => log.push(['export']),
+  };
+}
+
+test('askReset：清除 → 第二个取消 → 回第一个 → 取消登录 → false', async () => {
+  const { askReset } = await import('../js/ui/login.js');
+  const d = fakeDialogs(['clear', 'cancel'], [false]);
+  assert.equal(await askReset({}, { txCount: 2 }, d), false);
+  assert.deepEqual(d.log.map((x) => x[0]), ['choice', 'confirm', 'choice']);
+  const [, first] = d.log[0];
+  assert.equal(first.title, '还有 2 笔记录没上传');
+  assert.deepEqual(first.buttons.map((b) => [b.label, !!b.keepOpen, !!b.destructive, !!b.focus, b.value]),
+    [['导出 CSV', true, false, false, undefined], ['清除并登录', false, true, false, 'clear'], ['取消登录', false, false, true, 'cancel']]);
+  first.buttons[0].onClick();
+  assert.deepEqual(d.log.at(-1), ['export']);
+  assert.equal(d.log[1][1].destructive, true);
+});
+
+test('askReset：清除 → 确认 → true；Esc（null）→ false', async () => {
+  const { askReset } = await import('../js/ui/login.js');
+  assert.equal(await askReset({}, { txCount: 0 }, fakeDialogs(['clear'], [true])), true);
+  assert.equal(await askReset({}, { txCount: 0 }, fakeDialogs([null], [])), false);
+});
+
+test('db.write expect：meta 值不符 → reject（MetaMismatch）、什么都不写；相符 → 写；null 与没有视为相同', async () => {
+  const db = createMemoryDb();
+  await db.write({ meta: { owner_user_id: 'u-A' } });
+  await assert.rejects(db.write({ expect: { owner_user_id: 'u-B' }, transactions: [{ id: 'x' }], meta: { k: 1 } }), (e) => e.name === 'MetaMismatch');
+  assert.equal((await db.getAll('transactions')).length, 0);
+  assert.equal(await db.getMeta('k'), undefined);
+  await db.write({ expect: { owner_user_id: 'u-A', ledgerId: null }, transactions: [{ id: 'x' }] });
+  assert.equal((await db.getAll('transactions')).length, 1);
+});
+
+test('审核 M-2：别的分页清除后，旧分页的用户写入被挡（LedgerChanged）、通知画面、资料库不变', async () => {
+  const db = createMemoryDb();
+  const s1 = createStore({ db });
+  await s1.init();
+  const s2 = createStore({ db });
+  await s2.init();
+  const t = await s2.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  await s1.init();
+  let stale = 0;
+  s2.onLedgerChanged(() => stale++);
+  await s1.resetForAccount('u-B');
+  const before = db.calls.length;
+  await assert.rejects(s2.saveTransaction({ kind: 'expense', amountMinor: 2, categoryId: 'food', occurredOn: '2026-11-20', note: '' }), (e) => e.name === 'LedgerChanged');
+  await assert.rejects(s2.deleteTransaction(t.id), (e) => e.name === 'LedgerChanged');
+  assert.equal(db.calls.length, before);
+  assert.equal(stale, 2);
+  assert.equal((await db.getAll('transactions')).length, 0);
+  // 清除的那个分页自己照常能写
+  await s1.saveTransaction({ kind: 'expense', amountMinor: 3, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+});
+
+test('审核 S-1：owner 核对与写入是同一次操作（读完 owner 之后才被换掉也挡得住）', async () => {
+  const { db, store } = await setup();
+  const sent = await store.pendingRows('transactions');
+  const real = db.getMeta;
+  db.getMeta = async (k) => { const v = await real(k); if (k === 'owner_user_id') await db.write({ meta: { owner_user_id: 'u-B' } }); return v; };
+  assert.equal(await store.markUploaded('transactions', sent, [], { owner: 'u-A' }), null);
+  db.getMeta = real;
+  assert.equal(store.syncCounts().txPending, 1);
+});
+
+test('unsyncedInfo：已归属只数 dirty / sync_error（不算没改过的默认分类）；txCount 只数看得到的账', async () => {
+  const { store } = await setup(); // 1 笔账 + 1 个自建分类，都 dirty
+  assert.deepEqual(store.unsyncedInfo(), { any: true, txCount: 1 });
+  await store.markUploaded('transactions', await store.pendingRows('transactions'), []);
+  await store.markUploaded('categories', await store.pendingRows('categories'), []);
+  assert.deepEqual(store.unsyncedInfo(), { any: false, txCount: 0 });
+  assert.deepEqual(store.unsyncedInfo({ all: true }), { any: true, txCount: 1 }); // 没归属：整本都算
+  await store.resetForAccount('u-B');
+  assert.deepEqual(store.unsyncedInfo(), { any: false, txCount: 0 });
+  assert.deepEqual(store.unsyncedInfo({ all: true }), { any: false, txCount: 0 });
 });

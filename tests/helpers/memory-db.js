@@ -10,7 +10,10 @@ export function createMemoryDb() {
     async getAll(store) { return [...stores[store].values()].map((r) => structuredClone(r)); },
     async write(changes) {
       if (failure) { const e = failure; failure = null; throw e; }
-      calls.push(Object.keys(changes));
+      for (const [k, v] of Object.entries(changes.expect || {})) {
+        if (((meta.has(k) ? meta.get(k) : null) ?? null) !== (v ?? null)) { const e = new Error('meta 不符'); e.name = 'MetaMismatch'; throw e; }
+      }
+      calls.push(Object.keys(changes).filter((k) => k !== 'expect'));
       const rm = changes.remove || {};
       for (const s of changes.clear || []) stores[s].clear();
       for (const s of ['transactions', 'categories']) {

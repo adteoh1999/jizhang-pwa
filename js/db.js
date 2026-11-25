@@ -32,6 +32,7 @@ const promisify = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.r
 
 function makeAdapter(db) {
   // 单一 readwrite transaction，oncomplete 才 resolve
+  // fn(tx, abortWith)：abortWith(err) 中止整个 transaction，以 err 回 reject
   const run = (storeNames, fn) => new Promise((resolve, reject) => {
     let tx;
     let failure = null; // 第一个错误，onabort 时用
@@ -47,7 +48,7 @@ function makeAdapter(db) {
       // error 事件时 tx.error 还是 null，真正的失败在 abort 时才确定
       tx.onerror = (ev) => { if (!failure) failure = ev.target && ev.target.error; };
       tx.onabort = () => fail(failure || tx.error);
-      fn(tx);
+      fn(tx, (err) => { failure = err; tx.abort(); });
     } catch (e) {
       failure = e;
       fail(e);
@@ -61,13 +62,32 @@ function makeAdapter(db) {
       // changes.remove = {transactions: [id…]}：再删（同步换 id 用）；最后写。同一个 transaction
       const rm = changes.remove || {};
       const cl = changes.clear || [];
-      const names = [...STORES.filter((s) => changes[s] || rm[s] || cl.includes(s)), ...(changes.meta ? ['meta'] : [])];
+      // changes.expect = {meta 键: 值}：同一个 transaction 里先读，不符就整个中止（MetaMismatch），什么都不写
+      const exp = Object.entries(changes.expect || {});
+      const names = [...STORES.filter((s) => changes[s] || rm[s] || cl.includes(s)), ...(changes.meta || exp.length ? ['meta'] : [])];
       if (names.length === 0) return Promise.resolve();
-      return run(names, (tx) => {
-        for (const s of STORES) if (cl.includes(s)) tx.objectStore(s).clear();
-        for (const s of STORES) for (const id of rm[s] || []) tx.objectStore(s).delete(id);
-        for (const s of STORES) for (const r of changes[s] || []) tx.objectStore(s).put(r);
-        for (const [key, value] of Object.entries(changes.meta || {})) tx.objectStore('meta').put({ key, value });
+      return run(names, (tx, abortWith) => {
+        const writeAll = () => {
+          for (const s of STORES) if (cl.includes(s)) tx.objectStore(s).clear();
+          for (const s of STORES) for (const id of rm[s] || []) tx.objectStore(s).delete(id);
+          for (const s of STORES) for (const r of changes[s] || []) tx.objectStore(s).put(r);
+          for (const [key, value] of Object.entries(changes.meta || {})) tx.objectStore('meta').put({ key, value });
+        };
+        if (!exp.length) { writeAll(); return; }
+        let left = exp.length;
+        let bad = false;
+        for (const [key, want] of exp) {
+          const req = tx.objectStore('meta').get(key);
+          req.onsuccess = () => {
+            const have = req.result ? req.result.value : null;
+            if ((have ?? null) !== (want ?? null)) bad = true;
+            if (--left > 0) return;
+            if (!bad) { writeAll(); return; }
+            const e = new Error('meta 不符');
+            e.name = 'MetaMismatch';
+            abortWith(e);
+          };
+        }
       });
     },
     async getMeta(key) {

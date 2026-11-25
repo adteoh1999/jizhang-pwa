@@ -9,6 +9,7 @@ import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
+import { onLedgerResetElsewhere } from './ledger-channel.js';
 import { mountLogin } from './ui/login.js';
 import { loadSession, bootTarget } from './auth.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
@@ -200,6 +201,9 @@ async function boot() {
     const db = await openDatabase();
     const store = createStore({ db });
     await store.init();
+    // 别的分页换账号清除了账本：这个分页的画面与快取都旧了 → 阻挡画面、请重新整理（审核 M-2）
+    store.onLedgerChanged(showDbClosedNotice);
+    onLedgerResetElsewhere(showDbClosedNotice);
     if (isDevHost()) window.__store = store;
     const session = await loadSession(store);
     if (bootTarget(session) === 'login') {

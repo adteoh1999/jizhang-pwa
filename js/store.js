@@ -17,6 +17,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   const cats = new Map(); // 含已删除
   const listeners = new Set();
   const localListeners = new Set(); // 只有用户的写入才通知（同步用来排程上传）
+  const ledgerListeners = new Set(); // 账本被别的分页换掉（换账号清除）时通知画面
+  let ledgerId = null; // 载入时的账本代号：resetForAccount 每次换新；用户写入时在同一次写入里核对
   let queue = Promise.resolve();
 
   const ctx = () => ({ now: now(), uuid });
@@ -41,15 +43,39 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   }
   // 旧引擎写回前核对：owner 给了却已不是 owner_user_id（别的分页换了账号）→ false（审核 5 S-4）
   const ownerOk = async (owner) => owner === undefined || (await db.getMeta('owner_user_id')) === owner;
+  // 先读一次（早点发现、不必写），写入时再在同一个 transaction 里核对一次（审核 S-1）。不符 → null
+  async function ownerCommit(owner, changes, opts = {}) {
+    if (owner === undefined) { await commit(changes, opts); return true; }
+    try {
+      await commit(changes, { ...opts, expect: { owner_user_id: owner } });
+      return true;
+    } catch (e) {
+      if (e && e.name === 'MetaMismatch') return null;
+      throw e;
+    }
+  }
   const mapOf = (table) => {
     if (table === 'transactions') return txs;
     if (table === 'categories') return cats;
     throw new Error(`未知的表：${table}`);
   };
 
-  // 写入 db，成功后套用到快取并通知。local：用户的写入（同步会排程上传）；silent：不通知画面
-  async function commit(changes, { local = false, silent = false } = {}) {
-    await db.write(changes);
+  // 写入 db，成功后套用到快取并通知。local：用户的写入（同步会排程上传）；silent：不通知画面。
+  // 用户的写入一律核对账本代号（审核 M-2）：别的分页已清除换账号 → 不写、通知画面、丢 LedgerChanged。
+  // expect：额外要核对的 meta（引擎写回核对 owner，审核 S-1：与写入同一个 transaction）。
+  async function commit(changes, { local = false, silent = false, expect } = {}) {
+    const exp = local ? { ...expect, ledgerId } : expect;
+    try {
+      await db.write(exp ? { ...changes, expect: exp } : changes);
+    } catch (e) {
+      if (local && e && e.name === 'MetaMismatch') {
+        for (const fn of [...ledgerListeners]) { try { fn(); } catch (err) { console.error(err); } }
+        const err = new Error('账本已在别的分页换成另一个账号');
+        err.name = 'LedgerChanged';
+        throw err;
+      }
+      throw e;
+    }
     for (const s of changes.clear || []) mapOf(s).clear();
     const rm = changes.remove || {};
     for (const id of rm.transactions || []) txs.delete(id);
@@ -63,8 +89,9 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   const api = {
     init() {
       return enqueue(async () => {
-        const [t, c] = await Promise.all([db.getAll('transactions'), db.getAll('categories')]);
+        const [t, c, lid] = await Promise.all([db.getAll('transactions'), db.getAll('categories'), db.getMeta('ledgerId')]);
         txs.clear(); cats.clear();
+        ledgerId = lid ?? null;
         for (const r of t) txs.set(r.id, r);
         for (const r of c) cats.set(r.id, r);
         if (cats.size === 0) await commit({ categories: defaultCategories() });
@@ -225,7 +252,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
           }
           if (changed) out.push(rec);
         }
-        if (out.length) await commit({ [table]: out }, { silent: !visible });
+        if (out.length && (await ownerCommit(owner, { [table]: out }, { silent: !visible })) === null) return null;
       });
     },
 
@@ -236,7 +263,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         const local = mapOf(table).get(id);
         if (!local || local.dirty !== 1) return;
         if (typeof sentUpdatedAt !== 'string' || local.updated_at !== sentUpdatedAt) return;
-        await commit({ [table]: [{ ...local, sync_error: { code: String(code), at: now().toISOString() } }] }, { silent: true });
+        return ownerCommit(owner, { [table]: [{ ...local, sync_error: { code: String(code), at: now().toISOString() } }] }, { silent: true });
       });
     },
 
@@ -250,7 +277,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
           const rows = [...mapOf(t).values()].filter((r) => r.sync_error).map(withoutSyncError);
           if (rows.length) { changes[t] = rows; n += rows.length; }
         }
-        if (n) await commit(changes, { silent: true });
+        if (n && (await ownerCommit(owner, changes, { silent: true })) === null) return null;
         return n;
       });
     },
@@ -280,8 +307,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         }
         if (skipped) console.warn(`[store] 拉回 ${table} 有 ${skipped} 笔时间看不懂，跳过`);
         if (!out.length && !meta) return 0;
-        await commit({ ...(out.length ? { [table]: out } : {}), ...(meta ? { meta } : {}) }, { silent: silent || !out.length });
-        return out.length;
+        const ok = await ownerCommit(owner, { ...(out.length ? { [table]: out } : {}), ...(meta ? { meta } : {}) }, { silent: silent || !out.length });
+        return ok === null ? null : out.length;
       });
     },
 
@@ -290,7 +317,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       return enqueue(async () => {
         if (owner === undefined || !(await ownerOk(owner))) return null;
         const out = [...mapOf(table).values()].filter((r) => r.dirty !== 1 && !serverIds.has(r.id)).map((r) => ({ ...r, dirty: 1 }));
-        if (out.length) await commit({ [table]: out }, { silent: true });
+        if (out.length && (await ownerCommit(owner, { [table]: out }, { silent: true })) === null) return null;
         return out.length;
       });
     },
@@ -302,19 +329,42 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
      */
     resetForAccount(userId, { meta = {} } = {}) {
       return enqueue(async () => {
+        const nextLedger = uuid();
         await commit({
           clear: TABLES,
           categories: defaultCategories().map((c) => ({ ...c, dirty: 1 })),
           meta: {
             ...meta,
             owner_user_id: userId,
+            ledgerId: nextLedger,
             'cursor:transactions': null,
             'cursor:categories': null,
             fullSyncAt: null,
             syncPromptDismissed: null,
           },
         });
+        ledgerId = nextLedger;
       });
+    },
+
+    /**
+     * 换账号前：这台设备还有没有「没上传」的东西（审核 S-2、S-8）。
+     * 平常：dirty 或 sync_error 的列（没改过的默认分类不算）；all（还没归属、从没同步过）：整本都算。
+     * txCount 只数看得到（没删除）的账目。
+     */
+    unsyncedInfo({ all = false } = {}) {
+      const un = (r) => all || r.dirty === 1 || !!r.sync_error;
+      let txCount = 0;
+      let any = false;
+      for (const t of txs.values()) if (un(t)) { any = true; if (!t.deleted) txCount++; }
+      for (const c of cats.values()) if (un(c) && c.updated_at !== DEFAULT_EPOCH) any = true;
+      return { any, txCount };
+    },
+
+    /** 账本被别的分页换掉时（用户写入被挡）通知。 */
+    onLedgerChanged(fn) {
+      ledgerListeners.add(fn);
+      return () => ledgerListeners.delete(fn);
     },
 
     /** 通知画面重画（同步一轮结束时有拉回变化才叫一次）。 */

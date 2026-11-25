@@ -25,10 +25,11 @@ const warn = (step) => (e) => console.warn(`[login] ${step} 失败：${e && e.na
 const clampRetry = (sec) => Math.max(0, Math.min(RESEND_SEC, sec));
 
 /**
- * api：{ registerEmail(email, invite), requestOtp(email), verifyOtp(email, code, nowMs) }（已绑好 fetch）
+ * api：{ registerEmail(email, invite), requestOtp(email), verifyOtp(email, code, nowMs), discardSession?(session) }（已绑好 fetch）
  * confirmReset({txCount})：换账号、本地还有没上传的记录时问（导出 CSV 后清除）→ Promise<boolean>
+ * onReset()：换账号清除成功后（通知其他分页）
  */
-export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn, confirmReset = async () => true }) {
+export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn, confirmReset = async () => true, onReset = () => {} }) {
   const state = {
     ready: false, step: 'welcome', email: '', code: '', busy: false,
     error: '', errorField: null, errorSeq: 0, notice: '', noticeSeq: 0, sentAt: null,
@@ -121,6 +122,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
 
     /** 回到前景、或送出验证码前调：在验证码页而且已满 10 分钟 → 回邮箱页。回 true 表示已过期。 */
     checkExpiry() {
+      if (state.busy === 'verify') return false; // 验证中（含换账号对话框开着）：码已被服务器接受，过期没意义
       if (state.step !== 'code' || state.sentAt == null || now() - state.sentAt < OTP_TTL_MS) return false;
       clearPending(store).catch(warn('clearPending'));
       setError('');
@@ -222,6 +224,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
         let last = null;
         let owner = null;
         try {
+          await store.init(); // 快取可能比资料库旧（别的分页记过账、或已清除换账号）：重新载入再判断（审核 M-1）
           last = await loadLastUserId(store);
           owner = (await store.getMeta('owner_user_id')) || null;
         } catch (e) { notSaved('loadOwner')(e); return; }
@@ -230,11 +233,17 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
         // 还有没上传的记录才问：已归属 → 待上传 + 无法同步；还没归属（没开始同步）→ 整本都没上传
         const switching = !!prevOwner && prevOwner !== s.user_id;
         if (switching) {
-          const c = store.syncCounts();
-          const unsynced = owner ? c.pending + c.errors > 0 : store.hasOwnedData();
-          const go = !unsynced || await confirmReset({ txCount: owner ? c.txPending + c.txErrors : store.transactions().length });
+          const info = store.unsyncedInfo({ all: !owner });
+          let go = true;
+          if (info.any) {
+            // 码已被服务器用掉：对话框开着时 App 被关掉，重开不该停在验证码页（审核 S-4）
+            pendingUsed = true;
+            await clearPending(store).catch(warn('clearPending'));
+            go = await confirmReset({ txCount: info.txCount });
+          }
           if (!go) {
             pendingUsed = true; // 这组验证码已被服务器用掉
+            if (api.discardSession) Promise.resolve().then(() => api.discardSession(s)).catch(warn('discardSession')); // 尽力作废（审核 S-5）
             clearPending(store).catch(warn('clearPending'));
             Object.assign(state, { step: 'welcome', code: '', sentAt: null });
             setNotice('');
@@ -247,6 +256,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
           if (switching) await store.resetForAccount(s.user_id, { meta });
           else await store.setMetas(meta);
         } catch (e) { notSaved(switching ? 'resetForAccount' : 'saveSession')(e); return; }
+        if (switching) { try { onReset(); } catch (e) { warn('onReset')(e); } }
         await clearPending(store).catch(warn('clearPending'));
         state.step = 'done';
         signedIn = s;
