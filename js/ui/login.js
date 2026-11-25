@@ -4,7 +4,8 @@
 import { h } from './dom.js';
 import { icon } from './icons.js';
 import { isIosBrowserTab } from './install-hint.js';
-import { confirmDialog } from './dialogs.js';
+import { confirmDialog, choiceDialog } from './dialogs.js';
+import { createExporter } from './export-csv.js';
 import { fade, reducedMotion } from './motion.js';
 import { announce } from './announce.js';
 import { onDepthChange } from './nav.js';
@@ -33,9 +34,14 @@ export const LOGIN_TEXT = Object.freeze({
   signingIn: '正在登录…',
   resendButton: '重新发送验证码',
   safariHint: '请先加到主屏幕再使用：点 分享 → 添加到主屏幕。在这里登录后，加到主屏幕还要再登录一次。',
-  switchTitle: '这台设备上有另一个账号的账本',
-  switchMessage: '这些记录不会上传到新账号，会继续留在这台设备上。登录后在这台设备上新记的账，也会归到原来的账号。',
-  switchConfirm: '继续登录',
+  switchTitle: (n) => (n > 0 ? `这台设备上有 ${n} 笔另一个账号还没上传的记录` : '这台设备上有另一个账号还没上传的记录'),
+  switchMessage: '登录新账号会清除这台设备上的账本。请先导出 CSV 备份。',
+  switchExport: '导出 CSV',
+  switchClear: '清除并登录',
+  switchCancel: '取消登录',
+  clearTitle: '清除这台设备上的账本？',
+  clearMessage: 'CSV 存好了吗？清除后无法恢复。',
+  clearConfirm: '清除',
   sentTo: (email) => `已寄到 ${email}，10 分钟内有效。`,
   sentToTail: '10 分钟内有效。',
   resendIn: (sec) => `没收到？${sec} 秒后可以重新发送`,
@@ -120,10 +126,33 @@ function heroArt() {
 }
 
 /**
- * 挂载登录画面。store：读写 meta；fetchFn：fetch；hasLocalData()：本地有没有账本；onSignedIn(session)。
+ * 换账号、本地还有没上传的记录（审核 M5）：先「导出 CSV」（在点击里直接导出、不关窗），
+ * 再「清除并登录」→ 第二个破坏性确认；第二个按取消 → 回到第一个。回 true = 清除。
+ */
+export async function askReset(store, { txCount }) {
+  const T = LOGIN_TEXT;
+  const exportCsv = createExporter(store);
+  for (;;) {
+    const v = await choiceDialog({
+      title: T.switchTitle(txCount),
+      message: T.switchMessage,
+      // 直排三个：建议动作（导出）最上、红字清除、取消在最下且有焦点（Enter 不会直接清除）
+      buttons: [
+        { label: T.switchExport, bold: true, keepOpen: true, onClick: exportCsv },
+        { label: T.switchClear, destructive: true, value: 'clear' },
+        { label: T.switchCancel, value: 'cancel', focus: true },
+      ],
+    });
+    if (v !== 'clear') return false;
+    if (await confirmDialog({ title: T.clearTitle, message: T.clearMessage, confirmLabel: T.clearConfirm, destructive: true })) return true;
+  }
+}
+
+/**
+ * 挂载登录画面。store：读写 meta、换账号时导出与清除；fetchFn：fetch；onSignedIn(session)。
  * 回 { destroy() }。登录成功时会先自动 destroy 再叫 onSignedIn。
  */
-export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, onSignedIn, now = () => Date.now() }) {
+export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.now() }) {
   const T = LOGIN_TEXT;
   const cleanups = [];
   let destroyed = false;
@@ -139,8 +168,7 @@ export function mountLogin(root, { store, fetchFn, hasLocalData = () => false, o
     },
     store,
     now,
-    hasLocalData,
-    confirmSwitch: () => confirmDialog({ title: T.switchTitle, message: T.switchMessage, confirmLabel: T.switchConfirm }),
+    confirmReset: (info) => askReset(store, info),
     onSignedIn: (s) => { destroy(); onSignedIn(s); },
   });
 

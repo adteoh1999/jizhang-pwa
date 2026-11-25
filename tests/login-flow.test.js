@@ -21,14 +21,14 @@ function fakeApi(handlers = {}) {
   return { api, calls };
 }
 
-function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), hasLocalData = () => false, confirmSwitch = async () => true } = {}) {
+function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmReset = async () => true } = {}) {
   const store = createStore({ db });
   const { api, calls } = fakeApi(handlers);
   const signed = [];
   const switches = [];
   const flow = createLoginFlow({
-    api, store, now: () => nowRef.t, hasLocalData,
-    confirmSwitch: async () => { switches.push(1); return confirmSwitch(); },
+    api, store, now: () => nowRef.t,
+    confirmReset: async (info) => { switches.push(info); return confirmReset(info); },
     onSignedIn: (s) => signed.push(s),
   });
   return { flow, store, db, calls, signed, switches, nowRef };
@@ -257,32 +257,6 @@ test('saveSession 写入失败 → 显示讯息、回邮箱页、onSignedIn 没�
   assert.equal(flow.state.busy, false);
 });
 
-test('换账号：上次是 A、本地有账、这次登录 B → 先确认；不同意就不存 session、回欢迎页', async () => {
-  const db = createMemoryDb();
-  const { flow, store, signed, switches } = setup({ db, hasLocalData: () => true, confirmSwitch: async () => false, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
-  await saveLastUserId(store, 'u-A');
-  flow.goEmail();
-  await flow.submitEmail('me@x.com', '');
-  await flow.inputCode('481203');
-  assert.equal(switches.length, 1);
-  assert.equal(signed.length, 0);
-  assert.equal(await loadSession(store), null);
-  assert.equal(flow.state.step, 'welcome');
-  assert.equal(await loadLastUserId(store), 'u-A');
-});
-
-test('换账号：同意 → 正常登录；同一个账号或本地没账 → 不问', async () => {
-  for (const [last, local, asked] of [['u-A', true, 1], ['u-1', true, 0], ['u-A', false, 0], [null, true, 0]]) {
-    const { flow, store, signed, switches } = setup({ hasLocalData: () => local });
-    if (last) await saveLastUserId(store, last);
-    flow.goEmail();
-    await flow.submitEmail('me@x.com', '');
-    await flow.inputCode('481203');
-    assert.equal(switches.length, asked, `${last} ${local}`);
-    assert.equal(signed.length, 1, `${last} ${local}`);
-  }
-});
-
 test('back：验证码页 → 邮箱页（pending 保留）→ 欢迎页；subscribe 会收到变化', async () => {
   const { flow, store } = setup();
   const seen = [];
@@ -457,8 +431,10 @@ test('saveSession 失败后马上重发、otp 回 60 秒限制 → 留在邮箱�
 
 test('换账号按取消后再送同一邮箱 → 真的重寄（那组验证码已用掉）', async () => {
   const db = createMemoryDb();
-  const { flow, store, calls } = setup({ db, hasLocalData: () => true, confirmSwitch: async () => false, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
+  const { flow, store, calls } = setup({ db, confirmReset: async () => false, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
   await saveLastUserId(store, 'u-A');
+  await store.init();
+  await store.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
   flow.goEmail();
   await flow.submitEmail('me@x.com', '');
   db.failNextWrite(new Error('disk')); // 让 clearPending 失败，pending 还留着
@@ -563,47 +539,6 @@ test('editField：清掉后再犯同样的错 → 序号加一（会重念、重
 });
 
 // ---------- 2e 任务 4（审核 M2）：换账号前先记下本地账本属于谁 ----------
-test('换账号：上次 A、没有 owner、本地有账、B 登录 → 先写 owner = A（B 不会认领 A 的账）', async () => {
-  const { flow, store, signed } = setup({ hasLocalData: () => true, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
-  await saveLastUserId(store, 'u-A');
-  flow.goEmail();
-  await flow.submitEmail('me@x.com', '');
-  await flow.inputCode('481203');
-  assert.equal(signed.length, 1);
-  assert.equal(await store.getMeta('owner_user_id'), 'u-A');
-  assert.equal(await loadLastUserId(store), 'u-B');
-});
-
-test('换账号：已有 owner → 不改；本地没账 → 不写 owner；同一个账号 → 不写', async () => {
-  for (const [owner, local, last, expect] of [['u-X', true, 'u-A', 'u-X'], [undefined, false, 'u-A', undefined], [undefined, true, 'u-1', undefined]]) {
-    const { flow, store } = setup({ hasLocalData: () => local });
-    if (owner) await store.setMeta('owner_user_id', owner);
-    await saveLastUserId(store, last);
-    flow.goEmail();
-    await flow.submitEmail('me@x.com', '');
-    await flow.inputCode('481203');
-    assert.equal(await store.getMeta('owner_user_id'), expect, `${owner} ${local} ${last}`);
-  }
-});
-
-test('换账号：写入失败 → 不登录（宁可重来，也不让 B 认领 A 的账）；owner、session、lastUserId 一起写（要嘛全有要嘛全无）', async () => {
-  const db = createMemoryDb();
-  const { flow, store, signed } = setup({ db, hasLocalData: () => true, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
-  await saveLastUserId(store, 'u-A');
-  flow.goEmail();
-  await flow.submitEmail('me@x.com', '');
-  db.failNextWrite(new Error('disk'));
-  const orig = console.warn;
-  console.warn = () => {};
-  try { await flow.inputCode('481203'); } finally { console.warn = orig; }
-  assert.equal(signed.length, 0);
-  assert.equal(await loadSession(store), null);
-  assert.equal(await store.getMeta('owner_user_id'), undefined);
-  assert.equal(await loadLastUserId(store), 'u-A');
-  assert.equal(flow.state.step, 'email');
-  assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
-});
-
 async function withMetaReadFailing(store, key, fn) {
   const real = store.getMeta;
   store.getMeta = async (k) => { if (k === key) throw new Error('idb'); return real(k); };
@@ -614,7 +549,7 @@ async function withMetaReadFailing(store, key, fn) {
 
 test('读 lastUserId 或 owner 失败 → 不登录（不当成「没有上一个账号」）', async () => {
   for (const key of ['lastUserId', 'owner_user_id']) {
-    const { flow, store, signed } = setup({ hasLocalData: () => true, handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
+    const { flow, store, signed } = setup({ handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
     await saveLastUserId(store, 'u-A');
     flow.goEmail();
     await flow.submitEmail('me@x.com', '');
@@ -625,44 +560,118 @@ test('读 lastUserId 或 owner 失败 → 不登录（不当成「没有上一�
   }
 });
 
-test('账本主人是自己、lastUserId 是别人（A → B → A）→ 不问、正常登录、owner 不变', async () => {
-  const { flow, store, signed, switches } = setup({ hasLocalData: () => true });
-  await store.setMeta('owner_user_id', 'u-1');
-  await saveLastUserId(store, 'u-B');
+
+// ---------- 2e-2 任务 9（spec §7.7、审核 M5）：换账号清除本地账本 ----------
+const B = () => ({ handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
+const tx = (store, o = {}) => store.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '', ...o });
+async function login(flow) {
   flow.goEmail();
   await flow.submitEmail('me@x.com', '');
   await flow.inputCode('481203');
-  assert.equal(switches.length, 0);
+}
+async function prep(store, { owner, last, txs = 0, synced = false }) {
+  await store.init();
+  for (let i = 0; i < txs; i++) await tx(store, { amountMinor: 1 + i });
+  if (synced) {
+    await store.markUploaded('transactions', await store.pendingRows('transactions'), []);
+    await store.markUploaded('categories', await store.pendingRows('categories'), []);
+  }
+  const meta = {};
+  if (owner) meta.owner_user_id = owner;
+  if (last) meta.lastUserId = last;
+  meta['cursor:transactions'] = { ts: 'T', id: 'I' };
+  await store.setMetas(meta);
+}
+
+test('换账号：账本属于 A、有 2 笔还没上传、B 登录 → 先问（带笔数）；同意 → 清掉、owner/session/lastUserId 是 B、默认分类 10 个、游标清掉', async () => {
+  const { flow, store, signed, switches } = setup(B());
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 2 });
+  await login(flow);
+  assert.deepEqual(switches, [{ txCount: 2 }]);
   assert.equal(signed.length, 1);
-  assert.equal(await store.getMeta('owner_user_id'), 'u-1');
+  assert.equal(store.transactions().length, 0);
+  assert.equal(store.categories('expense').length + store.categories('income').length, 10);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-B');
+  assert.equal((await loadSession(store)).user_id, 'u-B');
+  assert.equal(await loadLastUserId(store), 'u-B');
+  assert.equal(await store.getMeta('cursor:transactions'), null);
+  assert.equal(await loadPending(store, T0), null);
 });
 
-test('账本主人是 A（lastUserId 是自己）→ 照样问', async () => {
-  const { flow, store, switches } = setup({ hasLocalData: () => true });
-  await store.setMeta('owner_user_id', 'u-A');
-  await saveLastUserId(store, 'u-1');
-  flow.goEmail();
-  await flow.submitEmail('me@x.com', '');
-  await flow.inputCode('481203');
+test('换账号：不同意 → 不存 session、回欢迎页、账本与 owner 都还在', async () => {
+  const { flow, store, signed, switches } = setup({ ...B(), confirmReset: async () => false });
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 1 });
+  await login(flow);
+  assert.equal(switches.length, 1);
+  assert.equal(signed.length, 0);
+  assert.equal(await loadSession(store), null);
+  assert.equal(flow.state.step, 'welcome');
+  assert.equal(store.transactions().length, 1);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-A');
+  assert.equal(await loadLastUserId(store), 'u-A');
+});
+
+test('换账号：A 的账全部已上传 → 不问、直接清掉、B 登录', async () => {
+  const { flow, store, signed, switches } = setup(B());
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 3, synced: true });
+  await login(flow);
+  assert.equal(switches.length, 0);
+  assert.equal(signed.length, 1);
+  assert.equal(store.transactions().length, 0);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-B');
+});
+
+test('换账号：没有 owner（还没开始同步）、上次 A、本地有账 → 全部算没上传，问（笔数是看得到的账）', async () => {
+  const { flow, store, switches } = setup(B());
+  await prep(store, { last: 'u-A', txs: 2 });
+  await login(flow);
+  assert.deepEqual(switches, [{ txCount: 2 }]);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-B');
+});
+
+test('换账号：只剩已删除的账或自建分类还没上传 → 照样问（txCount 只数还没上传的账目）', async () => {
+  for (const kind of ['deletedTx', 'customCat']) {
+    const { flow, store, switches } = setup(B());
+    await prep(store, { owner: 'u-A', last: 'u-A', synced: true });
+    if (kind === 'deletedTx') { const t = await tx(store); await store.deleteTransaction(t.id); } else { await store.saveCategory({ kind: 'expense', name: '宠物' }); }
+    await login(flow);
+    assert.deepEqual(switches, [{ txCount: kind === 'deletedTx' ? 1 : 0 }], kind);
+  }
+});
+
+test('同一个账号、或本地从没登录过 → 不问、不清', async () => {
+  for (const [owner, last] of [['u-1', 'u-1'], [null, null], [null, 'u-1'], ['u-1', 'u-B']]) {
+    const { flow, store, signed, switches } = setup();
+    await prep(store, { owner, last, txs: 1 });
+    await login(flow);
+    assert.equal(switches.length, 0, `${owner} ${last}`);
+    assert.equal(signed.length, 1, `${owner} ${last}`);
+    assert.equal(store.transactions().length, 1, `${owner} ${last}`);
+  }
+});
+
+test('换账号：账本主人是 A、lastUserId 是自己 → 照样问', async () => {
+  const { flow, store, switches } = setup();
+  await prep(store, { owner: 'u-A', last: 'u-1', txs: 1 });
+  await login(flow);
   assert.equal(switches.length, 1);
 });
 
-test('A 只留下已删除的账或自建分类（看得到的账 0 笔）→ B 登录不问，但 owner 仍记成 A', async () => {
-  for (const kind of ['deletedTx', 'customCat']) {
-    const { flow, store, switches, signed } = setup({ handlers: { verifyOtp: () => ({ ok: true, session: session('u-B') }) } });
-    await store.init();
-    if (kind === 'deletedTx') {
-      const t = await store.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
-      await store.deleteTransaction(t.id);
-    } else {
-      await store.saveCategory({ kind: 'expense', name: '宠物' });
-    }
-    await saveLastUserId(store, 'u-A');
-    flow.goEmail();
-    await flow.submitEmail('me@x.com', '');
-    await flow.inputCode('481203');
-    assert.equal(switches.length, 0, kind);
-    assert.equal(signed.length, 1, kind);
-    assert.equal(await store.getMeta('owner_user_id'), 'u-A', kind);
-  }
+test('换账号：清除写入失败 → 不登录、账本 / owner / session / lastUserId 都没变', async () => {
+  const db = createMemoryDb();
+  const { flow, store, signed } = setup({ db, ...B() });
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 1 });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  const real = store.resetForAccount;
+  store.resetForAccount = (...a) => { db.failNextWrite(new Error('disk')); return real(...a); };
+  const orig = console.warn;
+  console.warn = () => {};
+  try { await flow.inputCode('481203'); } finally { console.warn = orig; }
+  assert.equal(signed.length, 0);
+  assert.equal(await loadSession(store), null);
+  assert.equal(store.transactions().length, 1);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-A');
+  assert.equal(await loadLastUserId(store), 'u-A');
+  assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
 });

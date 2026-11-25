@@ -39,6 +39,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       try { fn(); } catch (e) { console.error(e); }
     }
   }
+  // 旧引擎写回前核对：owner 给了却已不是 owner_user_id（别的分页换了账号）→ false（审核 5 S-4）
+  const ownerOk = async (owner) => owner === undefined || (await db.getMeta('owner_user_id')) === owner;
   const mapOf = (table) => {
     if (table === 'transactions') return txs;
     if (table === 'categories') return cats;
@@ -48,6 +50,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   // 写入 db，成功后套用到快取并通知。local：用户的写入（同步会排程上传）；silent：不通知画面
   async function commit(changes, { local = false, silent = false } = {}) {
     await db.write(changes);
+    for (const s of changes.clear || []) mapOf(s).clear();
     const rm = changes.remove || {};
     for (const id of rm.transactions || []) txs.delete(id);
     for (const id of rm.categories || []) cats.delete(id);
@@ -202,8 +205,9 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
      * 回传时间（正规化后）不同 → 写回服务器的值（时钟快被压回）。不在 returned 里（LWW 略过）也清 dirty。
      * 一次写入；只有 updated_at 改了才通知画面。
      */
-    markUploaded(table, sent, returned) {
+    markUploaded(table, sent, returned, { owner } = {}) {
       return enqueue(async () => {
+        if (!(await ownerOk(owner))) return null;
         const map = mapOf(table);
         const back = new Map((returned || []).map((r) => [r.id, r]));
         const out = [];
@@ -226,8 +230,9 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     },
 
     /** 标记坏资料（服务器回 22xxx / 23xxx）。sentUpdatedAt 必填：本地已改过（或没传）→ 不标。dirty 保持 1。 */
-    markSyncError(table, id, code, sentUpdatedAt) {
+    markSyncError(table, id, code, sentUpdatedAt, { owner } = {}) {
       return enqueue(async () => {
+        if (!(await ownerOk(owner))) return null;
         const local = mapOf(table).get(id);
         if (!local || local.dirty !== 1) return;
         if (typeof sentUpdatedAt !== 'string' || local.updated_at !== sentUpdatedAt) return;
@@ -236,8 +241,9 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     },
 
     /** 清掉所有 sync_error（App 版本变了重试一次）。回清掉的笔数。 */
-    clearSyncErrors() {
+    clearSyncErrors({ owner } = {}) {
       return enqueue(async () => {
+        if (!(await ownerOk(owner))) return null;
         const changes = {};
         let n = 0;
         for (const t of TABLES) {
@@ -257,7 +263,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
      */
     applyRemote(table, rows, { meta, owner, silent = false } = {}) {
       return enqueue(async () => {
-        if ((await db.getMeta('owner_user_id')) !== owner) return null;
+        if (owner === undefined || !(await ownerOk(owner))) return null;
         const map = mapOf(table);
         const cols = UPLOAD_COLUMNS[table];
         const out = [];
@@ -282,10 +288,32 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     /** 完整对账后（审核 S9）：dirty 0 却不在服务器上的列重新标待上传。owner 不符回 null。回笔数。 */
     markMissingForUpload(table, serverIds, { owner } = {}) {
       return enqueue(async () => {
-        if ((await db.getMeta('owner_user_id')) !== owner) return null;
+        if (owner === undefined || !(await ownerOk(owner))) return null;
         const out = [...mapOf(table).values()].filter((r) => r.dirty !== 1 && !serverIds.has(r.id)).map((r) => ({ ...r, dirty: 1 }));
         if (out.length) await commit({ [table]: out }, { silent: true });
         return out.length;
+      });
+    },
+
+    /**
+     * 换账号（spec §7.7、审核 M5）：同一次写入清空账与分类、重建默认分类（dirty 1，epoch：传到已有账号会被 LWW 略过）、
+     * owner 换成 userId、清游标与完整对账时间（第一轮完整拉取）、清「关掉提醒」。meta：要一起写的（session、lastUserId）。
+     * 不清 session 以外的登录资料（loginPending 由登录流程处理）与 localStorage。
+     */
+    resetForAccount(userId, { meta = {} } = {}) {
+      return enqueue(async () => {
+        await commit({
+          clear: TABLES,
+          categories: defaultCategories().map((c) => ({ ...c, dirty: 1 })),
+          meta: {
+            ...meta,
+            owner_user_id: userId,
+            'cursor:transactions': null,
+            'cursor:categories': null,
+            fullSyncAt: null,
+            syncPromptDismissed: null,
+          },
+        });
       });
     },
 

@@ -110,7 +110,7 @@ export function confirmDialog({
 }
 
 /**
- * 多选一对话框。buttons：[{label, value, bold, keepOpen, onClick, focus}]。三个以上会直排。
+ * 多选一对话框。buttons：[{label, value, bold, destructive, keepOpen, onClick, focus}]。三个以上会直排。
  * 一定要有一个能关窗的「取消」类按钮（iPhone 没有 Esc，alert 点背景也不关）。
  * keepOpen 的按钮只在点击事件里同步呼叫 onClick、不关窗（例如导出 CSV：navigator.share 要在手势里）。
  * 回传按下的 value；Esc 关掉回 null。
@@ -120,6 +120,7 @@ export function choiceDialog({ title, message, buttons }) {
     let result = null;
     let close = () => {};
     const els = buttons.map((b) => alertButton(b.label, {
+      style: b.destructive ? 'destructive' : 'default',
       bold: !!b.bold,
       onClick: () => {
         if (b.keepOpen) { if (b.onClick) b.onClick(); return; }

@@ -206,7 +206,6 @@ async function boot() {
       mountLogin(root, {
         store,
         fetchFn: (url, init) => fetch(url, init),
-        hasLocalData: () => store.transactions().length > 0,
         onSignedIn: (s) => {
           window.scrollTo(0, 0); // 键盘曾让页面滚动过：首页从顶端开始
           try {

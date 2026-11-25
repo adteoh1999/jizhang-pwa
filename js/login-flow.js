@@ -26,9 +26,9 @@ const clampRetry = (sec) => Math.max(0, Math.min(RESEND_SEC, sec));
 
 /**
  * api：{ registerEmail(email, invite), requestOtp(email), verifyOtp(email, code, nowMs) }（已绑好 fetch）
- * hasLocalData()：本地有没有账本（换账号确认用）；confirmSwitch()：Promise<boolean>
+ * confirmReset({txCount})：换账号、本地还有没上传的记录时问（导出 CSV 后清除）→ Promise<boolean>
  */
-export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn, hasLocalData = () => false, confirmSwitch = async () => true }) {
+export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn, confirmReset = async () => true }) {
   const state = {
     ready: false, step: 'welcome', email: '', code: '', busy: false,
     error: '', errorField: null, errorSeq: 0, notice: '', noticeSeq: 0, sentAt: null,
@@ -226,8 +226,13 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
           owner = (await store.getMeta('owner_user_id')) || null;
         } catch (e) { notSaved('loadOwner')(e); return; }
         const prevOwner = owner || last; // 本地账本（可能）的主人
-        if (prevOwner && prevOwner !== s.user_id && hasLocalData()) {
-          const go = await confirmSwitch();
+        // 换账号（spec §7.7、审核 M5）：清掉这台设备的账本（同一次写入连 session 一起写）。
+        // 还有没上传的记录才问：已归属 → 待上传 + 无法同步；还没归属（没开始同步）→ 整本都没上传
+        const switching = !!prevOwner && prevOwner !== s.user_id;
+        if (switching) {
+          const c = store.syncCounts();
+          const unsynced = owner ? c.pending + c.errors > 0 : store.hasOwnedData();
+          const go = !unsynced || await confirmReset({ txCount: owner ? c.txPending + c.txErrors : store.transactions().length });
           if (!go) {
             pendingUsed = true; // 这组验证码已被服务器用掉
             clearPending(store).catch(warn('clearPending'));
@@ -236,13 +241,12 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
             return;
           }
         }
-        // session、lastUserId、（需要时）owner 同一次写入：要嘛全有要嘛全无。
-        // 换账号且本地账本还没归属（含只剩已删除的账、自建分类）→ 先记成上一个账号的（claimState 回 other，不会上传到新账号）。
+        // session、lastUserId（换账号时连清除与新 owner）同一次写入：要嘛全有要嘛全无
         const meta = { session: s, lastUserId: s.user_id };
-        if (!owner && last && last !== s.user_id && (store.hasOwnedData() || hasLocalData())) meta.owner_user_id = last;
         try {
-          await store.setMetas(meta);
-        } catch (e) { notSaved('saveSession')(e); return; }
+          if (switching) await store.resetForAccount(s.user_id, { meta });
+          else await store.setMetas(meta);
+        } catch (e) { notSaved(switching ? 'resetForAccount' : 'saveSession')(e); return; }
         await clearPending(store).catch(warn('clearPending'));
         state.step = 'done';
         signedIn = s;

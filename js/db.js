@@ -57,11 +57,14 @@ function makeAdapter(db) {
   return {
     async getAll(store) { return promisify(db.transaction(store).objectStore(store).getAll()); },
     write(changes) {
-      // changes.remove = {transactions: [id…]}：先删再写（同步换 id 用），同一个 transaction
+      // changes.clear = ['transactions', …]：先清空整个表（换账号用）
+      // changes.remove = {transactions: [id…]}：再删（同步换 id 用）；最后写。同一个 transaction
       const rm = changes.remove || {};
-      const names = [...STORES.filter((s) => changes[s] || rm[s]), ...(changes.meta ? ['meta'] : [])];
+      const cl = changes.clear || [];
+      const names = [...STORES.filter((s) => changes[s] || rm[s] || cl.includes(s)), ...(changes.meta ? ['meta'] : [])];
       if (names.length === 0) return Promise.resolve();
       return run(names, (tx) => {
+        for (const s of STORES) if (cl.includes(s)) tx.objectStore(s).clear();
         for (const s of STORES) for (const id of rm[s] || []) tx.objectStore(s).delete(id);
         for (const s of STORES) for (const r of changes[s] || []) tx.objectStore(s).put(r);
         for (const [key, value] of Object.entries(changes.meta || {})) tx.objectStore('meta').put({ key, value });

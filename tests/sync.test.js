@@ -111,8 +111,6 @@ test('提醒文字：N 笔、按钮是具体动词；换账号对话框不再说
   const { readFileSync } = await import('node:fs');
   const login = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
   assert.doesNotMatch(login, /新账号会看到/);
-  assert.match(login, /不会上传到新账号/);
-  assert.match(login, /新记的账/);
 });
 
 test('导出抽到 export-csv.js：设置页与提醒共用，share 在点击里同步呼叫', async () => {

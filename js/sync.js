@@ -149,7 +149,7 @@ export function createSync({
     if (st !== 'mine') { setState(st === 'other' ? 'other-owner' : 'unclaimed'); return 'halt'; }
     // 归属核对过才动资料：App 更新了 → 坏资料重试一次
     if ((await store.getMeta('syncErrorVersion')) !== appVersion) {
-      await store.clearSyncErrors();
+      if ((await store.clearSyncErrors({ owner: userId })) === null) { setState('other-owner'); return 'halt'; }
       await store.setMeta('syncErrorVersion', appVersion);
     }
 
@@ -173,6 +173,10 @@ export function createSync({
     const logFail = (table, r) => console.warn(`[sync] 上传 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
     // 2xx 但回应不是清单：不能当成功（会把没写进去的账标成已同步）
     const badOk = (table, r) => { console.warn(`[sync] 上传 ${table} 回应格式不对：HTTP ${r.status}`); return 'fail'; };
+    // 写回都核对 owner（别的分页换了账号 → 回 null → 停，不把旧账号的快取写回去）
+    const ownerGone = () => { setState('other-owner'); return 'halt'; };
+    const uploaded = (table, sent, rows) => store.markUploaded(table, sent, rows, { owner: userId });
+    const syncError = (table, row, code) => store.markSyncError(table, row.id, code, row.updated_at, { owner: userId });
 
     for (const table of TABLES) {
       const rows = await store.pendingRows(table);
@@ -183,13 +187,13 @@ export function createSync({
         if (typeof r === 'string') return r;
         if (isOk(r.status)) {
           if (!r.rows) return badOk(table, r);
-          await store.markUploaded(table, batch, r.rows);
+          if ((await uploaded(table, batch, r.rows)) === null) return ownerGone();
           continue;
         }
         if (!isDataError(r)) { logFail(table, r); return 'fail'; }
         if (batch.length === 1) {
           logFail(table, r);
-          await store.markSyncError(table, batch[0].id, r.errorCode, batch[0].updated_at);
+          if ((await syncError(table, batch[0], r.errorCode)) === null) return ownerGone();
           continue;
         }
         // 整批有坏资料 → 逐笔找出是哪几笔。先收集，最后才标：全错（前后端不一致）就一笔都不标
@@ -200,7 +204,7 @@ export function createSync({
           if (typeof one === 'string') return one;
           if (isOk(one.status)) {
             if (!one.rows) return badOk(table, one);
-            await store.markUploaded(table, [row], one.rows);
+            if ((await uploaded(table, [row], one.rows)) === null) return ownerGone();
             good++;
           } else if (isDataError(one)) {
             bad.push([row, one.errorCode]);
@@ -213,7 +217,7 @@ export function createSync({
         }
         for (const [row, code] of bad) {
           console.warn(`[sync] 上传 ${table} 有一笔被拒${safeCode(code)}`);
-          await store.markSyncError(table, row.id, code, row.updated_at);
+          if ((await syncError(table, row, code)) === null) return ownerGone();
         }
       }
     }
@@ -252,12 +256,12 @@ export function createSync({
         if (ids) for (const row of r.rows) ids.add(row.id);
         // 这页资料与游标同一次写入；owner 不是这个账号了 → 停
         const n = await store.applyRemote(table, r.rows, { meta: { [cursorKey(table)]: after }, owner: userId, silent: true });
-        if (n === null) { setState('other-owner'); return 'halt'; }
+        if (n === null) return ownerGone();
         adopted += n;
       }
       if (ids) {
         const m = await store.markMissingForUpload(table, ids, { owner: userId });
-        if (m === null) { setState('other-owner'); return 'halt'; }
+        if (m === null) return ownerGone();
         if (m) console.warn(`[sync] 完整对账：${table} 有 ${m} 笔不在服务器上，重新上传`);
         missing += m;
       }
