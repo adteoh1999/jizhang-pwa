@@ -753,3 +753,18 @@ test('复审 M3：getSession 卡到超时后才回、App 版本变了 → 旧轮
   });
   assert.equal(await r.store.getMeta('syncErrorVersion'), 'v-old');
 });
+
+test('2f-2 小事：App 版本变了要记 syncErrorVersion 时，账本已被别的分页清掉 → 不写回、停下', async () => {
+  const r = await setup({ txCount: 1, appVersion: 'v-new' });
+  await r.store.setMeta('syncErrorVersion', 'v-old');
+  const write = r.db.write.bind(r.db);
+  let done = false;
+  r.db.write = async (c) => {
+    if (!done && c.meta && 'syncErrorVersion' in c.meta) { done = true; await write({ clear: ['transactions', 'categories'], clearMeta: true, meta: { ledgerId: 'other-ledger' } }); }
+    return write(c);
+  };
+  await r.sync.syncNow();
+  assert.deepEqual(r.db.metaKeys(), ['ledgerId']);
+  assert.equal(r.fetchFn.calls.length, 0);
+  assert.equal(r.sync.status().state, 'other-owner');
+});

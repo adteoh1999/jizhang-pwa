@@ -517,3 +517,33 @@ test('2e-3 Task 3：diagnostics()——上次检查时间、结果、拉回笔�
   await sync.syncNow();
   assert.equal(sync.diagnostics().lastAdopted, 0); // 每轮重算
 });
+
+// 2f-2 审核小事：别的分页刚清掉账本（登出／删号）→ 引擎不把游标、fullSyncAt 写回去
+// 在写入那个 meta 键的前一刻，模拟别的分页 wipeLocal（owner 与账本代号都没了）
+function wipeBeforeWriting(db, key) {
+  const write = db.write.bind(db);
+  let done = false;
+  db.write = async (c) => {
+    if (!done && c.meta && key in c.meta && !c.clearMeta) { done = true; await write({ clear: ['transactions', 'categories'], clearMeta: true, meta: { ledgerId: 'other-ledger' } }); }
+    return write(c);
+  };
+}
+
+test('2f-2 小事：拉取 4xx 要丢游标时，账本已被别的分页清掉 → 不写回游标、停下', async () => {
+  const cursor = { ts: ts(0), id: fakeUuid(1) };
+  const clock = fakeClock();
+  const server = fakePostgrest({}, { onGet: (table) => (table === 'transactions' ? jsonRes(400, { code: 'PGRST100' }) : null) });
+  const { sync, db } = await setup({ server, clock, meta: { 'cursor:transactions': cursor, 'cursor:categories': cursor, fullSyncAt: clock.now() } });
+  wipeBeforeWriting(db, 'cursor:transactions');
+  await sync.syncNow();
+  assert.deepEqual(db.metaKeys(), ['ledgerId']);
+  assert.equal(sync.status().state, 'other-owner');
+});
+
+test('2f-2 小事：完整对账做完要记 fullSyncAt 时，账本已被别的分页清掉 → 不写回、停下', async () => {
+  const { sync, db } = await setup();
+  wipeBeforeWriting(db, 'fullSyncAt');
+  await sync.syncNow();
+  assert.deepEqual(db.metaKeys(), ['ledgerId']);
+  assert.equal(sync.status().state, 'other-owner');
+});

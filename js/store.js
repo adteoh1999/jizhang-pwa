@@ -187,9 +187,15 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     },
 
     getMeta: (key) => db.getMeta(key),
-    setMeta(key, value) {
+    /**
+     * 写一个 meta 键。owner（同步引擎用，2f-2 审核小事）：写入前核对 owner_user_id 与账本代号，
+     * 不符（别的分页登出／删号清掉了）→ 回 null、什么都不写；写了回 true。
+     */
+    setMeta(key, value, { owner } = {}) {
       return enqueue(async () => {
-        await db.write({ meta: { [key]: value } });
+        if (owner === undefined) { await db.write({ meta: { [key]: value } }); return undefined; }
+        if (!(await ownerOk(owner))) return null;
+        return ownerCommit(owner, { meta: { [key]: value } }, { silent: true });
       });
     },
     /** 一次写多个 meta 键（同一个 IndexedDB transaction：要嘛全有要嘛全无）。 */

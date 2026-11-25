@@ -171,7 +171,7 @@ export function createSync({
     // 归属核对过才动资料：App 更新了 → 坏资料重试一次
     if ((await store.getMeta('syncErrorVersion')) !== appVersion) {
       if ((await store.clearSyncErrors({ owner: userId })) === null) { setState('other-owner'); return 'halt'; }
-      await store.setMeta('syncErrorVersion', appVersion);
+      if ((await store.setMeta('syncErrorVersion', appVersion, { owner: userId })) === null) { setState('other-owner'); return 'halt'; }
     }
 
     let refreshed = false;
@@ -285,7 +285,9 @@ export function createSync({
           if (!isOk(r.status)) {
             console.warn(`[sync] 拉取 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
             // 4xx（不含 429）：游标可能坏了 → 丢掉，下次完整拉取
-            if (r.status >= 400 && r.status < 500 && r.status !== 429) await store.setMeta(cursorKey(table), null);
+            if (r.status >= 400 && r.status < 500 && r.status !== 429) {
+              if ((await store.setMeta(cursorKey(table), null, { owner: userId })) === null) return ownerGone();
+            }
             return 'fail';
           }
           if (!r.rows) { console.warn(`[sync] 拉取 ${table} 回应格式不对：HTTP ${r.status}`); return 'fail'; }
@@ -319,7 +321,7 @@ export function createSync({
         }
       }
       if (dead()) return 'halt';
-      if (fullDue) await store.setMeta('fullSyncAt', now());
+      if (fullDue && (await store.setMeta('fullSyncAt', now(), { owner: userId })) === null) return ownerGone();
       if (missing) rerun = true; // 马上再跑一轮把它们传上去
       return 'ok';
     }

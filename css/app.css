@@ -496,6 +496,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 .alert-body { padding: 19px 16px 20px; }
 .alert-title { font: var(--font-headline); }
+/* 「正在删除…」遮罩那句字：程序聚焦给读屏用，不能操作，不画焦点框（2f-2 复核） */
+.alert-busy .alert-title:focus,
+.alert-busy .alert-title:focus-visible { outline: none; }
 .alert-message { font: var(--font-footnote); margin-top: 4px; white-space: pre-line; }   /* 明细列表用 \n 分行 */
 .alert-field { /* 点击区 ≥44px，输入框视觉仍为 32px */
   min-height: var(--hit);

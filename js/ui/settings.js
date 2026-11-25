@@ -11,9 +11,7 @@ import { onUpdateAvailable, applyUpdate } from '../update.js';
 import { signOut, forgetSession } from '../auth.js';
 import { formatRM } from '../money.js';
 import { createExporter } from './export-csv.js';
-import { runDeleteAccount, dangerRows, DELETE_TEXT } from './delete-account.js';
-
-const DELETE_BUSY = DELETE_TEXT.busyLabel;
+import { runDeleteAccount, dangerRows, busyRowHandler } from './delete-account.js';
 
 /**
  * 设置页「同步」列的文字（纯函数）。回 {text, action}；action：可点时做什么（'relogin' | 'errors' | 'start' | 'reload'），不能点为 null。
@@ -347,15 +345,20 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   const dangerSection = () => {
     const rows = dangerRows(session).map((r) => {
       const label = h('span', { class: 'inset-row-label' }, r.label);
+      // 流程内部的意外已在 runDeleteAccount 复位并重新整理；这里的 catch 只是保险
       const btn = h('button', {
         type: 'button', class: 'inset-row is-destructive',
         on: {
           click: () => runDeleteAccount({
             store, sync, realtime,
+            userId: session.user_id, // 审核 1：只删挂载这个设置页时的账号
             fetchFn: (url, init) => fetch(url, init),
             reload: () => location.reload(),
-            onBusy: (busy) => { label.textContent = busy ? DELETE_BUSY : r.label; btn.disabled = busy; },
-          }).catch((e) => console.warn(`[settings] 删除账号出错：${e && e.name ? e.name : '未知'}`)),
+            onBusy: busyRowHandler({ btn, label, idleText: r.label }),
+          }).catch((e) => {
+            console.warn(`[settings] 删除账号出错：${e && e.name ? e.name : '未知'}`);
+            location.reload();
+          }),
         },
       }, label);
       return btn;

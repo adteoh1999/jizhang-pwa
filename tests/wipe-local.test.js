@@ -135,3 +135,19 @@ test('wipeLocal 后同一个分页自己还能照常记账（自己的账本代�
   await store.saveTransaction({ kind: 'expense', amountMinor: 100, categoryId: 'food', occurredOn: '2026-11-21', note: '' });
   assert.equal((await db.getAll('transactions')).length, 1);
 });
+
+// 2f-2 审核小事：同步引擎写 syncErrorVersion／游标／fullSyncAt 要核对 owner（别的分页清完后不写回）
+test('setMeta 带 owner：owner 还是它才写，回 true；不是（或账本已换）→ 回 null、什么都不写', async () => {
+  const db = createMemoryDb();
+  const store = await used(db);
+  assert.equal(await store.setMeta('fullSyncAt', 456, { owner: 'u-A' }), true);
+  assert.equal(await store.getMeta('fullSyncAt'), 456);
+  assert.equal(await store.setMeta('fullSyncAt', 789, { owner: 'u-B' }), null);
+  assert.equal(await store.getMeta('fullSyncAt'), 456);
+  // 别的分页清掉（owner 没了、ledgerId 换了）
+  const other = make(db);
+  await other.init();
+  await other.wipeLocal();
+  assert.equal(await store.setMeta('fullSyncAt', 999, { owner: 'u-A' }), null);
+  assert.equal(await store.getMeta('fullSyncAt'), undefined);
+});

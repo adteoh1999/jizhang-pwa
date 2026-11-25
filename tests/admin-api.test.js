@@ -95,8 +95,43 @@ test('deleteAccount：失败照样回状态码与中文；网络错 status 0；�
   assert.ok((await delaysOf(() => deleteAccount(h, TOKEN))).includes(20000));
 });
 
-test('2xx 但内容不是 JSON：invites 当失败（要有资料）；delete-account 仍算成功', async () => {
+test('2xx 但内容不是 JSON：invites 与 delete-account 都当失败（通用句）', async () => {
   const f = fake(() => new Response('oops', { status: 200 }));
   assert.equal((await callInvites(f, TOKEN, 'list')).ok, false);
-  assert.deepEqual(await deleteAccount(f, TOKEN), { ok: true });
+  assert.deepEqual(await deleteAccount(f, TOKEN), { ok: false, status: 200, error: '暂时无法完成，请稍后再试' });
+});
+
+test('2f-2 审核 6：delete-account 要 body.ok === true 才算成功', async () => {
+  for (const body of [{}, { ok: 'true' }, { ok: 1 }, { ok: false }, [true], null]) {
+    const f = fake(() => res(200, body));
+    assert.deepEqual(await deleteAccount(f, TOKEN), { ok: false, status: 200, error: '暂时无法完成，请稍后再试' }, JSON.stringify(body));
+  }
+  const g = fake(() => res(204));
+  assert.equal((await deleteAccount(g, TOKEN)).ok, false);
+});
+
+test('2f-2 审核 3：delete-account 超时回 timeout:true；断网只有 status 0（没有 timeout）', async () => {
+  const f = fake(hangUntilAbort);
+  assert.deepEqual(await deleteAccount(f, TOKEN, { timeoutMs: 20 }), { ok: false, status: 0, error: '需要网络', timeout: true });
+  const g = fake(() => { throw new TypeError('Failed to fetch'); });
+  assert.deepEqual(await deleteAccount(g, TOKEN), { ok: false, status: 0, error: '需要网络' });
+  // 别的原因中止（不是自己的计时器）也不算超时
+  const h = fake(() => { throw new DOMException('aborted', 'AbortError'); });
+  assert.deepEqual(await deleteAccount(h, TOKEN), { ok: false, status: 0, error: '需要网络' });
+});
+
+test('复审小事：回应标头到了、读内容时计时器到期 → 也算超时', async () => {
+  const f = fake((url, init) => ({
+    status: 200,
+    json: () => new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))),
+  }));
+  assert.deepEqual(await deleteAccount(f, TOKEN, { timeoutMs: 20 }), { ok: false, status: 0, error: '需要网络', timeout: true });
+});
+
+test('复核小事：计时器到期的同一刻内容刚好读完 → 用读到的回应（不丢掉成功）', async () => {
+  const f = fake((url, init) => ({
+    status: 200,
+    json: () => new Promise((resolve) => init.signal.addEventListener('abort', () => resolve({ invites: [] }))),
+  }));
+  assert.deepEqual(await callInvites(f, TOKEN, 'list', {}, { timeoutMs: 20 }), { ok: true, data: { invites: [] } });
 });

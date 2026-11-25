@@ -151,6 +151,28 @@ export function messageDialog({ title, message }) {
   });
 }
 
+/**
+ * 「正在…」遮罩（2f-2 审核 4）：没有按钮、Esc 关不掉（onDismiss 不做事），入栈让底下整个画面 inert。
+ * 读屏（用户选方案 B＋a）：面板是有名称的 dialog；焦点放在那句字上（iOS VoiceOver 落在叶子元素上，
+ * 一定念得到、等待中手指摸得到；可能连对话框名称念两次）。静态、没有动画转圈（效能规则）。回 close()。
+ */
+export function busyOverlay(text) {
+  const opener = document.activeElement; // 底下变 inert 时焦点会被移走：关闭时还回去（复审 3）
+  const msg = h('p', { class: 'alert-title', tabindex: '-1' }, text);
+  const panel = h('div', { class: 'alert alert-busy', role: 'dialog', 'aria-modal': 'true', 'aria-label': text },
+    h('div', { class: 'alert-body' }, msg));
+  const overlay = h('div', { class: 'overlay overlay-alert' }, panel);
+  const handle = pushLayer({ element: overlay, onDismiss: () => {} });
+  document.body.append(overlay);
+  msg.focus({ preventScroll: true });
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (overlay.isConnected) overlay.classList.add('is-visible'); }));
+  return () => {
+    handle.close(); // 同步解除底下的 inert，接着开的对话框才拿得到正确的 opener
+    overlay.remove();
+    if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus({ preventScroll: true });
+  };
+}
+
 /** 底部 action sheet；回传被按的 label，取消 / Esc / 点背景 → null。 */
 export function actionSheet({ title, message, actions }) {
   return new Promise((resolve) => {

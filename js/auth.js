@@ -187,21 +187,57 @@ export async function refreshSession(fetchFn, refreshToken, email, nowMs, { time
 
 // 分页内的后备锁（没有 navigator.locks 时，例如 iOS 15.4 以前或非 HTTPS）
 const localLocks = new Map();
-function localLock(name, fn) {
+function localLock(name, fn, waitMs) {
   const prev = localLocks.get(name) || Promise.resolve();
-  const run = prev.then(fn, fn);
-  const tail = run.catch(() => {});
+  const turn = waitMs === undefined ? prev : waitOrGiveUp(prev, waitMs);
+  const run = turn.then(fn);
+  // 排在后面的人要等「前一个真的放手」：超时放弃的这次没拿到锁，不能让后面的人提早进去
+  const tail = run.then(() => prev, () => prev).catch(() => {});
   localLocks.set(name, tail);
   tail.then(() => { if (localLocks.get(name) === tail) localLocks.delete(name); });
   return run;
 }
+
+const lockTimeoutError = () => {
+  const e = new Error('等锁超时');
+  e.name = 'LockTimeout';
+  return e;
+};
+const unrefTimer = (t) => { if (t && typeof t.unref === 'function') t.unref(); return t; };
+
+// prev 在 waitMs 内结束 → resolve；否则 reject LockTimeout
+function waitOrGiveUp(prev, waitMs) {
+  return new Promise((resolve, reject) => {
+    const t = unrefTimer(setTimeout(() => reject(lockTimeoutError()), waitMs));
+    prev.then(() => { clearTimeout(t); resolve(); });
+  });
+}
+
 /**
  * 拿锁执行 fn（跨分页用 Web Locks；没有就用分页内的 Promise 锁）。
  * 锁不能重入：拿着 jizhang-auth 锁时，不可以再调 getValidSession / signOut（会永远等）。
+ * waitMs：最多等这么久拿锁（2f-2 审核 5），等不到就 reject LockTimeout、fn 不会执行（之后拿到锁也不执行）。
+ * Web Locks 用 signal 取消排队；不支援 signal 的浏览器拿到锁时直接放掉。
  */
-export function withLock(name, fn, locks = globalThis.navigator && globalThis.navigator.locks) {
-  if (locks && typeof locks.request === 'function') return locks.request(name, () => fn());
-  return localLock(name, fn);
+export function withLock(name, fn, locks = globalThis.navigator && globalThis.navigator.locks, { waitMs } = {}) {
+  if (!(locks && typeof locks.request === 'function')) return localLock(name, fn, waitMs);
+  if (waitMs === undefined) return locks.request(name, () => fn());
+  return new Promise((resolve, reject) => {
+    const ctrl = new AbortController();
+    let state = 'waiting'; // waiting → granted | gaveUp
+    const t = unrefTimer(setTimeout(() => {
+      if (state !== 'waiting') return;
+      state = 'gaveUp';
+      ctrl.abort();
+      reject(lockTimeoutError());
+    }, waitMs));
+    locks.request(name, { signal: ctrl.signal }, () => {
+      if (state === 'gaveUp') return undefined; // 已放弃：拿到也马上放掉
+      state = 'granted';
+      clearTimeout(t);
+      return fn();
+    }).then(resolve, (e) => { if (state !== 'gaveUp') { clearTimeout(t); reject(e); } });
+  });
 }
 
 const errName = (e) => (e && e.name ? e.name : '未知');
@@ -212,8 +248,9 @@ const errName = (e) => (e && e.name ? e.name : '未知');
  * failedToken：刚被服务器 401 拒绝的 access token。锁内重读后若已不同（别的分页刚刷新）且没快过期就直接用；
  * 相同就强制刷新。失效时把 session 标成 invalid（不删：用户决定 1，账本照常用、同步暂停），
  * 之后不再发刷新请求，直到重新登录（存新 session 时 invalid 自然消失）。
+ * waitMs：最多等这么久拿锁，等不到回 {retry:true}（删号时别的分页卡住锁，不要停在「正在删除…」）。
  */
-export async function getValidSession(store, fetchFn, { now = Date.now, locks, failedToken = null } = {}) {
+export async function getValidSession(store, fetchFn, { now = Date.now, locks, failedToken = null, waitMs } = {}) {
   try {
     return await withLock(AUTH_LOCK, async () => {
       let s;
@@ -247,7 +284,7 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
         console.warn(`[auth] 标记登录失效失败：${errName(e)}`);
       }
       return { invalid: true };
-    }, locks);
+    }, locks, { waitMs });
   } catch (e) {
     console.warn(`[auth] 拿锁失败：${errName(e)}`);
     return { retry: true };
@@ -255,17 +292,19 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
 }
 
 /** 「重新登录」：只清本机 session（已失效，不通知服务器），走同一把锁，之后呼叫者重载到登录页。 */
-export function forgetSession(store, { locks } = {}) {
-  return withLock(AUTH_LOCK, () => clearSession(store), locks);
+export function forgetSession(store, { locks, waitMs } = {}) {
+  return withLock(AUTH_LOCK, () => clearSession(store), locks, { waitMs });
 }
 
+export const LOCK_WAIT_MS = 5000; // 删号流程等 jizhang-auth 锁的上限（2f-2 审核 5）
 /**
  * 清空这台设备的账本（登出、删号共用，2f 审核 M2）：拿 jizhang-auth 锁再 store.wipeLocal()，
  * 才不会和正在进行的 token 刷新交错（刷新写回 session 会把刚清掉的登录又写回去）。
- * 锁不能重入：一定要在 getValidSession 回来之后才叫。拿锁失败就不用锁直接清（照 signOut）。
+ * 锁不能重入：一定要在 getValidSession 回来之后才叫。拿锁失败或等超过 waitMs（默认 5 秒，2f-2 审核 5：
+ * 别的分页卡住时不要让删号停在「正在删除…」）就不用锁直接清（照 signOut）。
  * 回 true／false，不会 reject。
  */
-export async function wipeLocalLocked(store, { locks } = {}) {
+export async function wipeLocalLocked(store, { locks, waitMs = LOCK_WAIT_MS } = {}) {
   const work = async () => {
     try {
       await store.wipeLocal();
@@ -276,7 +315,7 @@ export async function wipeLocalLocked(store, { locks } = {}) {
     }
   };
   try {
-    return await withLock(AUTH_LOCK, work, locks);
+    return await withLock(AUTH_LOCK, work, locks, { waitMs });
   } catch (e) {
     console.warn(`[auth] 清除拿锁失败：${errName(e)}`);
     return work();
