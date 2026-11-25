@@ -77,10 +77,11 @@ export async function handleInvites(req: Request, deps: Deps): Promise<Response>
 
       case 'create': {
         const maxUses = input.max_uses;
-        const note = input.note ?? '';
+        const rawNote = input.note ?? '';
+        const note = typeof rawNote === 'string' ? rawNote.trim() : null;
         const okUses = Number.isInteger(maxUses) && maxUses >= 1 && maxUses <= 20;
         const okDays = 'days' in input && VALID_DAYS.includes(input.days);
-        const okNote = typeof note === 'string' && [...note].length <= NOTE_MAX;
+        const okNote = note !== null && [...note].length <= NOTE_MAX;
         if (!okUses || !okDays || !okNote) return reply(400, { error: '设定不正确' });
         const code = await call('svc_new_invite_code', { p_max_uses: maxUses, p_days: input.days, p_note: note });
         if (typeof code !== 'string' || !normalizeInviteCode(code)) throw new Error('svc_new_invite_code 回传格式不对');
@@ -99,10 +100,10 @@ export async function handleInvites(req: Request, deps: Deps): Promise<Response>
         const code = normalizeInviteCode(input.code);
         if (!code) return reply(404, { error: '找不到这个邀请码' });
         const rows = await usesOf(call, code);
-        // 前端不需要 user_id，不送出去
+        // 前端不需要 user_id，不送出去；已删除的人一律不送邮箱（2f 以前删的人纪录上可能还留着）
         return reply(200, {
           uses: rows.map((u) => ({
-            id: u.id, email: u.email, used_at: u.used_at, deleted: u.deleted, owner: u.owner, pending: u.pending,
+            id: u.id, email: u.deleted ? '' : u.email, used_at: u.used_at, deleted: u.deleted, owner: u.owner, pending: u.pending,
           })),
         });
       }

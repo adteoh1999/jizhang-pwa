@@ -19,7 +19,30 @@ const USES = [
   { id: 3, user_id: null, email: '', used_at: '2026-11-23T01:00:00Z', deleted: true, owner: false, pending: false },
   { id: 2, user_id: null, email: 'pend@example.invalid', used_at: '2026-11-22T01:00:00Z', deleted: false, owner: false, pending: true },
   { id: 1, user_id: OWNER_ID, email: 'me-old@example.invalid', used_at: '2026-11-21T01:00:00Z', deleted: false, owner: false, pending: false },
+  // 2f 以前被删的人：纪录上的邮箱还在，但已对不到账号
+  { id: 6, user_id: null, email: 'old-deleted@example.invalid', used_at: '2026-11-20T01:00:00Z', deleted: true, owner: false, pending: false },
+  // 资料不一致：不是已删除也不是注册未完成，却没有 user_id
+  { id: 7, user_id: null, email: 'odd@example.invalid', used_at: '2026-11-19T01:00:00Z', deleted: false, owner: false, pending: false },
 ];
+
+// 记下每次 AbortSignal.timeout 的毫秒数（锁住各步骤的超时）
+async function withTimeouts(fn) {
+  const orig = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+  try { await fn(); } finally { AbortSignal.timeout = orig; }
+  return seen;
+}
+
+// rpc 与 admin 呼叫只能用 secret key，不能带用户的 token
+function assertServerCalls(f) {
+  for (const c of f.calls) {
+    if (c.url.includes('/auth/v1/user')) continue;
+    assert.equal(c.init.headers.apikey, KEY, c.url);
+    assert.equal(c.init.headers.Authorization, undefined, c.url);
+    assert.ok(!JSON.stringify(c.init.headers).includes(TOKEN), c.url);
+  }
+}
 
 const req = (body, { origin = ORIGIN, method = 'POST', token = TOKEN } = {}) => new Request(`${BASE}/functions/v1/invites`, {
   method,
@@ -113,6 +136,19 @@ for (const [label, mod] of await loadBoth('invites')) {
     assert.deepEqual(r.body, { owner: false });
   });
 
+  test(`${label}：不是站主叫 create、set_active、uses、remove_user → 都 403，没叫任何后续服务`, async () => {
+    const bodies = [
+      { action: 'create', max_uses: 1, days: 7 }, { action: 'set_active', code: CODE, active: false },
+      { action: 'uses', code: CODE }, { action: 'remove_user', code: CODE, use_id: 5 },
+    ];
+    for (const b of bodies) {
+      const r = await call(b, { routes: { isOwner: false } });
+      assert.equal(r.status, 403, b.action);
+      const later = r.f.calls.filter((c) => !c.url.includes('/auth/v1/user') && !c.url.includes('/rpc/svc_is_owner'));
+      assert.deepEqual(later, [], b.action);
+    }
+  });
+
   test(`${label}：不是站主叫 list → 403，没叫 svc_invites_list`, async () => {
     const r = await call({ action: 'list' }, { routes: { isOwner: false } });
     assert.equal(r.status, 403);
@@ -143,6 +179,13 @@ for (const [label, mod] of await loadBoth('invites')) {
     assert.equal(r.status, 200);
     assert.deepEqual(r.body, { code: CODE });
     assert.deepEqual(r.f.callsTo('/rpc/svc_new_invite_code')[0].body, { p_max_uses: 1, p_days: 7, p_note: '' });
+  });
+
+  test(`${label}：create 备注去掉前后空白再存、再算长度`, async () => {
+    const r = await call({ action: 'create', max_uses: 1, days: 7, note: '  给小明  ' });
+    assert.equal(r.f.callsTo('/rpc/svc_new_invite_code')[0].body.p_note, '给小明');
+    const r2 = await call({ action: 'create', max_uses: 1, days: 7, note: ` ${'备'.repeat(40)} ` });
+    assert.equal(r2.status, 200);
   });
 
   test(`${label}：create days null → p_days null（永不过期）；没给 note → ''；备注 40 字可以`, async () => {
@@ -203,6 +246,15 @@ for (const [label, mod] of await loadBoth('invites')) {
     assert.ok(!JSON.stringify(r.body).includes(OTHER_ID));
   });
 
+  test(`${label}：uses 已删除的列一律不送邮箱（2f 以前删的人纪录上还有邮箱）`, async () => {
+    const r = await call({ action: 'uses', code: CODE });
+    const old = r.body.uses.find((u) => u.id === 6);
+    assert.equal(old.email, '');
+    assert.equal(old.deleted, true);
+    assert.ok(!JSON.stringify(r.body).includes('old-deleted@example.invalid'));
+    assert.equal(r.body.uses.find((u) => u.id === 5).email, OTHER_EMAIL);
+  });
+
   test(`${label}：uses 码格式不对 → 404`, async () => {
     assert.equal((await call({ action: 'uses', code: 'xx' })).status, 404);
   });
@@ -215,6 +267,29 @@ for (const [label, mod] of await loadBoth('invites')) {
     const order = r.f.calls.map((c) => c.url.replace(BASE, ''));
     assert.deepEqual(order.slice(-3), ['/rest/v1/rpc/svc_invite_uses', '/rest/v1/rpc/svc_delete_user_data', `/auth/v1/admin/users/${OTHER_ID}`]);
     assert.deepEqual(r.f.callsTo('/rpc/svc_delete_user_data')[0].body, { p_user_id: OTHER_ID });
+    assertServerCalls(r.f);
+  });
+
+  test(`${label}：remove_user 用请求里的码（正规化后）查明细`, async () => {
+    const r = await call({ action: 'remove_user', code: 'k7mp-q4xz', use_id: 5 });
+    assert.deepEqual(r.f.callsTo('/rpc/svc_invite_uses')[0].body, { p_code: CODE });
+  });
+
+  test(`${label}：remove_user 各步超时：身份 3 秒、rpc 3 秒、删资料 5 秒、删账号 5 秒`, async () => {
+    let status;
+    const seen = await withTimeouts(async () => { status = (await call({ action: 'remove_user', code: CODE, use_id: 5 })).status; });
+    assert.equal(status, 200);
+    assert.deepEqual(seen, [3000, 3000, 3000, 5000, 5000]);
+  });
+
+  test(`${label}：其他动作的 rpc 都用 3 秒，且只带 secret key`, async () => {
+    for (const b of [{ action: 'list' }, { action: 'create', max_uses: 1, days: 7 }, { action: 'set_active', code: CODE, active: true }, { action: 'uses', code: CODE }]) {
+      let r;
+      const seen = await withTimeouts(async () => { r = await call(b); });
+      assert.equal(r.status, 200, b.action);
+      assert.deepEqual(seen, [3000, 3000, 3000], b.action);
+      assertServerCalls(r.f);
+    }
   });
 
   test(`${label}：remove_user 站主列 → 403；自己（快照邮箱不是站主）→ 403；都没删`, async () => {
@@ -228,7 +303,7 @@ for (const [label, mod] of await loadBoth('invites')) {
   });
 
   test(`${label}：remove_user 已删除列、注册未完成列、找不到的 id → 404`, async () => {
-    for (const use_id of [3, 2, 99]) {
+    for (const use_id of [3, 2, 99, 6, 7]) {
       const r = await call({ action: 'remove_user', code: CODE, use_id });
       assert.equal(r.status, 404, `use_id ${use_id}`);
       assert.deepEqual(r.body, { error: '找不到这个用户' });

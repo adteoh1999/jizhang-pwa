@@ -170,6 +170,21 @@ for (const [label, mod] of await loadBoth('delete-account')) {
     assert.deepEqual(f.calls[1].body, { p_user_id: USER_ID });
     assert.equal(f.calls[1].init.headers['Content-Profile'], 'svc');
     assert.equal(f.calls[2].init.method, 'DELETE');
+    // rpc 与 admin 只用 secret key，不带用户 token
+    for (const c of f.calls.slice(1)) {
+      assert.equal(c.init.headers.apikey, KEY);
+      assert.equal(c.init.headers.Authorization, undefined);
+    }
+  });
+
+  test(`${label}：各步超时：身份 3 秒、删资料 5 秒、删账号 5 秒`, async () => {
+    const orig = AbortSignal.timeout;
+    const seen = [];
+    AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+    let res;
+    try { res = await run(req(), routes()); } finally { AbortSignal.timeout = orig; }
+    assert.equal(res.status, 200);
+    assert.deepEqual(seen, [3000, 5000, 5000]);
   });
 
   test(`${label}：admin 回 404（上次已删掉）也算成功`, async () => {
