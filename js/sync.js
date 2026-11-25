@@ -70,6 +70,9 @@ export const POLL_MS = 60_000; // 前景每 60 秒检查一次（尊重退避）
 export const FULL_SYNC_EVERY_MS = 24 * 3600_000; // 完整对账最多 24 小时一次（用户 2026-11-25 决定）
 const CURSOR_OVERLAP_MS = 60_000; // 增量从游标往回 60 秒（晚提交的交易不会漏）
 const CURSOR_SETTLE_MS = 5 * 60_000; // 游标到达超过这么久，就不用再回退
+export const ROUND_TIMEOUT_MS = 120_000; // 一轮最多这么久：卡住（锁、IDB、请求）就放弃、当失败，之后照常重试
+export const DEBOUNCE_MAX_MS = 5000; // 一直有新排程时，最晚这么久一定跑（导入、连续推送不会一直延后）
+export const FOREGROUND_FORCE_MS = 30_000; // 回前景时不管退避、马上检查；但这么久内最多一次
 export const LOCK_RETRY_MS = 10_000; // 别的分页在同步：稍后再看一次（不算失败）
 const ALL_BAD_MIN = 10;   // 逐笔时至少这么多笔、全是资料错、没有一笔成功 → 当系统错误（前后端不一致），一笔都不标
 const ALL_BAD_STOP = 20;  // 连续这么多笔全错、没有成功 → 提早停
@@ -117,6 +120,9 @@ export function createSync({
   let pollTimer = null;
   let running = null;
   let rerun = false;
+  let gen = 0; // 每轮的代号：超时放弃时 +1，旧轮之后醒来就不再写入
+  let debounceSince = null; // 这次防抖第一次排队的时间（上限 DEBOUNCE_MAX_MS）
+  let lastForegroundForce = -Infinity;
   let started = false;
   let stopped = false;
   const cleanups = [];
@@ -133,12 +139,16 @@ export function createSync({
       try { fn(s); } catch (e) { console.error(e); }
     }
   }
-  const setState = (st) => { if (!stopped) { state = st; emit(); } };
+  const setStateRaw = (st) => { if (!stopped) { state = st; emit(); } };
+  const setState = setStateRaw;
   const clearRetry = () => { if (retryTimer !== null) { clearTimer(retryTimer); retryTimer = null; } };
 
   // ---- 一轮 ----
   async function round() {
-    if (stopped) return 'halt';
+    const my = gen;
+    const dead = () => stopped || my !== gen; // 停了、或这轮已超时被放弃
+    const setState = (st) => { if (!dead()) setStateRaw(st); };
+    if (dead()) return 'halt';
     if (!isOnline()) { setState('offline'); return 'halt'; }
     setState('syncing');
     let g = await getSession(null);
@@ -158,8 +168,9 @@ export function createSync({
     // 发一次请求；401 → 刷新一次再发（上传与拉取合计一轮最多一次）。回请求结果，或 'fail' / 'halt'
     async function withAuth(what, call) {
       for (;;) {
-        if (stopped) return 'halt';
+        if (dead()) return 'halt';
         const r = await call(session.access_token);
+        if (dead()) return 'halt'; // 请求途中停下或超时：回来后不写（审核 S-2）
         if (r.status !== 401) return r;
         if (refreshed) { console.warn(`[sync] ${what} 失败：HTTP 401（刷新后仍被拒）`); return 'fail'; }
         refreshed = true;
@@ -182,7 +193,7 @@ export function createSync({
     for (const table of TABLES) {
       const rows = await store.pendingRows(table);
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-        if (stopped) return 'halt';
+        if (dead()) return 'halt';
         const batch = rows.slice(i, i + BATCH_SIZE);
         const r = await send(table, batch);
         if (typeof r === 'string') return r;
@@ -253,10 +264,10 @@ export function createSync({
         // S9 只在 24 小时一次的完整对账做（没游标的完整拉取不做）：服务器若拉取永远回空，也不会无限重传
         const ids = fullDue ? new Set() : null;
         for (;;) { // 拉到空页才算完
-          if (stopped) return 'halt';
+          if (dead()) return 'halt';
           const r = await withAuth(`拉取 ${table}`, (tok) => selectPage(fetchFn, table, { after, since }, tok));
           if (typeof r === 'string') return r;
-          if (stopped) return 'halt'; // 请求途中停下：回来后不写（审核 S-2）
+          if (dead()) return 'halt'; // 请求途中停下：回来后不写（审核 S-2）
           if (!isOk(r.status)) {
             console.warn(`[sync] 拉取 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
             // 4xx（不含 429）：游标可能坏了 → 丢掉，下次完整拉取
@@ -286,14 +297,14 @@ export function createSync({
           acc.adopted += n;
         }
         if (ids) {
-          if (stopped) return 'halt';
+          if (dead()) return 'halt';
           const m = await store.markMissingForUpload(table, ids, { owner: userId });
           if (m === null) return ownerGone();
           if (m) console.warn(`[sync] 完整对账：${table} 有 ${m} 笔不在服务器上，重新上传`);
           missing += m;
         }
       }
-      if (stopped) return 'halt';
+      if (dead()) return 'halt';
       if (fullDue) await store.setMeta('fullSyncAt', now());
       if (missing) rerun = true; // 马上再跑一轮把它们传上去
       return 'ok';
@@ -307,10 +318,26 @@ export function createSync({
     return fn();
   }
 
+  // 一轮的总时限：到时候放弃这轮（代号 +1）、锁的回呼结束（锁释放）、当失败
+  function withRoundTimeout(work) {
+    let id = null;
+    const p = work();
+    p.catch(() => {}); // 超时后才 reject：不要变成未处理的 rejection
+    const timeout = new Promise((res) => {
+      id = setTimer(() => {
+        id = null;
+        gen++;
+        console.warn(`[sync] 这一轮超过 ${ROUND_TIMEOUT_MS / 1000} 秒没结束，放弃`);
+        res('fail');
+      }, ROUND_TIMEOUT_MS);
+    });
+    return Promise.race([p, timeout]).finally(() => { if (id !== null) clearTimer(id); });
+  }
+
   async function runOnce() {
     let res;
     try {
-      res = await withSyncLock(round);
+      res = await withSyncLock(() => withRoundTimeout(round));
     } catch (e) {
       console.warn(`[sync] 同步出错：${e && e.name ? e.name : '未知'}`);
       res = 'fail';
@@ -330,6 +357,7 @@ export function createSync({
       setState('error');
     } else if (res === 'halt') {
       clearRetry();
+      nextAllowedAt = 0; // 没有重试计时器了：不要让一般排程（60 秒检查）一直被退避挡掉
     } else if (res === 'skip' && retryTimer === null) {
       retryTimer = setTimer(() => { retryTimer = null; syncNow(); }, LOCK_RETRY_MS);
     }
@@ -358,13 +386,16 @@ export function createSync({
     if (stopped) return;
     debounceForce = debounceForce || force;
     if (debounceTimer !== null) clearTimer(debounceTimer);
+    if (debounceSince === null) debounceSince = now();
+    const wait = Math.max(0, Math.min(DEBOUNCE_MS, debounceSince + DEBOUNCE_MAX_MS - now()));
     debounceTimer = setTimer(() => {
       debounceTimer = null;
+      debounceSince = null;
       const f = debounceForce;
       debounceForce = false;
       if (!f && now() < nextAllowedAt) return; // 退避中：等 retryTimer
       syncNow();
-    }, DEBOUNCE_MS);
+    }, wait);
   }
 
   return {
@@ -373,7 +404,13 @@ export function createSync({
       started = true;
       cleanups.push(store.onLocalWrite(() => schedule({ force: true })));
       const onOnline = () => schedule({ force: true });
-      const onVisible = () => { if (!doc || doc.visibilityState === 'visible') schedule(); };
+      // 回前景：退避中也马上检查一次（FOREGROUND_FORCE_MS 内最多一次），之后照退避
+      const onVisible = () => {
+        if (doc && doc.visibilityState !== 'visible') return;
+        const force = now() - lastForegroundForce >= FOREGROUND_FORCE_MS;
+        if (force) lastForegroundForce = now();
+        schedule({ force });
+      };
       if (win && win.addEventListener) {
         win.addEventListener('online', onOnline);
         cleanups.push(() => win.removeEventListener('online', onOnline));
@@ -407,6 +444,7 @@ export function createSync({
       stopped = true;
       for (const c of cleanups.splice(0)) { try { c(); } catch { /* 忽略 */ } }
       if (debounceTimer !== null) { clearTimer(debounceTimer); debounceTimer = null; }
+      debounceSince = null;
       clearRetry();
       if (pollTimer !== null) { clearTimer(pollTimer); pollTimer = null; }
       listeners.clear();

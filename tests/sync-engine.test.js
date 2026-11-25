@@ -1,7 +1,7 @@
 // 2e 任务 5：上传引擎（js/sync.js createSync、js/rest.js upsertRows）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSync, BACKOFF_BASE_MS, BACKOFF_MAX_MS } from '../js/sync.js';
+import { createSync, BACKOFF_BASE_MS, BACKOFF_MAX_MS, ROUND_TIMEOUT_MS, DEBOUNCE_MAX_MS, FOREGROUND_FORCE_MS } from '../js/sync.js';
 import { upsertRows, UPLOAD_COLUMNS } from '../js/rest.js';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
@@ -331,13 +331,12 @@ test('防抖：1 秒内存 5 笔 → 1 轮；start 时跑一次', async () => {
   r.sync.stop();
 });
 
-test('退避期间：60 秒 / 回前景的触发不提早发请求；用户写入可以立刻试', async () => {
+test('退避期间：60 秒的触发不提早发请求；用户写入可以立刻试', async () => {
   const server = fakeServer(() => jsonRes(503, {}));
   const r = await setup({ txCount: 1, server });
   r.sync.start();
   await r.clock.advance(1000);
   assert.equal(server.calls.length, 1); // start 那轮失败 → 退避 5 s
-  r.doc.dispatchEvent(new Event('visibilitychange'));
   r.sync.schedule();
   await r.clock.advance(2000);
   assert.equal(server.calls.length, 1); // 还在退避（5 s）
@@ -637,4 +636,94 @@ test('visibilityState hidden 时不排程', async () => {
   assert.equal(r.clock.pending(), 1); // 只剩 60 秒检查的计时器，没有排程
   r.sync.stop();
   assert.equal(r.clock.pending(), 0);
+});
+
+// ---------- 2e-3 Task 1：可靠性 ----------
+const quiet = async (fn) => { const o = console.warn; console.warn = () => {}; try { return await fn(); } finally { console.warn = o; } };
+
+test('一轮超过 ROUND_TIMEOUT_MS 没结束 → 当失败、放掉 running，之后照常重试', async () => {
+  let hang = true;
+  const r = await setup({ txCount: 1, getSession: async () => (hang ? new Promise(() => {}) : { session: SESSION }) });
+  await quiet(async () => {
+    const p = r.sync.syncNow();
+    await r.clock.advance(ROUND_TIMEOUT_MS);
+    assert.equal(await p, 'fail');
+    assert.equal(r.sync.status().state, 'error');
+    hang = false;
+    await r.clock.advance(BACKOFF_BASE_MS);
+  });
+  assert.equal(r.fetchFn.calls.length, 1); // 退避后的新一轮真的跑了
+  assert.equal(pendingTx(r.store), 0);
+});
+
+test('超时的旧轮之后才拿到资料 → 不写入（不会用旧资料盖新资料）', async () => {
+  let release;
+  let first = true;
+  const row = { id: 'aaaaaaaa-0000-4000-8000-000000000001', kind: 'expense', amount_minor: 5, category_id: 'food', occurred_on: '2026-11-20', note: '', created_at: '2026-11-25T09:00:00.000Z', updated_at: '2026-11-25T09:00:00.000Z', deleted: false, server_updated_at: '2026-11-25T09:00:00.000001+00:00' };
+  const server = fakeServer(null, (table) => {
+    if (table === 'transactions' && first) { first = false; return new Promise((res) => { release = () => res(jsonRes(200, [row])); }); }
+    return jsonRes(200, []);
+  });
+  const r = await setup({ txCount: 0, server });
+  await quiet(async () => {
+    const p = r.sync.syncNow();
+    await settle(); // 先跑到卡住的拉取
+    assert.equal(typeof release, 'function');
+    await r.clock.advance(ROUND_TIMEOUT_MS);
+    assert.equal(await p, 'fail');
+    release();
+    await settle();
+  });
+  assert.equal(r.store.transactions().length, 0);
+});
+
+test('halt 会清掉退避的等待时间：之后一般排程（60 秒检查）照常跑', async () => {
+  const server = fakeServer(() => jsonRes(500, {}));
+  const r = await setup({ txCount: 1, server });
+  await quiet(() => r.sync.syncNow()); // 失败 → 退避 5 s
+  r.onlineRef.v = false;
+  await r.sync.syncNow(); // halt
+  r.onlineRef.v = true;
+  r.sync.schedule();
+  await quiet(() => r.clock.advance(1000));
+  assert.equal(server.calls.length, 2);
+});
+
+test('回前景：退避中也马上检查一次，但 30 秒内最多一次', async () => {
+  const server = fakeServer(() => jsonRes(503, {}));
+  const r = await setup({ txCount: 1, server });
+  await quiet(async () => {
+    r.sync.start();
+    await r.clock.advance(1000);
+    assert.equal(server.calls.length, 1); // 失败 → 退避
+    r.doc.dispatchEvent(new Event('visibilitychange'));
+    await r.clock.advance(1000);
+    assert.equal(server.calls.length, 2); // 回前景：不管退避
+    r.doc.dispatchEvent(new Event('visibilitychange'));
+    await r.clock.advance(1000);
+    assert.equal(server.calls.length, 2); // 30 秒内第二次：照退避
+    await r.clock.advance(FOREGROUND_FORCE_MS);
+    const before = server.calls.length;
+    r.doc.dispatchEvent(new Event('visibilitychange'));
+    await r.clock.advance(1000);
+    assert.equal(server.calls.length, before + 1);
+  });
+  r.sync.stop();
+});
+
+test('防抖有上限：连续一直排程，最晚 DEBOUNCE_MAX_MS 内一定跑', async () => {
+  const r = await setup({ txCount: 1 });
+  for (let t = 0; t <= DEBOUNCE_MAX_MS; t += 500) {
+    r.sync.schedule({ force: true });
+    await r.clock.advance(500);
+  }
+  assert.equal(r.fetchFn.calls.length, 1);
+});
+
+test('上传与拉取的请求都不用浏览器快取（cache: no-store）', async () => {
+  const r = await setup({ txCount: 1 });
+  await r.sync.syncNow();
+  assert.equal(r.fetchFn.calls[0].init.cache, 'no-store');
+  assert.ok(r.fetchFn.gets.length > 0);
+  for (const g of r.fetchFn.gets) assert.equal(g.init.cache, 'no-store');
 });

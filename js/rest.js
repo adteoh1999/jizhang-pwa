@@ -33,6 +33,7 @@ export async function upsertRows(fetchFn, table, rows, accessToken, { timeoutMs 
       },
       body: JSON.stringify(rows.map((r) => pick(r, cols))),
       signal: ctrl.signal,
+      cache: 'no-store', // 游标没动时网址相同：不能拿浏览器快取的旧结果
     });
     let body = null;
     try { body = await res.json(); } catch { /* 不是 JSON */ }
@@ -73,6 +74,7 @@ export async function selectPage(fetchFn, table, { after = null, since = null } 
       method: 'GET',
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${accessToken}` },
       signal: ctrl.signal,
+      cache: 'no-store', // 游标没动时网址相同：不能拿浏览器快取的旧结果
     });
     let body = null;
     try { body = await res.json(); } catch { /* 不是 JSON */ }
