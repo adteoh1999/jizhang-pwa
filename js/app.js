@@ -9,7 +9,7 @@ import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
-import { onLedgerResetElsewhere } from './ledger-channel.js';
+import { onLedgerResetElsewhere, onPulledElsewhere, announcePulled } from './ledger-channel.js';
 import { mountLogin } from './ui/login.js';
 import { loadSession, bootTarget } from './auth.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
@@ -93,7 +93,9 @@ function mountShell(root, store, session) {
   root.replaceChildren(shell);
 
   // 同步（2e）：背景上传；账本还没归属时先问一次（用户决定 3）。引擎与认领在 mountShell 最后才开始。
-  const sync = createSync({ store, fetchFn: (url, init) => fetch(url, init), userId: session.user_id, appVersion: APP_VERSION });
+  const sync = createSync({
+    store, fetchFn: (url, init) => fetch(url, init), userId: session.user_id, appVersion: APP_VERSION, onPulled: announcePulled,
+  });
   let userStarted = false; // 这次是不是用户自己按了「开始同步」
   const runClaim = createClaimRunner({
     ensure: (fromUser) => {
@@ -214,6 +216,8 @@ async function boot() {
     // 别的分页换账号清除了账本：这个分页的画面与快取都旧了 → 阻挡画面、请重新整理（审核 M-2）
     store.onLedgerChanged(showLedgerChangedNotice);
     onLedgerResetElsewhere(showLedgerChangedNotice);
+    // 别的分页拉回了别台设备的改动：这个分页的快取重新从资料库读（不然要刷新才看得到）
+    onPulledElsewhere(() => { store.reloadFromDb().catch((e) => console.warn(`[sync] 重新载入失败：${e && e.name ? e.name : '未知'}`)); });
     if (isDevHost()) window.__store = store;
     const session = await loadSession(store);
     if (bootTarget(session) === 'login') {

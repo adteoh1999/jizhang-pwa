@@ -108,6 +108,7 @@ export function createSync({
   clearTimer = (id) => clearTimeout(id),
   win = globalThis.window, doc = globalThis.document,
   locks,
+  onPulled = () => {}, // 一轮采用了远端资料：通知其他分页重新载入（2e-3）
 }) {
   const lockApi = locks === undefined ? (globalThis.navigator && globalThis.navigator.locks) : locks;
   const listeners = new Set();
@@ -240,7 +241,10 @@ export function createSync({
     try {
       res = await pull(acc);
     } finally {
-      if (acc.adopted) store.notifyChanged(); // 一轮最多通知一次；中途失败也通知已采用的（审核 M-1）
+      if (acc.adopted) { // 一轮最多通知一次；中途失败也通知已采用的（审核 M-1）
+        store.notifyChanged();
+        try { onPulled(); } catch (e) { console.error(e); }
+      }
     }
     return res;
 

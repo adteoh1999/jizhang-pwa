@@ -92,7 +92,7 @@ const rtx = (i, o = {}) => ({
   created_at: '2026-11-21T00:00:00+00:00', updated_at: '2026-11-25T07:00:00+00:00', deleted: false, server_updated_at: ts(i), ...o,
 });
 
-async function setup({ server = fakePostgrest(), clock = fakeClock(), owner = ME, meta = {}, getSession } = {}) {
+async function setup({ server = fakePostgrest(), clock = fakeClock(), owner = ME, meta = {}, getSession, onPulled } = {}) {
   let n = 0;
   let t = Date.parse('2026-11-25T09:00:00Z');
   const db = createMemoryDb();
@@ -108,7 +108,7 @@ async function setup({ server = fakePostgrest(), clock = fakeClock(), owner = ME
     store, fetchFn: server, userId: ME, appVersion: 'v',
     getSession: getSession || (async (f) => { sessions.push(f); return { session: SESSION }; }),
     now: clock.now, setTimer: clock.setTimer, clearTimer: clock.clearTimer,
-    isOnline: () => true, win: new EventTarget(), doc, locks: null,
+    isOnline: () => true, win: new EventTarget(), doc, locks: null, onPulled,
   });
   return { db, store, sync, server, clock, doc, sessions };
 }
@@ -489,4 +489,14 @@ test('复审 1：服务器不认 or、一直回同一页 → fail、不无限发
   const { sync } = await setup({ server });
   assert.equal(await sync.syncNow(), 'fail');
   assert.ok(server.gets.filter((g) => g.table === 'transactions').length <= 2);
+});
+
+test('2e-3 Task 2：一轮采用了远端资料 → 呼叫 onPulled 一次（通知其他分页）；没采用 → 不叫', async () => {
+  let n = 0;
+  const server = fakePostgrest({ transactions: [rtx(1), rtx(2)] });
+  const { sync } = await setup({ server, onPulled: () => { n++; } });
+  await sync.syncNow();
+  assert.equal(n, 1);
+  await sync.syncNow(); // 同样的资料：没有新采用
+  assert.equal(n, 1);
 });

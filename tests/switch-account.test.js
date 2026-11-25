@@ -236,3 +236,35 @@ test('Task 11 无头检查：阻挡画面说明的句尾整组换行；对话框
   // 阻挡画面的按钮是黑色药丸、四周有留白：焦点框画在外面（画在里面会是黑框叠黑底）
   assert.match(css, /\.overlay-blocking \.alert-button:focus-visible \{ outline-offset: 2px; \}/);
 });
+
+test('2e-3 Task 2：reloadFromDb——别的分页写进资料库的列会出现在这个分页的快取，并通知画面', async () => {
+  const db = createMemoryDb();
+  const s1 = createStore({ db });
+  await s1.init();
+  const s2 = createStore({ db });
+  await s2.init();
+  await s1.saveTransaction({ kind: 'expense', amountMinor: 321, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  assert.equal(s2.transactions().length, 0);
+  let notified = 0;
+  s2.subscribe(() => { notified++; });
+  assert.equal(await s2.reloadFromDb(), 'ok');
+  assert.equal(s2.transactions().length, 1);
+  assert.equal(s2.transactions()[0].amount_minor, 321);
+  assert.equal(notified, 1);
+});
+
+test('2e-3 Task 2：reloadFromDb——账本已被别的分页换掉 → 不换快取、通知 onLedgerChanged', async () => {
+  const db = createMemoryDb();
+  const s1 = createStore({ db });
+  await s1.init();
+  const s2 = createStore({ db });
+  await s2.init();
+  await s2.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  await s1.init();
+  await s1.resetForAccount('u-B');
+  let changed = 0;
+  s2.onLedgerChanged(() => { changed++; });
+  assert.equal(await s2.reloadFromDb(), 'ledger-changed');
+  assert.equal(changed, 1);
+  assert.equal(s2.transactions().length, 1); // 旧画面不换成别人的账本（会显示阻挡画面）
+});

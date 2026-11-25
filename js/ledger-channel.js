@@ -13,6 +13,19 @@ export function announceLedgerReset() {
   try { channel()?.postMessage('reset'); } catch { /* 忽略 */ }
 }
 
+// 这个分页拉回了别台设备的改动（已写进资料库）：其他分页重新载入快取（2e-3；只有拿到同步锁的分页会拉取）
+export function announcePulled() {
+  try { channel()?.postMessage('pulled'); } catch { /* 忽略 */ }
+}
+
+export function onPulledElsewhere(fn) {
+  const c = channel();
+  if (!c) return () => {};
+  const h = (e) => { if (e.data === 'pulled') fn(); };
+  c.addEventListener('message', h);
+  return () => c.removeEventListener('message', h);
+}
+
 export function onLedgerResetElsewhere(fn) {
   const c = channel();
   if (!c) return () => {};

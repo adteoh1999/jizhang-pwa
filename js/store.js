@@ -36,6 +36,10 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     }
   }
 
+  function ledgerChanged() {
+    for (const fn of [...ledgerListeners]) { try { fn(); } catch (err) { console.error(err); } }
+  }
+
   function notifyLocal() {
     for (const fn of [...localListeners]) {
       try { fn(); } catch (e) { console.error(e); }
@@ -69,7 +73,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       await db.write(exp ? { ...changes, expect: exp } : changes);
     } catch (e) {
       if (local && e && e.name === 'MetaMismatch') {
-        for (const fn of [...ledgerListeners]) { try { fn(); } catch (err) { console.error(err); } }
+        ledgerChanged();
         const err = new Error('账本已在别的分页换成另一个账号');
         err.name = 'LedgerChanged';
         throw err;
@@ -95,6 +99,22 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         for (const r of t) txs.set(r.id, r);
         for (const r of c) cats.set(r.id, r);
         if (cats.size === 0) await commit({ categories: defaultCategories() });
+      });
+    },
+
+    /**
+     * 别的分页拉回资料写进了资料库：重新读进快取并通知画面（2e-3）。
+     * 账本代号已变（别的分页换了账号）→ 不换快取、通知 onLedgerChanged，回 'ledger-changed'。
+     */
+    reloadFromDb() {
+      return enqueue(async () => {
+        const [t, c, lid] = await Promise.all([db.getAll('transactions'), db.getAll('categories'), db.getMeta('ledgerId')]);
+        if ((lid ?? null) !== ledgerId) { ledgerChanged(); return 'ledger-changed'; }
+        txs.clear(); cats.clear();
+        for (const r of t) txs.set(r.id, r);
+        for (const r of c) cats.set(r.id, r);
+        notify();
+        return 'ok';
       });
     },
 
