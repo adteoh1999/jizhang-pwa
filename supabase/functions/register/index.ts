@@ -1,7 +1,7 @@
 // 注册：检查 IP 和全站次数 → 已有账号直接回 200 → 站主免邀请码 → 否则扣邀请码 → 建账号。
 // 扣码是按（码, 邮箱）记一笔「保留」，同一邮箱重试不会重复扣；建账号明确失败、复查也没有账号才退码。
 import { normalizeEmail, normalizeInviteCode } from '../_shared/normalize.ts';
-import { json, secretKey, rpc, adminHeaders, clientIp } from '../_shared/http.ts';
+import { json, secretKey, rpc, adminHeaders, clientIp, corsHeaders } from '../_shared/http.ts';
 
 type Deps = {
   env: (k: string) => string | undefined;
@@ -10,21 +10,8 @@ type Deps = {
 };
 type Check = { limited?: boolean; exists?: boolean; owner?: boolean };
 
-const ALLOWED_ORIGINS = ['https://jizhang.adteoh.com', 'http://localhost:8000', 'http://localhost:8001']; // 8001：测试账号（另一份本机资料）
-
 // 日志只记「哪一步、状态码、错误代码」，绝不记邮箱、邀请码、key
 const logFail = (step: string, detail: string) => console.error(`[register] ${step}: ${detail}`);
-
-function corsHeaders(origin: string | null): Record<string, string> {
-  const h: Record<string, string> = { Vary: 'Origin' };
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    h['Access-Control-Allow-Origin'] = origin;
-    h['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-    h['Access-Control-Allow-Headers'] = 'content-type, apikey, authorization';
-    h['Access-Control-Max-Age'] = '86400';
-  }
-  return h;
-}
 
 // 建账号的结果：created（建好了，带 id）、exists（早就有）、failed（明确失败）、unknown（超时或 5xx）
 async function createUser(deps: Deps, base: string, key: string, email: string): Promise<{ kind: string; id?: string }> {

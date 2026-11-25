@@ -7,6 +7,22 @@ export function json(status: number, obj: unknown, extraHeaders: Record<string, 
   });
 }
 
+// 允许叫 Edge Function 的网页来源（register、delete-account、invites 共用）
+// 8000：本机开发；8001：测试账号（另一份本机资料）
+export const ALLOWED_ORIGINS = ['https://jizhang.adteoh.com', 'http://localhost:8000', 'http://localhost:8001'];
+
+// CORS header：来源在名单里才给 allow-origin；一律带 Vary: Origin
+export function corsHeaders(origin: string | null, allowed: string[] = ALLOWED_ORIGINS): Record<string, string> {
+  const h: Record<string, string> = { Vary: 'Origin' };
+  if (origin && allowed.includes(origin)) {
+    h['Access-Control-Allow-Origin'] = origin;
+    h['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
+    h['Access-Control-Allow-Headers'] = 'content-type, apikey, authorization';
+    h['Access-Control-Max-Age'] = '86400';
+  }
+  return h;
+}
+
 // 先读新版 SUPABASE_SECRET_KEYS（JSON，取 default，没有就取第一个），再退回旧的 SUPABASE_SERVICE_ROLE_KEY
 // （后备路径未实测：旧版 JWT key 只放 apikey 时，PostgREST 可能不认，rpc 会失败——失败即拒绝，不会误放行）
 export function secretKey(env: (k: string) => string | undefined): string {
