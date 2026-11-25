@@ -38,6 +38,7 @@ const ASSETS = [
   './js/ui/toast.js',
   './js/ui/trend-chart.js',
   './js/update.js',
+  './js/timefmt.js',
   './js/uuid.js',
   './js/version.js',
   './icons/icon-180.png',

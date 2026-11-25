@@ -4,11 +4,13 @@ import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
 import { ValidationError, timeValue } from '../js/model.js';
 
+// 合法 uuid 格式（CSV 导入只认 uuid）
+const fakeUuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const now = () => new Date('2026-11-20T10:00:00.000Z');
 async function setup() {
   let n = 0;
   const db = createMemoryDb();
-  const store = createStore({ db, now, uuid: () => `id-${++n}` });
+  const store = createStore({ db, now, uuid: () => fakeUuid(++n) });
   await store.init();
   return { db, store };
 }
@@ -90,7 +92,7 @@ test('同 id 连续 save 两次（不 await）只有一笔，created_at 不变',
   let t = Date.parse('2026-11-20T10:00:00.000Z');
   const db = createMemoryDb();
   let n = 0;
-  const store = createStore({ db, now: () => new Date((t += 1000)), uuid: () => `id-${++n}` });
+  const store = createStore({ db, now: () => new Date((t += 1000)), uuid: () => fakeUuid(++n) });
   await store.init();
   const p1 = store.saveTransaction(input({ id: 'x' }));
   const p2 = store.saveTransaction(input({ id: 'x', amountMinor: 500 }));

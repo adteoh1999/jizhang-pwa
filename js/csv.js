@@ -3,6 +3,7 @@ import { minorToDecimalString, parseAmount } from './money.js';
 import { isValidDateString } from './dates.js';
 import { buildTransaction, buildCategory, timeValue, ValidationError } from './model.js';
 import { compareTx } from './stats.js';
+import { isUuid } from './timefmt.js';
 
 export const CSV_HEADER = ['id', 'date', 'kind', 'amount', 'category', 'note', 'updated_at'];
 
@@ -95,7 +96,9 @@ export function planImport(rows, { existingTxs, categories, now, uuid }) {
     const date = normDate(cell(r, 'date'));
     if (amount === null || date === null) { skip(); continue; }
 
-    const id = cell(r, 'id').trim();
+    // 非 uuid 的 id（手改过的档、旧版资料）当成没有 id：换新 uuid、不比对已存在；合法 uuid 一律小写。
+    const rawId = cell(r, 'id').trim();
+    const id = isUuid(rawId) ? rawId.toLowerCase() : '';
     const existing = id !== '' ? existingTxs.get(id) : undefined;
     if (id !== '' && seenIds.has(id)) { skip(); continue; }
     if (existing && !existing.deleted

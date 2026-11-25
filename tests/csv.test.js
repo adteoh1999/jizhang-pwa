@@ -2,15 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CSV_HEADER, toCSV, parseCSV, planImport } from '../js/csv.js';
 import { defaultCategories, nextUpdatedAt } from '../js/model.js';
+import { isUuid } from '../js/timefmt.js';
 
 const cats = defaultCategories();
 const byId = new Map(cats.map((c) => [c.id, c]));
 const now = new Date('2026-11-20T10:00:00.000Z');
 let n = 0;
 const uuid = () => `new-${++n}`;
+const U1 = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const ctx = (extra = {}) => ({ existingTxs: new Map(), categories: cats, now, uuid, ...extra });
 const T = (o) => ({
-  id: 't1', kind: 'expense', amount_minor: 1250, category_id: 'food', occurred_on: '2026-11-20',
+  id: U1, kind: 'expense', amount_minor: 1250, category_id: 'food', occurred_on: '2026-11-20',
   note: '', created_at: '2026-11-20T01:00:00.000Z', updated_at: '2026-11-20T01:00:00.000Z',
   deleted: false, dirty: 0, ...o,
 });
@@ -76,8 +78,8 @@ test('非 MYR 与坏资料被略过', () => {
 
 test('本地已删除的纪录会被导入恢复', () => {
   const ex = T({ deleted: true });
-  const text = 'id,date,kind,amount,category,updated_at\nt1,2026-11-20,expense,12.50,餐饮,\n';
-  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([['t1', ex]]) }));
+  const text = `id,date,kind,amount,category,updated_at\n${U1},2026-11-20,expense,12.50,餐饮,\n`;
+  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([[U1, ex]]) }));
   assert.equal(plan.imported, 1);
   assert.equal(plan.txs[0].deleted, false);
   assert.equal(plan.txs[0].created_at, ex.created_at);
@@ -85,8 +87,8 @@ test('本地已删除的纪录会被导入恢复', () => {
 
 test('较新的 updated_at 覆盖已存在纪录', () => {
   const ex = T();
-  const text = 'id,date,kind,amount,category,updated_at\nt1,2026-11-20,expense,20,餐饮,2026-11-21T00:00:00.000Z\n';
-  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([['t1', ex]]) }));
+  const text = `id,date,kind,amount,category,updated_at\n${U1},2026-11-20,expense,20,餐饮,2026-11-21T00:00:00.000Z\n`;
+  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([[U1, ex]]) }));
   assert.equal(plan.imported, 1);
   assert.equal(plan.txs[0].amount_minor, 2000);
   assert.equal(plan.txs[0].updated_at, nextUpdatedAt(ex.updated_at, now));
@@ -101,8 +103,8 @@ test('Excel 日期 20/11/2026 与 2026/11/5', () => {
 });
 
 test('updated_at 空白不会覆盖已存在的纪录', () => {
-  const text = 'id,date,kind,amount,category,updated_at\nt1,2026-11-20,expense,20,餐饮,\n';
-  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([['t1', T()]]) }));
+  const text = `id,date,kind,amount,category,updated_at\n${U1},2026-11-20,expense,20,餐饮,\n`;
+  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([[U1, T()]]) }));
   assert.equal(plan.skipped, 1);
   assert.equal(plan.imported, 0);
 });
@@ -150,4 +152,38 @@ test('日期歧义：5/11/2026 日在前；1/13/2026 略过', () => {
 
 test('引号没有闭合丢错', () => {
   assert.throws(() => parseCSV('a,"b\nc'), /引号没有闭合/);
+});
+
+test('非 uuid 的 id 换新 uuid，也不当成已存在', () => {
+  const ex = T({ id: 'abc' });
+  const text = 'id,date,kind,amount,category,updated_at\nabc,2026-11-20,expense,20,餐饮,2026-11-21T00:00:00.000Z\n';
+  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([['abc', ex]]), uuid: () => crypto.randomUUID() }));
+  assert.equal(plan.imported, 1);
+  assert.equal(isUuid(plan.txs[0].id), true);
+  assert.notEqual(plan.txs[0].id, 'abc');
+  assert.equal(plan.txs[0].created_at, now.toISOString()); // 新纪录，不沿用 ex.created_at
+});
+
+test('合法 uuid 保留原 id；大写转小写后比对已存在', () => {
+  const fresh = planImport(parseCSV(`id,date,kind,amount,category\n${U1},2026-11-20,expense,1,餐饮\n`), ctx());
+  assert.equal(fresh.txs[0].id, U1);
+  const text = `id,date,kind,amount,category,updated_at\n${U1.toUpperCase()},2026-11-20,expense,20,餐饮,\n`;
+  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([[U1, T()]]) }));
+  assert.equal(plan.skipped, 1); // 已存在、updated_at 空白 → 略过
+  const up = planImport(parseCSV(`id,date,kind,amount,category\n${U1.toUpperCase()},2026-11-20,expense,1,餐饮\n`), ctx());
+  assert.equal(up.txs[0].id, U1);
+});
+
+test('同一档案里大小写不同的同一 uuid 只导入一次', () => {
+  const text = `id,date,kind,amount,category\n${U1},2026-11-20,expense,1,餐饮\n${U1.toUpperCase()},2026-11-20,expense,2,餐饮\n`;
+  const plan = planImport(parseCSV(text), ctx());
+  assert.equal(plan.imported, 1);
+  assert.equal(plan.skipped, 1);
+});
+
+test('多列非 uuid 的 id（即使相同）都各自换新、都导入', () => {
+  const text = 'id,date,kind,amount,category\nabc,2026-11-20,expense,1,餐饮\nabc,2026-11-20,expense,2,餐饮\n';
+  const plan = planImport(parseCSV(text), ctx({ uuid: () => crypto.randomUUID() }));
+  assert.equal(plan.imported, 2);
+  assert.notEqual(plan.txs[0].id, plan.txs[1].id);
 });
