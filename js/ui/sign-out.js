@@ -15,7 +15,7 @@ export const SIGNOUT_TEXT = Object.freeze({
   plainTitle: '要登出吗？',
   plainMessage: '这台设备上的账本会清除，下次登录会从云端拉回。',
   confirmLabel: '登出',
-  offlineNote: '现在离线，要连上网络才能再登录。',
+  offlineNote: '现在离线，联网才能再登录。', // 13 字：320 宽大字级放得下一行（2f 截图复核 B）
   unsyncedMessage: '登出会遗失这些记录。',
   syncLabel: '先同步',
   exportLabel: '导出 CSV',
@@ -110,7 +110,7 @@ async function flow({
     const offlineNote = isOnline() ? '' : T.offlineNote;
     if (!info.any) {
       const ok = await dialogs.confirmDialog({
-        title: T.plainTitle, message: T.plainMessage + offlineNote, confirmLabel: T.confirmLabel, destructive: true,
+        title: T.plainTitle, message: T.plainMessage + withBreak(offlineNote), confirmLabel: T.confirmLabel, destructive: true,
       });
       if (!ok) return 'cancel';
       break;

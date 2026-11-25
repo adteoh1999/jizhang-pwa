@@ -84,10 +84,10 @@ test('没有未同步 → 一个确认框（标题、内文、红字「登出」
   assert.equal(o.destructive, true);
 });
 
-test('离线、没有未同步 → 内文多一句「现在离线，要连上网络才能再登录。」', async () => {
+test('离线、没有未同步 → 内文另起一行「现在离线，联网才能再登录。」', async () => {
   const { dialogs, deps } = await setup({ online: false });
   await runSignOut(deps);
-  assert.equal(dialogs.lastConfirm.message, '这台设备上的账本会清除，下次登录会从云端拉回。现在离线，要连上网络才能再登录。');
+  assert.equal(dialogs.lastConfirm.message, '这台设备上的账本会清除，下次登录会从云端拉回。\n现在离线，联网才能再登录。');
 });
 
 test('确认登出 → 停同步与 Realtime、清掉账本、清隐藏金额、通知其他分页，最后才 reload', async () => {
@@ -417,7 +417,7 @@ test('离线时有没同步 → 不提供「先同步」，内文说明离线（
 test('登录已过期又离线 → 内文是过期说明＋离线那句', async () => {
   const { dialogs, deps } = await setup({ unsynced: 'tx', online: false, syncState: 'signed-out', session: { ...SESSION, invalid: true } });
   await runSignOut(deps);
-  assert.equal(dialogs.lastChoice.message, '登出会遗失这些记录。\n登录已过期，现在无法同步。\n账号若已删除，可直接登出。\n现在离线，要连上网络才能再登录。');
+  assert.equal(dialogs.lastChoice.message, '登出会遗失这些记录。\n登录已过期，现在无法同步。\n账号若已删除，可直接登出。\n现在离线，联网才能再登录。');
 });
 
 // ---------- 2f 整体审核 S-2：用真的同步引擎——上传／拉取进行到一半按登出，旧一轮回来也写不回 ----------

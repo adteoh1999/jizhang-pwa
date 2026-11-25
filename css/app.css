@@ -1756,9 +1756,10 @@ button.inset-row:active { background: var(--press-bg); }
 .inset-row-detail { flex: none; color: var(--secondary-label); font-variant-numeric: tabular-nums; }
 .inset-row-chevron { flex: none; display: flex; color: var(--ink-3); }
 .inset-row.is-destructive { color: var(--red-text); }   /* 登出（2d） */
-.inset-row-detail.account-email { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }   /* 长邮箱换行，不撑出横向滚动 */
-/* 右边内容很长的列（邮箱、邀请码备注）：左边标签不缩、不换行，不会被挤成直排（2f 截图①②） */
+/* 右边内容很长的列（邮箱、邀请码备注）：左边标签不缩、不换行，不会被挤成直排（2f 截图①②）；
+   右边可缩、可在任何地方换行、靠右，不撑出横向滚动。只给短标签用（标签太长会把右边挤得很窄） */
 .inset-row.has-long-detail > .inset-row-label { flex: 1 0 auto; white-space: nowrap; }
+.inset-row.has-long-detail > .inset-row-detail { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .sync-row .inset-row-label { flex: 1 0 auto; white-space: nowrap; }   /* 2e 同步列：标签不换行，状态文字可缩、可换行（窄屏、大字级） */
 .sync-row .inset-row-detail { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }
 
@@ -1798,7 +1799,7 @@ button.inset-row:active { background: var(--press-bg); }
   justify-self: start;
   display: inline-flex;
   align-items: center;
-  white-space: nowrap; /* 大字级窄屏也不被挤成直排；grid 的 1fr 左栏会让出足够宽度（2f 截图③） */
+  white-space: nowrap; /* 大字级窄屏也不被挤成直排；左栏宽度由 .nav-page-bar 的 minmax(max-content, 1fr) 让出（2f 截图③） */
   min-height: var(--hit);
   min-width: var(--hit);
   padding: 0 12px 0 6px;
@@ -1916,7 +1917,7 @@ button.inset-row:active { background: var(--press-bg); }
 .invite-result { text-align: center; }
 .invite-big-code {
   margin: 12px 0 0; color: var(--label); white-space: nowrap;
-  /* 保持一行：9 个等宽字约 6em，13vw 在 320 宽约 41px 刚好放得下（2f 截图⑤） */
+  /* 保持一行：9 个等宽字（字宽约 0.6em＋字距 0.06em）约 6em，13vw 在 320 宽约 41px 刚好放得下；换字体要重算（2f 截图⑤） */
   font: 700 min(2.2rem, 13vw)/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em;
 }
 /* 复制失败时可以长按选取：只有看得见的码可选，读屏用的 .sr-only 不可选（不然会一起被复制） */
@@ -1930,7 +1931,6 @@ button.inset-row:active { background: var(--press-bg); }
 }
 .invite-action.is-secondary { background: var(--ink-tint); color: var(--ink); }
 .nav-page-title.invite-code { font: var(--font-headline); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
-.invite-detail-note { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }
 .invite-users-box { padding: 20px 16px; }
 .use-row { gap: 12px; }
 .use-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

@@ -30,3 +30,10 @@ test('⑤ 大字邀请码保持一行，窄屏自动缩小', () => {
   assert.match(r, /white-space: nowrap;/);
   assert.match(r, /font: 700 min\(2\.2rem, 13vw\)\/1\.2 /);
 });
+
+test('has-long-detail 自足：右边内容可缩、可换行、靠右（复核 A，不靠另外的 class）', () => {
+  const r = rule('.inset-row.has-long-detail > .inset-row-detail');
+  for (const d of ['flex: 0 1 auto;', 'min-width: 0;', 'overflow-wrap: anywhere;', 'text-align: right;']) assert.ok(r.includes(d), d);
+  assert.ok(!css.includes('.inset-row-detail.account-email {'), '旧的重复规则要并掉');
+  assert.ok(!css.includes('\n.invite-detail-note {'), '旧的重复规则要并掉');
+});
