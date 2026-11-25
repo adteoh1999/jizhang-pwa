@@ -6,7 +6,8 @@
 import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 
 export const HEARTBEAT_MS = 25_000; // 官方：至少每 25 秒一次
-export const SUBSCRIBE_TIMEOUT_MS = 15_000; // 连上后这么久还没「Subscribed to PostgreSQL」→ 重连
+// 整段连线（拿 token → socket open → 「Subscribed to PostgreSQL」）的期限：任何一段卡住（auth 锁、网络）都会重来
+export const CONNECT_TIMEOUT_MS = 20_000;
 export const RECONNECT_BASE_MS = 1000;
 export const RECONNECT_MAX_MS = 60_000;
 
@@ -160,16 +161,21 @@ export function createRealtime({
     const my = conn;
     connecting = true;
     setSt('connecting');
+    subTimer = setTimer(() => { subTimer = null; if (my === conn) fail('连线逾时'); }, CONNECT_TIMEOUT_MS);
     let g;
     try { g = await getSession(forceToken); } catch { g = { retry: true }; }
-    if (my !== conn || !wanted()) { if (my === conn) connecting = false; return; }
+    if (my !== conn) return;
     connecting = false;
-    forceToken = null;
+    if (!wanted()) { teardown(); setSt('off'); return; }
     if (!g || !g.session) {
-      if (g && g.invalid) { setSt('off'); return; } // 登录过期：等同步引擎显示「重新登录」
-      scheduleRetry();
+      if (g && g.invalid) { forceToken = null; teardown(); setSt('off'); return; } // 登录过期：等同步引擎显示「重新登录」
+      teardown();
+      scheduleRetry(); // retry：强制刷新还没成功 → forceToken 留着，下次仍强制
       return;
     }
+    forceToken = null;
+    // 别的分页换了账号、这里还没发现：不用别人的 token 订这个账号的频道
+    if (g.session.user_id && g.session.user_id !== userId) { teardown(); setSt('off'); return; }
     const token = g.session.access_token;
     let sock;
     try { sock = new WebSocketImpl(url); } catch { scheduleRetry(); return; }
@@ -190,7 +196,6 @@ export function createRealtime({
         },
       });
       heartbeat(my);
-      subTimer = setTimer(() => { subTimer = null; if (my === conn) fail('订阅逾时'); }, SUBSCRIBE_TIMEOUT_MS);
     };
     sock.onmessage = (e) => onMessage(my, token, e && e.data);
     sock.onclose = () => { if (my === conn) fail('socket 关闭'); };
@@ -230,7 +235,7 @@ export function createRealtime({
       };
       on(doc, 'visibilitychange', () => { if (visible()) restart(); else check(); });
       on(win, 'pagehide', () => { clearRetry(); teardown(); setSt('off'); });
-      on(win, 'pageshow', restart);
+      on(win, 'pageshow', (e) => { if (e && e.persisted) restart(); }); // 从 bfcache 回来才重开（第一次载入也会发 pageshow）
       on(win, 'online', restart);
       on(win, 'offline', check);
       check();

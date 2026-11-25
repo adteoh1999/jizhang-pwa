@@ -1,7 +1,7 @@
 // 2e-3 Task 5：Realtime 门铃（js/realtime.js）。假 WebSocket ＋ 假时钟。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRealtime, realtimeUrl, HEARTBEAT_MS, SUBSCRIBE_TIMEOUT_MS, RECONNECT_MAX_MS } from '../js/realtime.js';
+import { createRealtime, realtimeUrl, HEARTBEAT_MS, CONNECT_TIMEOUT_MS, RECONNECT_MAX_MS } from '../js/realtime.js';
 import { SUPABASE_KEY } from '../js/config.js';
 
 const settle = async () => { for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r)); };
@@ -181,13 +181,13 @@ test('心跳：每 25 秒一次；上一次没回覆 → 重连', async () => {
   r.rt.stop();
 });
 
-test('15 秒内没收到 Subscribed → 重连', async () => {
+test('连线期限内没收到 Subscribed → 重连', async () => {
   const r = await setup();
   r.rt.start();
   await settle();
   const ws = r.last();
   ws.open();
-  await r.clock.advance(SUBSCRIBE_TIMEOUT_MS);
+  await r.clock.advance(CONNECT_TIMEOUT_MS);
   assert.equal(ws.closed, true);
   r.rt.stop();
 });
@@ -271,7 +271,7 @@ test('pagehide → 关线；pageshow → 重开；offline → 关线；online �
   await r.subscribe();
   r.win.dispatchEvent(new Event('pagehide'));
   assert.equal(r.last().closed, true);
-  r.win.dispatchEvent(new Event('pageshow'));
+  r.win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
   await settle();
   assert.equal(FakeWS.all.length, 2);
   r.onlineRef.v = false;
@@ -339,4 +339,85 @@ test('App 接线：门铃用一般排程（尊重退避）；同步状态变就�
   for (const st of ['signed-out', 'stale', 'other-owner', 'unclaimed', 'stopped']) assert.ok(app.includes(`'${st}'`));
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
   assert.ok(sw.includes("'./js/realtime.js'"));
+});
+
+// ---------- 2e-3 复审修正 ----------
+test('复审 M2：getSession 一直不回 → 连线期限到了就放弃、重试', async () => {
+  let calls = 0;
+  const r = await setup({ getSession: () => { calls++; return calls === 1 ? new Promise(() => {}) : Promise.resolve({ session: { access_token: 't' } }); } });
+  r.rt.start();
+  await settle();
+  assert.equal(r.rt.state(), 'connecting');
+  await r.clock.advance(CONNECT_TIMEOUT_MS + 1000);
+  assert.equal(calls, 2);
+  assert.equal(FakeWS.all.length, 1);
+  r.rt.stop();
+});
+
+test('复审 M2：socket 一直不 open → 连线期限到了就关、重连', async () => {
+  const r = await setup();
+  r.rt.start();
+  await settle();
+  const ws = r.last();
+  await r.clock.advance(CONNECT_TIMEOUT_MS);
+  assert.equal(ws.closed, true);
+  await r.clock.advance(1000);
+  assert.equal(FakeWS.all.length, 2);
+  r.rt.stop();
+});
+
+test('复审 M1 小问题：getSession 回来时已不该连 → 状态 off（不停在连线中）', async () => {
+  let release;
+  const r = await setup({ getSession: () => new Promise((res) => { release = () => res({ session: { access_token: 't' } }); }) });
+  r.rt.start();
+  await settle();
+  r.allowedRef.v = false; // 不经过 check()：例如别的条件刚改变
+  release();
+  await settle();
+  assert.equal(r.rt.state(), 'off');
+  assert.equal(FakeWS.all.length, 0);
+  r.rt.stop();
+});
+
+test('复审 S8：session 的账号和这个门铃不同（别的分页换了账号）→ 不连、off', async () => {
+  const r = await setup({ getSession: async () => ({ session: { access_token: 't', user_id: 'u-2' } }) });
+  r.rt.start();
+  await r.clock.advance(5000);
+  assert.equal(FakeWS.all.length, 0);
+  assert.equal(r.rt.state(), 'off');
+  r.rt.stop();
+});
+
+test('复审 S9：强制刷新时 getSession 回 retry → 下一次仍然强制刷新（不白白用掉）', async () => {
+  const asked = [];
+  let n = 0;
+  const r = await setup({ getSession: async (failed) => { asked.push(failed); n++; return n === 2 ? { retry: true } : { session: { access_token: `tok-${n}` } }; } });
+  r.rt.start();
+  await settle();
+  const ws = r.last();
+  ws.open();
+  ws.recv({ topic: ws.join.topic, event: 'phx_reply', ref: ws.join.ref, payload: { status: 'error', response: { reason: 'InvalidJWTExpiration: Token has expired' } } });
+  await r.clock.advance(1000); // 第 2 次：强制，回 retry
+  await r.clock.advance(2000); // 第 3 次：仍然强制
+  assert.deepEqual(asked.slice(0, 3), [null, 'tok-1', 'tok-1']);
+  r.rt.stop();
+});
+
+test('复审 S11：第一次载入的 pageshow（persisted false）不重开连线', async () => {
+  const r = await setup();
+  r.rt.start();
+  await settle();
+  r.win.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+  await settle();
+  assert.equal(FakeWS.all.length, 1);
+  assert.equal(FakeWS.all[0].closed, false);
+  r.rt.stop();
+});
+
+test('复审 M1、S5：阻挡画面时停掉同步与门铃；本分页自己记账也通知其他分页', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app.slice(app.indexOf('function showBlockingNotice')), /dispatchEvent\(new Event\('jizhang:blocked'\)\)/);
+  assert.match(app, /addEventListener\('jizhang:blocked', \(\) => \{ realtime\.stop\(\); sync\.stop\(\); \}/);
+  assert.match(app, /store\.onLocalWrite\(announcePulled\)/);
 });

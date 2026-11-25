@@ -62,19 +62,24 @@ const DIAG_RESULT = { ok: '成功', halt: '暂停', skip: '另一个分页在同
  * 设置页「同步」下方的诊断行（纯函数，2e-3）：上次检查时间与结果、拉回笔数、进行中、即时连线。
  * diag：sync.diagnostics()；realtime：'off' | 'connecting' | 'live' | null。时间用本地 HH:MM:SS。
  */
-export function syncDiagText(diag, { now = Date.now(), realtime = null } = {}) {
+export function syncDiagText(diag, opts = {}) {
+  return syncDiagParts(diag, opts).join(' · ');
+}
+
+/** 诊断行的各段（画面上每段整组换行；读屏用逗号停顿）。 */
+export function syncDiagParts(diag, { now = Date.now(), realtime = null } = {}) {
   const parts = [];
   if (diag.lastRunAt === null) parts.push('还没检查');
   else {
     const d = new Date(diag.lastRunAt);
     parts.push(`上次检查 ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`);
     parts.push(diag.lastResult === 'fail' ? `失败（连续 ${diag.failures} 次）` : (DIAG_RESULT[diag.lastResult] || '—'));
-    if (diag.lastAdopted > 0) parts.push(`拉回 ${diag.lastAdopted} 笔`);
+    if (diag.lastAdopted > 0) parts.push(`收到 ${diag.lastAdopted} 笔`);
   }
   if (diag.runningSince !== null && now - diag.runningSince >= 10_000) parts.push(`进行中 ${Math.round((now - diag.runningSince) / 1000)} 秒`);
   if (realtime === 'live') parts.push('即时连线');
   else if (realtime === 'connecting') parts.push('连线中');
-  return parts.join(' · ');
+  return parts;
 }
 
 const ERROR_LIST_MAX = 8;
@@ -258,7 +263,12 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   const syncDiag = h('span', { class: 'sync-diag' });
   const renderDiag = () => {
     if (!sync) return;
-    syncDiag.textContent = syncDiagText(sync.diagnostics(), { now: Date.now(), realtime: realtime ? realtime.state() : null });
+    const parts = syncDiagParts(sync.diagnostics(), { now: Date.now(), realtime: realtime ? realtime.state() : null });
+    // 每段整组换行（不会断在「即时／连线」中间）；「·」读屏不念，改用看不见的逗号停顿
+    syncDiag.replaceChildren(...parts.flatMap((p, i) => [
+      ...(i ? [h('span', { 'aria-hidden': 'true' }, ' · '), h('span', { class: 'sr-only' }, '，')] : []),
+      h('span', { class: 'nowrap' }, p),
+    ]));
   };
   if (sync) {
     setInterval(() => { if (syncDiag.isConnected && !document.hidden) renderDiag(); }, 5000);

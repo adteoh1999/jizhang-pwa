@@ -537,7 +537,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .alert-button:disabled { color: var(--tertiary-label); }
 .alert-button:active:not(:disabled) { background: var(--fill); }
 .alert-button:focus-visible { outline-offset: -4px; } /* 画在按钮里：对话框的圆角与 overflow 不会切掉焦点框。不能小于 4px（.alert 圆角 14px） */
-.alert-message .nowrap { display: inline-block; white-space: normal; } /* 句尾整组换行；过宽（大字级）才在段内换行 */
+.alert-message .nowrap { display: inline-block; white-space: normal; }
+.sync-diag .nowrap { display: inline-block; white-space: normal; } /* 诊断行每段整组换行；过宽（大字级）才在段内换行 */ /* 句尾整组换行；过宽（大字级）才在段内换行 */
 
 /* ---------- 9. Action sheet（底部） ---------- */
 .overlay-sheet {

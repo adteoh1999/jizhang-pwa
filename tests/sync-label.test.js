@@ -1,7 +1,7 @@
 // 2e 任务 6：设置页同步状态文字（js/ui/settings.js syncLabel）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { syncLabel, syncDiagText } from '../js/ui/settings.js';
+import { syncLabel, syncDiagText, syncDiagParts } from '../js/ui/settings.js';
 
 const S = (o = {}) => ({ state: 'idle', pending: 0, errors: 0, txPending: 0, txErrors: 0, retryInMs: 0, ...o });
 const L = (o, opt) => { const r = syncLabel(S(o), opt); return [r.text, r.action]; };
@@ -192,7 +192,7 @@ test('诊断行：还没检查 / 成功 / 拉回 N 笔', () => {
   const now = at(14, 33, 0);
   assert.equal(syncDiagText(D(), { now }), '还没检查');
   assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok' }), { now }), '上次检查 14:32:05 · 成功');
-  assert.equal(syncDiagText(D({ lastRunAt: at(9, 2, 5), lastResult: 'ok', lastAdopted: 2 }), { now }), '上次检查 09:02:05 · 成功 · 拉回 2 笔');
+  assert.equal(syncDiagText(D({ lastRunAt: at(9, 2, 5), lastResult: 'ok', lastAdopted: 2 }), { now }), '上次检查 09:02:05 · 成功 · 收到 2 笔');
 });
 
 test('诊断行：失败（连续 N 次）、暂停、另一个分页在同步', () => {
@@ -210,4 +210,10 @@ test('诊断行：进行中超过 10 秒才显示；即时连线状态', () => {
   assert.equal(syncDiagText(base, { now, realtime: 'live' }), '上次检查 14:32:05 · 成功 · 即时连线');
   assert.equal(syncDiagText(base, { now, realtime: 'connecting' }), '上次检查 14:32:05 · 成功 · 连线中');
   assert.equal(syncDiagText(base, { now, realtime: 'off' }), '上次检查 14:32:05 · 成功');
+});
+
+test('复审 S15：诊断行分段（每段整组换行；读屏用逗号停顿、不念「·」）', () => {
+  const now = at(14, 33, 0);
+  assert.deepEqual(syncDiagParts(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok', lastAdopted: 1 }), { now, realtime: 'live' }),
+    ['上次检查 14:32:05', '成功', '收到 1 笔', '即时连线']);
 });

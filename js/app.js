@@ -56,6 +56,7 @@ export function showLedgerChangedNotice() {
 // tail：句尾整组换行（窄的对话框里「理。」不会单独落到下一行）
 function showBlockingNotice(head, tail) {
   if (document.querySelector('[data-db-closed]')) return;
+  window.dispatchEvent(new Event('jizhang:blocked')); // 停掉同步与 Realtime（这个画面只能重新整理）
   for (const el of document.body.children) el.inert = true;
   const btn = h('button', {
     type: 'button', class: 'alert-button is-bold', on: { click: () => location.reload() },
@@ -127,7 +128,8 @@ function mountShell(root, store, session) {
     onPoke: () => sync.schedule(),
     allowed: () => !REALTIME_BLOCKED.has(sync.status().state),
   });
-  sync.subscribe(() => realtime.check());
+  sync.subscribe(() => realtime.check()); // sync.stop() 也会最后通知一次（登出、重新登录）
+  window.addEventListener('jizhang:blocked', () => { realtime.stop(); sync.stop(); }, { once: true });
   mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
     session, sync, realtime, onStartSync: () => runClaim(true),
   });
@@ -230,6 +232,7 @@ async function boot() {
     store.onLedgerChanged(showLedgerChangedNotice);
     onLedgerResetElsewhere(showLedgerChangedNotice);
     // 别的分页拉回了别台设备的改动：这个分页的快取重新从资料库读（不然要刷新才看得到）
+    store.onLocalWrite(announcePulled); // 这个分页自己记账：其他分页也重新载入（游标会被这边推过去，复审 S5）
     onPulledElsewhere(() => { store.reloadFromDb().catch((e) => console.warn(`[sync] 重新载入失败：${e && e.name ? e.name : '未知'}`)); });
     if (isDevHost()) window.__store = store;
     const session = await loadSession(store);

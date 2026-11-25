@@ -727,3 +727,29 @@ test('上传与拉取的请求都不用浏览器快取（cache: no-store）', as
   assert.ok(r.fetchFn.gets.length > 0);
   for (const g of r.fetchFn.gets) assert.equal(g.init.cache, 'no-store');
 });
+
+// ---------- 2e-3 复审修正 ----------
+test('复审 M1：stop() 时最后通知一次状态 stopped（让 Realtime 跟着关），之后不再通知', async () => {
+  const r = await setup({ txCount: 0 });
+  const seen = [];
+  r.sync.subscribe((s) => seen.push(s.state));
+  r.sync.stop();
+  assert.deepEqual(seen, ['stopped']);
+  r.sync.stop();
+  assert.deepEqual(seen, ['stopped']);
+});
+
+test('复审 M3：getSession 卡到超时后才回、App 版本变了 → 旧轮不清 sync_error、不写 syncErrorVersion', async () => {
+  let release;
+  const r = await setup({ txCount: 1, appVersion: 'v-new', getSession: () => new Promise((res) => { release = () => res({ session: SESSION }); }) });
+  await r.store.setMeta('syncErrorVersion', 'v-old');
+  await quiet(async () => {
+    const p = r.sync.syncNow();
+    await settle();
+    await r.clock.advance(ROUND_TIMEOUT_MS);
+    assert.equal(await p, 'fail');
+    release();
+    await settle();
+  });
+  assert.equal(await r.store.getMeta('syncErrorVersion'), 'v-old');
+});

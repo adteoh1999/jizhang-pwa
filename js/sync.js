@@ -160,11 +160,13 @@ export function createSync({
     if (!isOnline()) { setState('offline'); return 'halt'; }
     setState('syncing');
     let g = await getSession(null);
+    if (dead()) return 'halt'; // 等 token 时超时被放弃、或停了：之后的写入都不做（复审 M3）
     if (g.invalid) { setState('signed-out'); return 'halt'; }
     if (!g.session) return 'fail';
     if (g.session.user_id !== userId) { setState('stale'); return 'halt'; }
     let session = g.session;
     const st = await claimState(store, { user_id: userId });
+    if (dead()) return 'halt';
     if (st !== 'mine') { setState(st === 'other' ? 'other-owner' : 'unclaimed'); return 'halt'; }
     // 归属核对过才动资料：App 更新了 → 坏资料重试一次
     if ((await store.getMeta('syncErrorVersion')) !== appVersion) {
@@ -463,6 +465,9 @@ export function createSync({
       for (const c of cleanups.splice(0)) { try { c(); } catch { /* 忽略 */ } }
       if (debounceTimer !== null) { clearTimer(debounceTimer); debounceTimer = null; }
       debounceSince = null;
+      // 最后通知一次「已停止」（Realtime 门铃靠这个关线，复审 M1），之后不再通知
+      const s = status();
+      for (const fn of [...listeners]) { try { fn(s); } catch (e) { console.error(e); } }
       clearRetry();
       if (pollTimer !== null) { clearTimer(pollTimer); pollTimer = null; }
       listeners.clear();
