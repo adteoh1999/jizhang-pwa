@@ -1,5 +1,5 @@
 // 第一次上传前的提醒（用户决定 3）：「导出 CSV」不关窗（分享要在点击手势里），「开始同步」才认领。
-// Esc 关掉 → 'dismiss'（设置页会显示「尚未开始同步 · 开始」）。
+// 按「以后再说」或 Esc → 'dismiss'（设置页会显示「尚未开始同步 · 开始」）。
 import { choiceDialog } from './dialogs.js';
 import { createExporter } from './export-csv.js';
 
