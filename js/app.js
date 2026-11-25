@@ -41,6 +41,15 @@ export function renderDbError(root, err) {
 
 /** 资料库被其他分页升级 / 删除：连线已关闭，写入会失败 → 不可关闭的阻挡画面（不入 nav 栈，Esc 关不掉）。 */
 export function showDbClosedNotice() {
+  showBlockingNotice('请重新整理以继续使用。');
+}
+
+/** 别的分页换账号清除了账本（复审 6：写清楚原因）。 */
+export function showLedgerChangedNotice() {
+  showBlockingNotice('这台设备已换成另一个账号，请重新整理。');
+}
+
+function showBlockingNotice(message) {
   if (document.querySelector('[data-db-closed]')) return;
   for (const el of document.body.children) el.inert = true;
   const btn = h('button', {
@@ -52,7 +61,7 @@ export function showDbClosedNotice() {
   },
   h('div', { class: 'alert-body' },
     h('h2', { class: 'alert-title', id: 'db-closed-title' }, '需要重新载入'),
-    h('p', { class: 'alert-message', id: 'db-closed-msg' }, '请重新整理以继续使用。')),
+    h('p', { class: 'alert-message', id: 'db-closed-msg' }, message)),
   h('div', { class: 'alert-buttons' }, btn));
   const overlay = h('div', { class: 'overlay overlay-alert overlay-blocking is-visible', 'data-db-closed': '' }, panel);
   document.body.append(overlay);
@@ -202,8 +211,8 @@ async function boot() {
     const store = createStore({ db });
     await store.init();
     // 别的分页换账号清除了账本：这个分页的画面与快取都旧了 → 阻挡画面、请重新整理（审核 M-2）
-    store.onLedgerChanged(showDbClosedNotice);
-    onLedgerResetElsewhere(showDbClosedNotice);
+    store.onLedgerChanged(showLedgerChangedNotice);
+    onLedgerResetElsewhere(showLedgerChangedNotice);
     if (isDevHost()) window.__store = store;
     const session = await loadSession(store);
     if (bootTarget(session) === 'login') {

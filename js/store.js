@@ -47,7 +47,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   async function ownerCommit(owner, changes, opts = {}) {
     if (owner === undefined) { await commit(changes, opts); return true; }
     try {
-      await commit(changes, { ...opts, expect: { owner_user_id: owner } });
+      await commit(changes, { ...opts, expect: { owner_user_id: owner, ledgerId } }); // 账本代号也要相同（复审 2）
       return true;
     } catch (e) {
       if (e && e.name === 'MetaMismatch') return null;
@@ -411,7 +411,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         if (outCat.length) changes.categories = outCat;
         if (removeTx.length) changes.remove = { transactions: removeTx };
         if (meta) changes.meta = meta;
-        if (Object.keys(changes).length) await commit(changes, { silent: removeTx.length === 0 });
+        // 认领：账本还是这一本、而且还没有主人才写（别的分页刚清除换账号 → MetaMismatch，复审 3）
+        if (Object.keys(changes).length) await commit(changes, { silent: removeTx.length === 0, expect: { ledgerId, owner_user_id: null } });
       });
     },
   };

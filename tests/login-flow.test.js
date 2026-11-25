@@ -752,3 +752,16 @@ test('审核 M-1：别的分页已清除成 B，这个分页（旧快取有 A �
   assert.equal(store2.transactions().length, 0);
   assert.equal((await store2.pendingRows('transactions')).length, 0);
 });
+
+test('复审 8：验证成功但重新载入失败 → 不登录、尽力作废 session', async () => {
+  const { flow, store, calls, signed } = setup(B());
+  await prep(store, { owner: 'u-A', last: 'u-A' });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  store.init = async () => { throw new Error('idb'); };
+  const orig = console.warn;
+  console.warn = () => {};
+  try { await flow.inputCode('481203'); } finally { console.warn = orig; }
+  assert.equal(signed.length, 0);
+  assert.equal(calls.discardSession.length, 1);
+});

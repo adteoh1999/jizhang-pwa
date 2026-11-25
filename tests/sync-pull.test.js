@@ -483,3 +483,10 @@ test('S-7：远端 deleted 较新但本地有更晚的未上传还原 → 本地
   await sync.syncNow();
   assert.equal(store.transactions().length, 1);
 });
+
+test('复审 1：服务器不认 or、一直回同一页 → fail、不无限发请求', async () => {
+  const server = fakePostgrest({}, { onGet: (t) => (t === 'transactions' ? jsonRes(200, [rtx(0)]) : null) });
+  const { sync } = await setup({ server });
+  assert.equal(await sync.syncNow(), 'fail');
+  assert.ok(server.gets.filter((g) => g.table === 'transactions').length <= 2);
+});

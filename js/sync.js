@@ -270,6 +270,10 @@ export function createSync({
             console.warn(`[sync] 拉取 ${table} 回应少了游标栏位`);
             return 'fail';
           }
+          if (after && after.ts === last.server_updated_at && after.id === last.id) {
+            console.warn(`[sync] 拉取 ${table} 游标没前进（服务器没照条件分页），停下`);
+            return 'fail';
+          }
           after = { ts: last.server_updated_at, id: last.id }; // 原字串（微秒不能丢）
           since = null;
           if (ids) for (const row of r.rows) ids.add(row.id);

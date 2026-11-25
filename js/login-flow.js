@@ -227,7 +227,11 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
           await store.init(); // 快取可能比资料库旧（别的分页记过账、或已清除换账号）：重新载入再判断（审核 M-1）
           last = await loadLastUserId(store);
           owner = (await store.getMeta('owner_user_id')) || null;
-        } catch (e) { notSaved('loadOwner')(e); return; }
+        } catch (e) {
+          notSaved('loadOwner')(e);
+          if (api.discardSession) Promise.resolve().then(() => api.discardSession(s)).catch(warn('discardSession'));
+          return;
+        }
         const prevOwner = owner || last; // 本地账本（可能）的主人
         // 换账号（spec §7.7、审核 M5）：清掉这台设备的账本（同一次写入连 session 一起写）。
         // 还有没上传的记录才问：已归属 → 待上传 + 无法同步；还没归属（没开始同步）→ 整本都没上传

@@ -184,3 +184,42 @@ test('unsyncedInfo：已归属只数 dirty / sync_error（不算没改过的默�
   assert.deepEqual(store.unsyncedInfo(), { any: false, txCount: 0 });
   assert.deepEqual(store.unsyncedInfo({ all: true }), { any: false, txCount: 0 });
 });
+
+// ---------- 2e-2 整体复审建议 ----------
+test('复审 2：别的分页清除后换回同一个 owner（账本代号变了）→ 旧分页的引擎写回也被挡', async () => {
+  const db = createMemoryDb();
+  const s1 = createStore({ db });
+  await s1.init();
+  await s1.setMeta('owner_user_id', 'u-A');
+  const s2 = createStore({ db });
+  await s2.init();
+  await s2.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  const sent = await s2.pendingRows('transactions');
+  await s1.resetForAccount('u-A');
+  assert.equal(await s2.markUploaded('transactions', sent, [], { owner: 'u-A' }), null);
+  assert.equal((await db.getAll('transactions')).length, 0);
+});
+
+test('复审 3：认领写入核对账本代号与「还没有 owner」：别的分页刚清除换账号 → reject、不写回旧快取', async () => {
+  const db = createMemoryDb();
+  const s1 = createStore({ db });
+  await s1.init();
+  const s2 = createStore({ db });
+  await s2.init();
+  await s2.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  await s1.init();
+  await s1.resetForAccount('u-B');
+  await assert.rejects(s2.markAllForUpload({ meta: { owner_user_id: 'u-A' } }), (e) => e.name === 'MetaMismatch');
+  assert.equal(await db.getMeta('owner_user_id'), 'u-B');
+  assert.equal((await db.getAll('transactions')).length, 0);
+});
+
+test('复审 5、6：阻挡画面出现后不再叠对话框；换账号的阻挡画面写清楚原因', async () => {
+  const { readFileSync } = await import('node:fs');
+  const dialogs = readFileSync(new URL('../js/ui/dialogs.js', import.meta.url), 'utf8');
+  assert.match(dialogs.slice(dialogs.indexOf('function present')), /\[data-db-closed\]/);
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /这台设备已换成另一个账号/);
+  assert.match(app, /store\.onLedgerChanged\(showLedgerChangedNotice\)/);
+  assert.match(app, /onLedgerResetElsewhere\(showLedgerChangedNotice\)/);
+});

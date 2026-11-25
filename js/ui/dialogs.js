@@ -22,6 +22,11 @@ export function trapFocus(overlay, panel) {
 
 // 建立遮罩 + 面板，入栈；回传 { overlay, close }。onClosed 在关闭时（任何途径）呼叫一次。
 function present({ kind, panel, onClosed, onBackdrop }) {
+  // 已经有「需要重新载入」阻挡画面：不再叠对话框（例如账本换掉后的「保存失败」），当成马上关掉
+  if (document.querySelector('[data-db-closed]')) {
+    queueMicrotask(() => { if (onClosed) onClosed(); });
+    return { close() {}, overlay: null };
+  }
   const opener = document.activeElement;
   const overlay = h('div', { class: `overlay overlay-${kind}` }, panel);
   overlay.addEventListener('click', (e) => {
