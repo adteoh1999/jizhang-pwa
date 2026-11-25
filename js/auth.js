@@ -259,6 +259,30 @@ export function forgetSession(store, { locks } = {}) {
   return withLock(AUTH_LOCK, () => clearSession(store), locks);
 }
 
+/**
+ * 清空这台设备的账本（登出、删号共用，2f 审核 M2）：拿 jizhang-auth 锁再 store.wipeLocal()，
+ * 才不会和正在进行的 token 刷新交错（刷新写回 session 会把刚清掉的登录又写回去）。
+ * 锁不能重入：一定要在 getValidSession 回来之后才叫。拿锁失败就不用锁直接清（照 signOut）。
+ * 回 true／false，不会 reject。
+ */
+export async function wipeLocalLocked(store, { locks } = {}) {
+  const work = async () => {
+    try {
+      await store.wipeLocal();
+      return true;
+    } catch (e) {
+      console.warn(`[auth] 清除本机资料失败：${errName(e)}`);
+      return false;
+    }
+  };
+  try {
+    return await withLock(AUTH_LOCK, work, locks);
+  } catch (e) {
+    console.warn(`[auth] 清除拿锁失败：${errName(e)}`);
+    return work();
+  }
+}
+
 /** 通知服务器作废这台设备的 refresh token（尽力而为，2 秒超时，结果不管）。 */
 export async function logoutServer(fetchFn, accessToken, { timeoutMs = LOGOUT_TIMEOUT_MS } = {}) {
   const r = await postJson(fetchFn, `${SUPABASE_URL}/auth/v1/logout?scope=local`, {}, timeoutMs,

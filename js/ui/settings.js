@@ -1,5 +1,5 @@
-// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、分类、数据（导出 / 导入 CSV）、关于。
-// 绑定、邀请码、删除账号是 2f、第 3 阶段的事，这里不放占位。
+// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、分类、数据（导出 / 导入 CSV）、关于、删除账号（2f，最下面）。
+// 邀请码管理是 2f-3、绑定是第 3 阶段的事，这里不放占位。
 // 导出在 export-csv.js（提醒对话框也用）。
 import { h } from './dom.js';
 import { icon } from './icons.js';
@@ -11,6 +11,9 @@ import { onUpdateAvailable, applyUpdate } from '../update.js';
 import { signOut, forgetSession } from '../auth.js';
 import { formatRM } from '../money.js';
 import { createExporter } from './export-csv.js';
+import { runDeleteAccount, dangerRows, DELETE_TEXT } from './delete-account.js';
+
+const DELETE_BUSY = DELETE_TEXT.busyLabel;
 
 /**
  * 设置页「同步」列的文字（纯函数）。回 {text, action}；action：可点时做什么（'relogin' | 'errors' | 'start' | 'reload'），不能点为 null。
@@ -115,10 +118,11 @@ export function accountRows(session) {
  */
 export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null } = {}) {
   let seq = 0;
+  // title 空字串：不放标题（iOS 设置里单独一列的红字区就是这样），也不设 aria-labelledby
   const section = (title, rows, footer) => {
     const id = `settings-sec-${++seq}`;
-    return h('section', { class: 'settings-section', 'aria-labelledby': id },
-      h('h2', { class: 'settings-header', id }, title),
+    return h('section', { class: 'settings-section', 'aria-labelledby': title ? id : null },
+      title ? h('h2', { class: 'settings-header', id }, title) : null,
       h('div', { class: 'inset-group' }, rows),
       footer ? h('p', { class: 'settings-footer' }, footer) : null);
   };
@@ -339,6 +343,26 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     return rows.length ? section('账号', rows, sync ? syncDiag : null) : null;
   };
 
+  // ---------- 删除账号（最下面、红字；HIG：在 App 里提供清楚的删除入口）----------
+  const dangerSection = () => {
+    const rows = dangerRows(session).map((r) => {
+      const label = h('span', { class: 'inset-row-label' }, r.label);
+      const btn = h('button', {
+        type: 'button', class: 'inset-row is-destructive',
+        on: {
+          click: () => runDeleteAccount({
+            store, sync, realtime,
+            fetchFn: (url, init) => fetch(url, init),
+            reload: () => location.reload(),
+            onBusy: (busy) => { label.textContent = busy ? DELETE_BUSY : r.label; btn.disabled = busy; },
+          }).catch((e) => console.warn(`[settings] 删除账号出错：${e && e.name ? e.name : '未知'}`)),
+        },
+      }, label);
+      return btn;
+    });
+    return rows.length ? section('', rows) : null;
+  };
+
   root.replaceChildren(
     ...[accountSection()].filter(Boolean),
     section('分类', [
@@ -349,6 +373,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       buttonRow('导入 CSV', () => fileInput.click(), { action: true, chevron: true }),
     ]),
     section('关于', [versionRow], '账本先存在这台设备，登录后会在背景同步到你的账号。'),
+    ...[dangerSection()].filter(Boolean),
     fileInput,
   );
 }

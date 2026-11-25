@@ -29,6 +29,7 @@ const ASSETS = [
   './js/ui/announce.js',
   './js/ui/categories-page.js',
   './js/ui/components.js',
+  './js/ui/delete-account.js',
   './js/ui/dialogs.js',
   './js/ui/dom.js',
   './js/ui/entry-sheet.js',

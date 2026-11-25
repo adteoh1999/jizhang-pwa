@@ -219,7 +219,7 @@ test('复审 5、6：阻挡画面出现后不再叠对话框；换账号的阻�
   const dialogs = readFileSync(new URL('../js/ui/dialogs.js', import.meta.url), 'utf8');
   assert.match(dialogs.slice(dialogs.indexOf('function present')), /\[data-db-closed\]/);
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
-  assert.match(app, /这台设备已换成另一个账号/);
+  assert.match(app, /这台设备的账本已清除或换了账号/); // 2f M5：登出、删号也会触发，文案通用
   assert.match(app, /store\.onLedgerChanged\(showLedgerChangedNotice\)/);
   assert.match(app, /onLedgerResetElsewhere\(showLedgerChangedNotice\)/);
 });
@@ -227,7 +227,7 @@ test('复审 5、6：阻挡画面出现后不再叠对话框；换账号的阻�
 test('Task 11 无头检查：阻挡画面说明的句尾整组换行；对话框按钮焦点框画在按钮里（不被圆角切掉）', async () => {
   const { readFileSync } = await import('node:fs');
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
-  assert.match(app, /showBlockingNotice\('这台设备已换成另一个账号，', '请重新整理。'\)/);
+  assert.match(app, /showBlockingNotice\('这台设备的账本已清除或换了账号，', '请重新整理。'\)/);
   assert.match(app, /showBlockingNotice\('请重新整理', '以继续使用。'\)/);
   assert.match(app.slice(app.indexOf('function showBlockingNotice')), /class: 'nowrap'/);
   const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');

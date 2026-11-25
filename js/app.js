@@ -48,9 +48,9 @@ export function showDbClosedNotice() {
   showBlockingNotice('请重新整理', '以继续使用。');
 }
 
-/** 别的分页换账号清除了账本（复审 6：写清楚原因）。 */
+/** 别的分页换账号、登出或删号清除了账本（复审 6：写清楚原因；2f M5 文案改通用）。 */
 export function showLedgerChangedNotice() {
-  showBlockingNotice('这台设备已换成另一个账号，', '请重新整理。');
+  showBlockingNotice('这台设备的账本已清除或换了账号，', '请重新整理。');
 }
 
 // tail：句尾整组换行（窄的对话框里「理。」不会单独落到下一行）
