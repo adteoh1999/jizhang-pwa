@@ -154,14 +154,35 @@ test('引号没有闭合丢错', () => {
   assert.throws(() => parseCSV('a,"b\nc'), /引号没有闭合/);
 });
 
-test('非 uuid 的 id 换新 uuid，也不当成已存在', () => {
-  const ex = T({ id: 'abc' });
+test('非 uuid 的 id（本机没有这笔）换新 uuid', () => {
   const text = 'id,date,kind,amount,category,updated_at\nabc,2026-11-20,expense,20,餐饮,2026-11-21T00:00:00.000Z\n';
-  const plan = planImport(parseCSV(text), ctx({ existingTxs: new Map([['abc', ex]]), uuid: () => crypto.randomUUID() }));
+  const plan = planImport(parseCSV(text), ctx({ uuid: () => crypto.randomUUID() }));
   assert.equal(plan.imported, 1);
   assert.equal(isUuid(plan.txs[0].id), true);
-  assert.notEqual(plan.txs[0].id, 'abc');
-  assert.equal(plan.txs[0].created_at, now.toISOString()); // 新纪录，不沿用 ex.created_at
+  assert.equal(plan.txs[0].created_at, now.toISOString());
+});
+
+test('id 原样等于本机某笔（旧版导入留下的非 uuid / 大写 id）→ 当成同一笔，导出再导入不会重复', () => {
+  for (const oddId of ['abc', U1.toUpperCase()]) {
+    const ex = T({ id: oddId });
+    const same = `id,date,kind,amount,category,updated_at\n${oddId},2026-11-20,expense,12.50,餐饮,\n`;
+    let plan = planImport(parseCSV(same), ctx({ existingTxs: new Map([[oddId, ex]]) }));
+    assert.deepEqual([plan.imported, plan.skipped], [0, 1], oddId);
+    const newer = `id,date,kind,amount,category,updated_at\n${oddId},2026-11-20,expense,20,餐饮,2026-11-21T00:00:00.000Z\n`;
+    plan = planImport(parseCSV(newer), ctx({ existingTxs: new Map([[oddId, ex]]) }));
+    assert.equal(plan.imported, 1);
+    assert.equal(plan.txs[0].id, oddId); // 沿用本机那笔的 key（认领时 markAllForUpload 再统一换）
+    assert.equal(plan.txs[0].created_at, ex.created_at);
+  }
+});
+
+test('合法 uuid 前后有空白照常比对；大写 + 较新 → 覆盖本机小写那笔', () => {
+  let plan = planImport(parseCSV(`id,date,kind,amount,category,updated_at\n  ${U1}  ,2026-11-20,expense,20,餐饮,\n`), ctx({ existingTxs: new Map([[U1, T()]]) }));
+  assert.equal(plan.skipped, 1);
+  plan = planImport(parseCSV(`id,date,kind,amount,category,updated_at\n${U1.toUpperCase()},2026-11-20,expense,20,餐饮,2026-11-21T00:00:00.000Z\n`), ctx({ existingTxs: new Map([[U1, T()]]) }));
+  assert.equal(plan.imported, 1);
+  assert.equal(plan.txs[0].id, U1);
+  assert.equal(plan.txs[0].created_at, T().created_at);
 });
 
 test('合法 uuid 保留原 id；大写转小写后比对已存在', () => {

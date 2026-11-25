@@ -96,9 +96,10 @@ export function planImport(rows, { existingTxs, categories, now, uuid }) {
     const date = normDate(cell(r, 'date'));
     if (amount === null || date === null) { skip(); continue; }
 
-    // 非 uuid 的 id（手改过的档、旧版资料）当成没有 id：换新 uuid、不比对已存在；合法 uuid 一律小写。
+    // id：原样等于本机某笔的 key（旧版导入留下的非 uuid / 大写 id）→ 当成同一笔，导出再导入不会重复；
+    // 否则合法 uuid 一律小写，非 uuid（手改过的档）当成没有 id：换新 uuid、不比对已存在。
     const rawId = cell(r, 'id').trim();
-    const id = isUuid(rawId) ? rawId.toLowerCase() : '';
+    const id = rawId !== '' && existingTxs.has(rawId) ? rawId : isUuid(rawId) ? rawId.toLowerCase() : '';
     const existing = id !== '' ? existingTxs.get(id) : undefined;
     if (id !== '' && seenIds.has(id)) { skip(); continue; }
     if (existing && !existing.deleted

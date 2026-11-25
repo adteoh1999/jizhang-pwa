@@ -42,3 +42,39 @@ test('isUuid', () => {
     assert.equal(isUuid(v), false, String(v));
   }
 });
+
+test('normalizeTs：空格 + 微秒 + +00（Postgres 文字格式常见样子）', () => {
+  assert.equal(normalizeTs('2026-11-24 05:02:09.123456+00'), '2026-11-24T05:02:09.123Z');
+});
+
+test('normalizeTs：时区换算跨日、跨年', () => {
+  assert.equal(normalizeTs('2026-12-31T23:30:00-01:00'), '2027-01-01T00:30:00.000Z');
+  assert.equal(normalizeTs('2026-01-01T00:30:00+08:00'), '2025-12-31T16:30:00.000Z');
+});
+
+test('normalizeTs：闰年', () => {
+  assert.equal(normalizeTs('2024-02-29T00:00:00Z'), '2024-02-29T00:00:00.000Z');
+  assert.equal(normalizeTs('2026-02-29T00:00:00Z'), null);
+  assert.equal(normalizeTs('2100-02-29T00:00:00Z'), null);
+});
+
+test('normalizeTs：年份 < 1000 回 null（Date.UTC 会把 0–99 当 19xx）', () => {
+  assert.equal(normalizeTs('0050-01-01T00:00:00Z'), null);
+  assert.equal(normalizeTs('0999-01-01T00:00:00Z'), null);
+});
+
+test('normalizeTs：更多看不懂的格式回 null', () => {
+  for (const v of ['infinity', '-infinity', '2026-11-24 05:02:09+00 BC', '2026-11-24T05:02:60Z', '2026-11-24T05:60:09Z',
+    '2026-11-24T24:00:00Z', '2026-00-24T05:02:09Z', '2026-11-00T05:02:09Z', '2026-11-24T05:02:09+24:00',
+    '2026-11-24T05:02:09+05:60', '2026-11-24t05:02:09Z', '2026-11-24T05:02:09z', ' 2026-11-24T05:02:09Z',
+    '2026-11-24T05:02:09Z ', '2026-11-24T05:02:09.Z', '2026-11-24T05:02:09Z\n']) {
+    assert.equal(normalizeTs(v), null, JSON.stringify(v));
+  }
+});
+
+test('isUuid：更多不合法', () => {
+  for (const v of ['3f2504e04f8911d39a0c0305e82c3301', '{3f2504e0-4f89-11d3-9a0c-0305e82c3301}',
+    '3f2504e0-4f89-11d3-9a0c-0305e82c330g', '3f2504e0-4f89-11d3-9a0c-0305e82c3301\n']) {
+    assert.equal(isUuid(v), false, JSON.stringify(v));
+  }
+});

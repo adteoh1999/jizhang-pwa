@@ -11,7 +11,8 @@ export function normalizeTs(s) {
   if (!m) return null;
   const [, y, mo, d, h, mi, se, frac = '', tz] = m;
   const Y = +y, M = +mo, D = +d, H = +h, MI = +mi, S = +se;
-  if (M < 1 || M > 12 || D < 1 || H > 23 || MI > 59 || S > 59) return null;
+  // Y < 1000：Date.UTC 会把 0–99 年当成 19xx；这么早的时间不会是真资料，当成看不懂
+  if (Y < 1000 || M < 1 || M > 12 || D < 1 || H > 23 || MI > 59 || S > 59) return null;
   if (D > new Date(Date.UTC(Y, M, 0)).getUTCDate()) return null; // 该月天数
   const ms = +(frac + '000').slice(0, 3); // 截到毫秒，不进位
   let offsetMin = 0;
