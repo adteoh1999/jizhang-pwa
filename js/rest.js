@@ -48,7 +48,7 @@ export async function upsertRows(fetchFn, table, rows, accessToken, { timeoutMs 
 }
 
 // 值用双引号包、整段编码（时间里的 + 必须变 %2B，否则会被当空格）
-const q = (v) => `%22${encodeURIComponent(String(v))}%22`;
+const q = (v) => `%22${encodeURIComponent(String(v).replace(/[\\"]/g, '\\$&'))}%22`; // " 与 \ 前加反斜线（PostgREST 规则）
 
 /**
  * 拉一页（2e-2）：依 (server_updated_at, id) 排序，每页 1000 列。

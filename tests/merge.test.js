@@ -214,3 +214,10 @@ test('selectPage：20 秒超时', async () => {
   const { readFileSync } = await import('node:fs');
   assert.match(readFileSync(new URL('../js/rest.js', import.meta.url), 'utf8'), /SELECT_TIMEOUT_MS = 20_000/);
 });
+
+test('审核 S-6：keyset 值里的 " 与 \\ 要转义', async () => {
+  const f = recorder();
+  await selectPage(f, 'categories', { after: { ts: '2026-11-25T10:00:00+00:00', id: 'a"b\\c' } }, 'tok');
+  const or = new URL(f.calls[0].url).searchParams.get('or');
+  assert.ok(or.includes('id.gt."a\\"b\\\\c"'), or);
+});

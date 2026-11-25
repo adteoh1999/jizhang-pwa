@@ -69,6 +69,7 @@ export const BACKOFF_MAX_MS = 300_000;
 export const POLL_MS = 60_000; // 前景每 60 秒检查一次（尊重退避）
 export const FULL_SYNC_EVERY_MS = 24 * 3600_000; // 完整对账最多 24 小时一次（用户 2026-11-25 决定）
 const CURSOR_OVERLAP_MS = 60_000; // 增量从游标往回 60 秒（晚提交的交易不会漏）
+const CURSOR_SETTLE_MS = 5 * 60_000; // 游标到达超过这么久，就不用再回退
 export const LOCK_RETRY_MS = 10_000; // 别的分页在同步：稍后再看一次（不算失败）
 const ALL_BAD_MIN = 10;   // 逐笔时至少这么多笔、全是资料错、没有一笔成功 → 当系统错误（前后端不一致），一笔都不标
 const ALL_BAD_STOP = 20;  // 连续这么多笔全错、没有成功 → 提早停
@@ -223,53 +224,76 @@ export function createSync({
     }
 
     // ---- 拉取（先上传、再拉取：本地改动先进服务器，拉回来的就不会是旧版）----
-    const fullAt = await store.getMeta('fullSyncAt');
-    const fullDue = !(typeof fullAt === 'number' && now() - fullAt < FULL_SYNC_EVERY_MS);
-    let adopted = 0;
-    let missing = 0;
-    for (const table of TABLES) {
-      const cur = await store.getMeta(cursorKey(table));
-      const curTs = cur && typeof cur.ts === 'string' ? normalizeTs(cur.ts) : null;
-      const full = fullDue || curTs === null;
-      const since = full ? null : new Date(Date.parse(curTs) - CURSOR_OVERLAP_MS).toISOString();
-      // S9 只在 24 小时一次的完整对账做（没游标的完整拉取不做）：服务器若拉取永远回空，也不会无限重传
-      const ids = fullDue ? new Set() : null;
-      let after = null;
-      for (;;) { // 拉到空页才算完
-        if (stopped) return 'halt';
-        const r = await withAuth(`拉取 ${table}`, (tok) => selectPage(fetchFn, table, { after, since }, tok));
-        if (typeof r === 'string') return r;
-        if (!isOk(r.status)) {
-          console.warn(`[sync] 拉取 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
-          // 4xx（不含 429）：游标可能坏了 → 丢掉，下次完整拉取
-          if (r.status >= 400 && r.status < 500 && r.status !== 429) await store.setMeta(cursorKey(table), null);
-          return 'fail';
-        }
-        if (!r.rows) { console.warn(`[sync] 拉取 ${table} 回应格式不对：HTTP ${r.status}`); return 'fail'; }
-        if (r.rows.length === 0) break;
-        const last = r.rows[r.rows.length - 1];
-        if (typeof last.server_updated_at !== 'string' || typeof last.id !== 'string') {
-          console.warn(`[sync] 拉取 ${table} 回应少了游标栏位`);
-          return 'fail';
-        }
-        after = { ts: last.server_updated_at, id: last.id }; // 原字串（微秒不能丢）
-        if (ids) for (const row of r.rows) ids.add(row.id);
-        // 这页资料与游标同一次写入；owner 不是这个账号了 → 停
-        const n = await store.applyRemote(table, r.rows, { meta: { [cursorKey(table)]: after }, owner: userId, silent: true });
-        if (n === null) return ownerGone();
-        adopted += n;
-      }
-      if (ids) {
-        const m = await store.markMissingForUpload(table, ids, { owner: userId });
-        if (m === null) return ownerGone();
-        if (m) console.warn(`[sync] 完整对账：${table} 有 ${m} 笔不在服务器上，重新上传`);
-        missing += m;
-      }
+    const acc = { adopted: 0 };
+    let res;
+    try {
+      res = await pull(acc);
+    } finally {
+      if (acc.adopted) store.notifyChanged(); // 一轮最多通知一次；中途失败也通知已采用的（审核 M-1）
     }
-    if (fullDue) await store.setMeta('fullSyncAt', now());
-    if (adopted) store.notifyChanged(); // 整轮结束才通知画面一次
-    if (missing) rerun = true; // 马上再跑一轮把它们传上去
-    return 'ok';
+    return res;
+
+    async function pull(acc) {
+      const fullAt = await store.getMeta('fullSyncAt');
+      // 在未来（时钟曾经快）也算到期（审核 S-3）
+      const fullDue = !(typeof fullAt === 'number' && fullAt <= now() && now() - fullAt < FULL_SYNC_EVERY_MS);
+      let missing = 0;
+      for (const table of TABLES) {
+        let stored = await store.getMeta(cursorKey(table));
+        const curTs = stored && typeof stored.ts === 'string' && typeof stored.id === 'string' ? normalizeTs(stored.ts) : null;
+        const full = fullDue || curTs === null;
+        let after = null;
+        let since = null;
+        if (!full) {
+          // 游标到达超过 5 分钟（晚提交的交易早已落地）→ 直接从游标接着拉；否则回退 60 秒（审核 S-1）
+          const age = typeof stored.at === 'number' ? now() - stored.at : -1;
+          if (age >= CURSOR_SETTLE_MS) after = { ts: stored.ts, id: stored.id };
+          else since = new Date(Date.parse(curTs) - CURSOR_OVERLAP_MS).toISOString();
+        }
+        // S9 只在 24 小时一次的完整对账做（没游标的完整拉取不做）：服务器若拉取永远回空，也不会无限重传
+        const ids = fullDue ? new Set() : null;
+        for (;;) { // 拉到空页才算完
+          if (stopped) return 'halt';
+          const r = await withAuth(`拉取 ${table}`, (tok) => selectPage(fetchFn, table, { after, since }, tok));
+          if (typeof r === 'string') return r;
+          if (stopped) return 'halt'; // 请求途中停下：回来后不写（审核 S-2）
+          if (!isOk(r.status)) {
+            console.warn(`[sync] 拉取 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
+            // 4xx（不含 429）：游标可能坏了 → 丢掉，下次完整拉取
+            if (r.status >= 400 && r.status < 500 && r.status !== 429) await store.setMeta(cursorKey(table), null);
+            return 'fail';
+          }
+          if (!r.rows) { console.warn(`[sync] 拉取 ${table} 回应格式不对：HTTP ${r.status}`); return 'fail'; }
+          if (r.rows.length === 0) break;
+          const last = r.rows[r.rows.length - 1];
+          if (typeof last.server_updated_at !== 'string' || typeof last.id !== 'string') {
+            console.warn(`[sync] 拉取 ${table} 回应少了游标栏位`);
+            return 'fail';
+          }
+          after = { ts: last.server_updated_at, id: last.id }; // 原字串（微秒不能丢）
+          since = null;
+          if (ids) for (const row of r.rows) ids.add(row.id);
+          // 这页资料与游标同一次写入（游标没变就不写，留着原本的到达时间）；owner 不是这个账号了 → 停
+          const moved = !stored || stored.ts !== after.ts || stored.id !== after.id;
+          const cursor = moved ? { ...after, at: now() } : null;
+          const n = await store.applyRemote(table, r.rows, { meta: cursor ? { [cursorKey(table)]: cursor } : undefined, owner: userId, silent: true });
+          if (n === null) return ownerGone();
+          if (cursor) stored = cursor;
+          acc.adopted += n;
+        }
+        if (ids) {
+          if (stopped) return 'halt';
+          const m = await store.markMissingForUpload(table, ids, { owner: userId });
+          if (m === null) return ownerGone();
+          if (m) console.warn(`[sync] 完整对账：${table} 有 ${m} 笔不在服务器上，重新上传`);
+          missing += m;
+        }
+      }
+      if (stopped) return 'halt';
+      if (fullDue) await store.setMeta('fullSyncAt', now());
+      if (missing) rerun = true; // 马上再跑一轮把它们传上去
+      return 'ok';
+    }
   }
 
   function withSyncLock(fn) {

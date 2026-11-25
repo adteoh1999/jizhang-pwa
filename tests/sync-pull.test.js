@@ -276,7 +276,7 @@ test('拉取 4xx（非 401）→ 丢掉该表游标、状态 error、下一轮�
   assert.equal(new URL(tx.url).searchParams.get('server_updated_at'), null);
 });
 
-test('拉取 5xx / 网络错 → fail、游标保留（中途断线下次接着拉）', async () => {
+test('拉取 5xx / 网络错 → fail、游标保留；完整对账中途失败不拿不完整的 id 做 S9', async () => {
   const rows = [];
   for (let i = 0; i < 1500; i++) rows.push(rtx(i));
   let n = 0;
@@ -286,6 +286,7 @@ test('拉取 5xx / 网络错 → fail、游标保留（中途断线下次接着�
   assert.equal(store.transactions().length, 1000);
   assert.equal((await store.getMeta('cursor:transactions')).ts, ts(999));
   assert.equal(await store.getMeta('fullSyncAt'), undefined); // 完整对账没跑完不算
+  assert.equal(store.syncCounts().pending, 0); // 没有拿第 1 页的 id 去判断「不在服务器上」
 });
 
 test('拉取 401 → 刷新一次再拉；一轮内上传与拉取合计最多刷新一次', async () => {
@@ -357,4 +358,128 @@ test('服务器拉取永远回空、上传却成功（例如权限设错）→ �
   await sync.syncNow();
   await clock.advance(5000);
   assert.ok(posts <= 4, `上传了 ${posts} 次`);
+});
+
+test('审核 M-1：拉到一半失败 → 已采用的照样通知画面一次；下一轮没新资料 → 0 次', async () => {
+  const rows = [];
+  for (let i = 0; i < 1500; i++) rows.push(rtx(i));
+  let n = 0;
+  const server = fakePostgrest({ transactions: rows }, { onGet: (table) => (table === 'transactions' && ++n === 2 ? jsonRes(503, {}) : null) });
+  const { sync, store } = await setup({ server });
+  let hits = 0;
+  store.subscribe(() => hits++);
+  assert.equal(await sync.syncNow(), 'fail');
+  assert.equal(hits, 1);
+  hits = 0;
+  assert.equal(await sync.syncNow(), 'ok'); // 接着拉剩下的 500 → 1 次
+  assert.equal(hits, 1);
+  hits = 0;
+  await sync.syncNow();
+  assert.equal(hits, 0);
+});
+
+test('审核 S-1：游标到达超过 5 分钟 → 第一页直接从游标接着拉（keyset，不回退 60 秒）；游标没变不重写', async () => {
+  const clock = fakeClock();
+  const server = fakePostgrest({ transactions: [rtx(0), rtx(1)] });
+  const { sync, store, db } = await setup({ server, clock });
+  await sync.syncNow();
+  const cur = await store.getMeta('cursor:transactions');
+  assert.equal(cur.at, clock.now());
+  // 马上再一轮：回退 60 秒；重拉到的最后一列就是游标 → 不写入
+  server.gets.length = 0;
+  const w = db.calls.length;
+  await sync.syncNow();
+  const first = new URL(server.gets.find((g) => g.table === 'transactions').url);
+  assert.ok(first.searchParams.get('server_updated_at').startsWith('gt.'));
+  assert.equal(db.calls.length, w);
+  // 5 分钟后：从游标接着拉
+  await clock.advance(5 * 60_000);
+  server.gets.length = 0;
+  await sync.syncNow();
+  const g = new URL(server.gets.find((x) => x.table === 'transactions').url);
+  assert.equal(g.searchParams.get('server_updated_at'), null);
+  assert.ok(g.searchParams.get('or').includes(ts(1)));
+  assert.equal(server.gets.filter((x) => x.table === 'transactions').length, 1); // 一个空页就结束
+});
+
+test('审核 S-1：游标到达时间在未来（时钟倒退）→ 照样回退 60 秒', async () => {
+  const clock = fakeClock();
+  const cursor = { ts: ts(0), id: fakeUuid(1), at: clock.now() + 3600_000 };
+  const { sync, server } = await setup({ clock, meta: { 'cursor:transactions': cursor, 'cursor:categories': cursor, fullSyncAt: clock.now() } });
+  await sync.syncNow();
+  const g = new URL(server.gets.find((x) => x.table === 'transactions').url);
+  assert.ok(g.searchParams.get('server_updated_at').startsWith('gt.'));
+});
+
+test('审核 S-2：stop() 在拉取请求途中 → 回来后不写入、不再发请求', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const server = fakePostgrest({ transactions: [rtx(0)] }, { onGet: async (table) => { if (table === 'transactions') await gate; return null; } });
+  const { sync, store, db } = await setup({ server });
+  const p = sync.syncNow();
+  await settle();
+  sync.stop();
+  const w = db.calls.length;
+  const g = server.gets.length;
+  release();
+  await p;
+  assert.equal(db.calls.length, w);
+  assert.equal(server.gets.length, g);
+  assert.equal(store.transactions().length, 0);
+});
+
+test('审核 S-3：fullSyncAt 在未来（时钟曾经快）→ 当成到期、做完整对账', async () => {
+  const clock = fakeClock();
+  const cursor = { ts: ts(0), id: fakeUuid(1) };
+  const { sync, server } = await setup({ clock, meta: { 'cursor:transactions': cursor, 'cursor:categories': cursor, fullSyncAt: clock.now() + 365 * 86400_000 } });
+  await sync.syncNow();
+  assert.equal(new URL(server.gets[0].url).searchParams.get('server_updated_at'), null);
+});
+
+test('S-7：拉取 401 一次 → 刷新后成功、资料采用', async () => {
+  let n = 0;
+  const server = fakePostgrest({ transactions: [rtx(0)] }, { onGet: () => (++n === 1 ? jsonRes(401, {}) : null) });
+  const { sync, store, sessions } = await setup({ server });
+  assert.equal(await sync.syncNow(), 'ok');
+  assert.deepEqual(sessions, [null, 'tok-1']);
+  assert.equal(store.transactions().length, 1);
+});
+
+test('S-7：拉取 429 → fail、游标保留', async () => {
+  const cursor = { ts: ts(0), id: fakeUuid(1) };
+  const clock = fakeClock();
+  const server = fakePostgrest({}, { onGet: (t) => (t === 'transactions' ? jsonRes(429, {}) : null) });
+  const { sync, store } = await setup({ server, clock, meta: { 'cursor:transactions': cursor, 'cursor:categories': cursor, fullSyncAt: clock.now() } });
+  assert.equal(await sync.syncNow(), 'fail');
+  assert.deepEqual(await store.getMeta('cursor:transactions'), cursor);
+});
+
+test('S-7：回应的列缺 server_updated_at → fail、不写入', async () => {
+  const server = fakePostgrest({}, { onGet: (t) => (t === 'transactions' ? jsonRes(200, [{ ...rtx(0), server_updated_at: undefined }]) : null) });
+  const { sync, store } = await setup({ server });
+  assert.equal(await sync.syncNow(), 'fail');
+  assert.equal(store.transactions().length, 0);
+});
+
+test('S-7：S9 不碰 dirty 1 / sync_error 的列', async () => {
+  const server = fakePostgrest({}, { });
+  const failPost = async (url, init = {}) => (init.method === 'POST' ? jsonRes(400, { code: '23514' }) : server(url, init));
+  const { sync, store } = await setup({ server: failPost });
+  await store.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  await sync.syncNow();
+  assert.equal(store.syncCounts().txErrors, 1);
+  assert.equal(store.syncCounts().txPending, 0);
+});
+
+test('S-7：远端 deleted 较新但本地有更晚的未上传还原 → 本地赢', async () => {
+  const server = fakePostgrest({ transactions: [rtx(0)] });
+  const { sync, store } = await setup({ server });
+  await sync.syncNow();
+  const id = store.transactions()[0].id;
+  await store.deleteTransaction(id);
+  await store.restoreTransaction(id);
+  // 另一台的删除（较旧，server_updated_at 较新）
+  server.data.transactions[0] = rtx(0, { deleted: true, updated_at: '2026-11-25T08:30:00+00:00', server_updated_at: ts(30000) });
+  await sync.syncNow();
+  assert.equal(store.transactions().length, 1);
 });
