@@ -3,7 +3,7 @@
 // error / notice 各带序号（errorSeq / noticeSeq）：同一句再出现序号也会变，画面才知道要重新朗读、重新聚焦。
 import {
   normalizeEmailInput, cleanCode, OTP_TTL_MS, RESEND_MS,
-  loadPending, savePending, clearPending, saveSession, loadLastUserId, saveLastUserId,
+  loadPending, savePending, clearPending, loadLastUserId,
 } from './auth.js';
 
 const EXPIRED = '验证码已过期，请重新发送';
@@ -211,9 +211,22 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
           return;
         }
         const s = r.session;
+        const notSaved = (step) => (e) => {
+          warn(step)(e);
+          pendingUsed = true;
+          clearPending(store).catch(warn('clearPending'));
+          Object.assign(state, { step: 'email', code: '', sentAt: null });
+          setError('登录资料没存好，请重新发送验证码');
+        };
+        // 读不到「上一个账号 / 账本主人」不能当成没有：宁可不登录，也不让新账号认领别人的账
         let last = null;
-        try { last = await loadLastUserId(store); } catch (e) { warn('loadLastUserId')(e); }
-        if (last && last !== s.user_id && hasLocalData()) {
+        let owner = null;
+        try {
+          last = await loadLastUserId(store);
+          owner = (await store.getMeta('owner_user_id')) || null;
+        } catch (e) { notSaved('loadOwner')(e); return; }
+        const prevOwner = owner || last; // 本地账本（可能）的主人
+        if (prevOwner && prevOwner !== s.user_id && hasLocalData()) {
           const go = await confirmSwitch();
           if (!go) {
             pendingUsed = true; // 这组验证码已被服务器用掉
@@ -223,23 +236,13 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
             return;
           }
         }
+        // session、lastUserId、（需要时）owner 同一次写入：要嘛全有要嘛全无。
+        // 换账号且本地账本还没归属（含只剩已删除的账、自建分类）→ 先记成上一个账号的（claimState 回 other，不会上传到新账号）。
+        const meta = { session: s, lastUserId: s.user_id };
+        if (!owner && last && last !== s.user_id && (store.hasOwnedData() || hasLocalData())) meta.owner_user_id = last;
         try {
-          // 换账号：本地账本还没归属就先记成上一个账号的（之后 claimState 回 other，不会上传到新账号）。
-          // 必须在盖掉 lastUserId 之前；写不进去就不登录（宁可重来，也不让新账号认领别人的账）。
-          if (last && last !== s.user_id && hasLocalData() && !(await store.getMeta('owner_user_id'))) {
-            await store.setMeta('owner_user_id', last);
-          }
-          await saveSession(store, s);
-        } catch (e) {
-          warn('saveSession')(e);
-          pendingUsed = true;
-          clearPending(store).catch(warn('clearPending'));
-          Object.assign(state, { step: 'email', code: '', sentAt: null });
-          setError('登录资料没存好，请重新发送验证码');
-          return;
-        }
-        // 等写完再进 App（失败只记日志：session 已存好，登录有效）
-        await saveLastUserId(store, s.user_id).catch(warn('saveLastUserId'));
+          await store.setMetas(meta);
+        } catch (e) { notSaved('saveSession')(e); return; }
         await clearPending(store).catch(warn('clearPending'));
         state.step = 'done';
         signedIn = s;

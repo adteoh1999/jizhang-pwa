@@ -1,7 +1,7 @@
 // 资料仓库：记忆体快取 + 串行写入队列。先写 db，成功后才更新快取并通知。
 import { uuid as defaultUuid } from './uuid.js';
 import {
-  defaultCategories, buildTransaction, buildCategory, markDeleted, markRestored, ValidationError,
+  defaultCategories, buildTransaction, buildCategory, markDeleted, markRestored, ValidationError, DEFAULT_EPOCH,
 } from './model.js';
 import { compareTx } from './stats.js';
 import { toCSV, parseCSV, planImport } from './csv.js';
@@ -136,6 +136,18 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       return enqueue(async () => {
         await db.write({ meta: { [key]: value } });
       });
+    },
+    /** 一次写多个 meta 键（同一个 IndexedDB transaction：要嘛全有要嘛全无）。 */
+    setMetas(obj) {
+      return enqueue(async () => {
+        await db.write({ meta: { ...obj } });
+      });
+    },
+    /** 这台设备有没有「属于某个人」的资料：任何账目列（含已删除），或自建 / 改过的分类（默认分类不算）。 */
+    hasOwnedData() {
+      if (txs.size > 0) return true;
+      for (const c of cats.values()) if (c.updated_at !== DEFAULT_EPOCH) return true;
+      return false;
     },
 
     exportCSV() {

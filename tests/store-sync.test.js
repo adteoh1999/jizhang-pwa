@@ -369,3 +369,23 @@ test('markAllForUpload 换 id 后其他栏位不变（含已删除、sync_error�
   assert.ok(isUuid(id));
   assert.deepEqual(rest, expect);
 });
+
+test('hasOwnedData：默认分类不算；有账（含已删除）或自建 / 改过的分类才算', async () => {
+  const { store } = await setup();
+  assert.equal(store.hasOwnedData(), false);
+  const t = await store.saveTransaction(input());
+  await store.deleteTransaction(t.id);
+  assert.equal(store.hasOwnedData(), true);
+  const { store: s2 } = await setup();
+  await s2.saveCategory({ id: 'food', name: '吃饭' });
+  assert.equal(s2.hasOwnedData(), true);
+});
+
+test('setMetas：一次写多个 meta 键（同一次 db.write）', async () => {
+  const { db, store } = await setup();
+  const before = db.calls.length;
+  await store.setMetas({ a: 1, b: 2 });
+  assert.equal(db.calls.length - before, 1);
+  assert.equal(await store.getMeta('a'), 1);
+  assert.equal(await store.getMeta('b'), 2);
+});

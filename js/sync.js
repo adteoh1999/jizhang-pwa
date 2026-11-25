@@ -1,5 +1,6 @@
 // 同步引擎（2e）。这一段：认领本地账本（第一次登录时把这台设备的账本归给这个账号）。
 // 规则：只有 meta.owner_user_id === session.user_id 才同步——绝不把别人的账传到这个账号。
+import { loadSession } from './auth.js';
 
 /** 'mine'（属于这个账号）| 'unclaimed'（还没归属）| 'other'（属于别的账号）。 */
 export async function claimState(store, session) {
@@ -30,6 +31,8 @@ export async function ensureClaimed(store, session, { ask, fromUser = false }) {
     const answer = await ask(n);
     const now = await claimState(store, session); // 问的时候别的分页可能已处理
     if (now !== 'unclaimed') return now;
+    const cur = await loadSession(store); // 问的时候可能登出了或换了账号
+    if (!cur || cur.user_id !== session.user_id) return 'unclaimed';
     if (answer !== 'start') {
       await store.setMeta(DISMISSED, session.user_id);
       return 'unclaimed';

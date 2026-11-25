@@ -34,7 +34,7 @@ export const LOGIN_TEXT = Object.freeze({
   resendButton: '重新发送验证码',
   safariHint: '请先加到主屏幕再使用：点 分享 → 添加到主屏幕。在这里登录后，加到主屏幕还要再登录一次。',
   switchTitle: '这台设备上有另一个账号的账本',
-  switchMessage: '这些记录不会上传到新账号，会继续留在这台设备上。',
+  switchMessage: '这些记录不会上传到新账号，会继续留在这台设备上。登录后在这台设备上新记的账，也会归到原来的账号。',
   switchConfirm: '继续登录',
   sentTo: (email) => `已寄到 ${email}，10 分钟内有效。`,
   sentToTail: '10 分钟内有效。',

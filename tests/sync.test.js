@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { claimState, claim, ensureClaimed } from '../js/sync.js';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
+import { saveSession } from '../js/auth.js';
 
 const ME = { user_id: 'u-1', access_token: 'a', refresh_token: 'r', expires_at: 0, email: 'me@x.com' };
 const fakeUuid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -12,6 +13,7 @@ async function setup({ db = createMemoryDb(), txCount = 0 } = {}) {
   let t = Date.parse('2026-11-25T10:00:00Z');
   const store = createStore({ db, now: () => new Date((t += 1000)), uuid: () => fakeUuid(++n) });
   await store.init();
+  await saveSession(store, ME);
   for (let i = 0; i < txCount; i++) {
     await store.saveTransaction({ kind: 'expense', amountMinor: 100 + i, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
   }
@@ -101,13 +103,16 @@ test('ensureClaimed：问的时候别处已认领（另一个分页）→ 不重
 
 test('提醒文字：N 笔、按钮是具体动词；换账号对话框不再说新账号会看到', async () => {
   const { SYNC_PROMPT_TEXT: T } = await import('../js/ui/sync-prompt.js');
+  assert.equal(T.title, '上传这台设备的账本？');
   assert.equal(T.message(3), '这台设备的 3 笔账会上传到你的账号。建议先导出 CSV 备份。');
+  assert.equal(T.laterLabel, '以后再说');
   assert.equal(T.exportLabel, '导出 CSV');
   assert.equal(T.startLabel, '开始同步');
   const { readFileSync } = await import('node:fs');
   const login = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
   assert.doesNotMatch(login, /新账号会看到/);
   assert.match(login, /不会上传到新账号/);
+  assert.match(login, /新记的账/);
 });
 
 test('导出抽到 export-csv.js：设置页与提醒共用，share 在点击里同步呼叫', async () => {
@@ -119,4 +124,40 @@ test('导出抽到 export-csv.js：设置页与提醒共用，share 在点击里
   const body = ex.slice(ex.indexOf('return function exportCsv'));
   assert.ok(body.indexOf('navigator.share(') > 0);
   assert.doesNotMatch(body.slice(0, body.indexOf('navigator.share(')), /await /);
+});
+
+test('ensureClaimed：claim 失败 → reject，owner 与 dismissed 都没写，下次照样问', async () => {
+  const { db, store } = await setup({ txCount: 1 });
+  let asked = 0;
+  const ask = async () => { asked++; db.failNextWrite(new Error('disk')); return 'start'; };
+  await assert.rejects(ensureClaimed(store, ME, { ask }));
+  assert.equal(await store.getMeta('owner_user_id'), undefined);
+  assert.equal(await store.getMeta('syncPromptDismissed'), undefined);
+  await ensureClaimed(store, ME, { ask: async () => { asked++; return 'start'; } });
+  assert.equal(asked, 2);
+});
+
+test('ensureClaimed：ask 期间别处认领成同一账号 → mine、不再写；回 dismiss 但别处已认领 → 不写 dismissed', async () => {
+  let { db, store } = await setup({ txCount: 1 });
+  let before;
+  assert.equal(await ensureClaimed(store, ME, { ask: async () => { await store.setMeta('owner_user_id', 'u-1'); before = db.calls.length; return 'start'; } }), 'mine');
+  assert.equal(db.calls.length, before);
+  ({ store } = await setup({ txCount: 1 }));
+  assert.equal(await ensureClaimed(store, ME, { ask: async () => { await store.setMeta('owner_user_id', 'u-1'); return 'dismiss'; } }), 'mine');
+  assert.equal(await store.getMeta('syncPromptDismissed'), undefined);
+});
+
+test('ensureClaimed：fromUser 且 dismiss → 有记下', async () => {
+  const { store } = await setup({ txCount: 1 });
+  assert.equal(await ensureClaimed(store, ME, { ask: async () => 'dismiss', fromUser: true }), 'unclaimed');
+  assert.equal(await store.getMeta('syncPromptDismissed'), 'u-1');
+});
+
+test('ensureClaimed：问的时候登出了或换了账号 → 不认领', async () => {
+  for (const after of [null, { ...ME, user_id: 'u-9' }]) {
+    const { store } = await setup({ txCount: 1 });
+    const r = await ensureClaimed(store, ME, { ask: async () => { await store.setMeta('session', after); return 'start'; } });
+    assert.equal(r, 'unclaimed');
+    assert.equal(await store.getMeta('owner_user_id'), undefined);
+  }
 });
