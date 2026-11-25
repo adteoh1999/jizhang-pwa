@@ -1,0 +1,386 @@
+// 邀请码管理子画面（2f Task 8–9，只有站主看得到）：列表、新增（次数／有效期／备注）、生成后复制或分享。
+// 跟服务器说话的部分（ownerCall、loadInvites、createInvite、copyInvite、shareInvite）不碰画面，测试直接叫；
+// 画面照分类页的导航推入（右边滑入、左上「‹ 设置」）。真正的权限由服务器判断，这里只是显示。
+import { h } from './dom.js';
+import { icon } from './icons.js';
+import { pushLayer } from './nav.js';
+import { openSheet } from './sheet.js';
+import { messageDialog, trapFocus } from './dialogs.js';
+import { optionSegmented, confirmDiscard } from './components.js';
+import { announce } from './announce.js';
+import { callInvites } from '../admin-api.js';
+import { getValidSession } from '../auth.js';
+import { OWNER_FLAG_KEY } from '../owner-check.js';
+import {
+  formatCode, spokenCode, inviteMeta, shareText, VALIDITY_OPTIONS, DEFAULT_DAYS, clampUses,
+  USES_MIN, USES_MAX, NOTE_MAX,
+} from '../invite-format.js';
+
+export const INVITE_TEXT = Object.freeze({
+  title: '邀请码',
+  back: '设置',
+  loading: '正在载入…',
+  offline: '需要网络才能管理邀请码',
+  retry: '暂时连不上，请稍后再试',
+  denied: '没有权限',
+  relogin: '登录已过期，请先在设置页「同步」那一列重新登录。',
+  switched: '账号已更换，请重新整理。',
+  generic: '暂时无法完成，请稍后再试',
+  retryButton: '重试',
+  reloadButton: '重新整理',
+  empty: '还没有邀请码',
+  add: '新增邀请码',
+  footer: '邀请码有效、还有次数时，别人才能用它注册。已注册的人之后登录不需要邀请码。',
+  newTitle: '新增邀请码',
+  cancel: '取消',
+  generate: '生成',
+  usesLabel: '可用次数',
+  fewer: '减少次数',
+  more: '增加次数',
+  validityLabel: '有效期',
+  notePlaceholder: '备注（选填）',
+  noteLabel: '备注',
+  newFooter: `备注只有你看得到，最多 ${NOTE_MAX} 字。`,
+  createFailTitle: '没能生成邀请码',
+  resultTitle: '邀请码已生成',
+  resultHint: '把邀请码给对方：在登录页输入邮箱和邀请码就能注册。',
+  done: '完成',
+  copy: '复制',
+  copied: '已复制',
+  copyFail: '请长按邀请码手动复制',
+  share: '分享',
+  shareFail: '没能打开分享，请改用复制。',
+});
+const T = INVITE_TEXT;
+
+const defaultOnline = () => (globalThis.navigator ? globalThis.navigator.onLine !== false : true);
+const fail = (reason, message) => ({ ok: false, reason, message });
+
+/**
+ * 以站主身分叫 invites（每个动作共用）：离线先挡 → 拿可用的 session（必须是 userId）→ 叫 → 401 刷新一次再叫。
+ * 回 {ok:true, data} 或 {ok:false, reason, message}；reason：offline（含断网、超时）| relogin | switched | denied | error。
+ * 403 → 站主快取改成 false（设置页的入口会消失）。不会 reject。
+ * deps：store、fetchFn、userId、isOnline、now；测试可注入 getSession(failedToken)。
+ */
+export async function ownerCall(deps, action, args = {}) {
+  const { store, fetchFn, userId, isOnline = defaultOnline, now = Date.now } = deps;
+  const getSession = deps.getSession || ((failedToken) => getValidSession(store, fetchFn, { failedToken }));
+  if (!isOnline()) return fail('offline', T.offline);
+  let token = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const got = await getSession(token);
+    if (got.invalid) return fail('relogin', T.relogin);
+    if (!got.session) return fail('error', T.retry);
+    if (got.session.user_id !== userId) return fail('switched', T.switched);
+    token = got.session.access_token;
+    const r = await callInvites(fetchFn, token, action, args);
+    if (r.ok) return r;
+    if (r.status === 401) continue;
+    if (r.status === 0) return fail('offline', T.offline);
+    if (r.status === 403) {
+      try {
+        await store.setMeta(OWNER_FLAG_KEY, { userId, value: false, checkedAt: now() });
+      } catch (e) {
+        console.warn(`[invites] 改站主快取失败：${e && e.name ? e.name : '未知'}`);
+      }
+      return fail('denied', T.denied);
+    }
+    return fail('error', r.error);
+  }
+  return fail('relogin', T.relogin);
+}
+
+/** 邀请码清单：{ok:true, invites} 或失败（同 ownerCall）。 */
+export async function loadInvites(deps) {
+  const r = await ownerCall(deps, 'list');
+  if (!r.ok) return r;
+  return Array.isArray(r.data.invites) ? { ok: true, invites: r.data.invites } : fail('error', T.generic);
+}
+
+const CODE_RE = /^[A-Z0-9]{8}$/;
+/**
+ * 新增一个码：次数夹到 1–20、天数不在选项里当 7、备注去空白截到 40 字（服务器也会再检查）。
+ * days 为 null（永不过期）时一定送出 days 键（缺键服务器回 400，S3）。回 {ok:true, code} 或失败。
+ */
+export async function createInvite(deps, { maxUses, days, note }) {
+  const okDays = VALIDITY_OPTIONS.some((o) => o.days === days) ? days : DEFAULT_DAYS;
+  const r = await ownerCall(deps, 'create', {
+    max_uses: clampUses(maxUses), days: okDays, note: String(note ?? '').trim().slice(0, NOTE_MAX),
+  });
+  if (!r.ok) return r;
+  return typeof r.data.code === 'string' && CODE_RE.test(r.data.code) ? { ok: true, code: r.data.code } : fail('error', T.generic);
+}
+
+/** 复制带横线的码；成功 true（没有剪贴簿、被拒都是 false）。 */
+export async function copyInvite(code, clipboard = globalThis.navigator && globalThis.navigator.clipboard) {
+  try {
+    if (!clipboard || typeof clipboard.writeText !== 'function') return false;
+    await clipboard.writeText(formatCode(code));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const canShare = (nav) => !!nav && typeof nav.share === 'function';
+
+/** iPhone 分享面板（必须在点击当下叫）：'done' | 'cancel'（使用者关掉，不算错）| 'fail'。 */
+export async function shareInvite(code, nav = globalThis.navigator) {
+  if (!canShare(nav)) return 'fail';
+  try {
+    await nav.share({ text: shareText(code) });
+    return 'done';
+  } catch (e) {
+    return e && e.name === 'AbortError' ? 'cancel' : 'fail';
+  }
+}
+
+// ======================= 画面（DOM；Task 11 headless 截图确认） =======================
+
+let seq = 0;
+
+// 码：画面上大写等宽；读屏念逐字分开的版本（画面那份对读屏隐藏）
+const codeLabel = (code, cls) => h('span', { class: cls },
+  h('span', { 'aria-hidden': 'true' }, formatCode(code)),
+  h('span', { class: 'sr-only' }, `邀请码 ${spokenCode(code)}`));
+
+/**
+ * openInvitesPage(store, { userId, fetchFn, onOwnerChanged? }) → { close }
+ * onOwnerChanged()：服务器说「没有权限」时叫（设置页把入口藏起来）。
+ */
+export function openInvitesPage(store, { userId, fetchFn = (url, init) => fetch(url, init), onOwnerChanged = () => {} } = {}) {
+  const opener = document.activeElement;
+  const uid = `invpage-${++seq}`;
+  const deps = { store, fetchFn, userId };
+  let closed = false;
+  let loading = false;
+
+  const backBtn = h('button', { type: 'button', class: 'nav-back', on: { click: () => close() } },
+    h('span', { class: 'nav-back-chevron', 'aria-hidden': 'true' }, icon('chevron-left', 22)),
+    h('span', null, T.back));
+  const bar = h('header', { class: 'nav-page-bar' },
+    backBtn, h('h2', { class: 'nav-page-title', id: `${uid}-title` }, T.title), h('span', { 'aria-hidden': 'true' }));
+
+  // 状态（载入中／离线／没有权限…）：role=status，文字变了读屏会念
+  const statusText = h('p', { class: 'invites-status-text' });
+  const statusBtn = h('button', { type: 'button', class: 'invites-status-button pressable', hidden: true });
+  const status = h('div', { class: 'invites-status', role: 'status' }, statusText, statusBtn);
+
+  const addMain = h('button', { type: 'button', class: 'cat-row-main', on: { click: () => openNewInvite() } },
+    h('span', { class: 'cat-row-plus', 'aria-hidden': 'true' }, icon('plus', 20)),
+    h('span', { class: 'cat-row-name' }, T.add));
+  const list = h('ul', { class: 'inset-group cat-list invite-list', role: 'list', 'aria-label': T.title, hidden: true });
+  const footer = h('p', { class: 'settings-footer', hidden: true }, T.footer);
+
+  function showStatus(text, button) {
+    statusText.textContent = text;
+    status.hidden = false;
+    statusBtn.hidden = !button;
+    if (button) {
+      statusBtn.textContent = button.label;
+      statusBtn.onclick = button.onClick;
+    }
+  }
+
+  function rowOf(inv) {
+    return h('li', { class: 'cat-row' },
+      h('div', { class: 'cat-row-main invite-row' },
+        h('span', { class: 'invite-row-text' },
+          codeLabel(inv.code, 'invite-code'),
+          h('span', { class: 'invite-meta' }, inviteMeta(inv)),
+          inv.note ? h('span', { class: 'invite-note' }, inv.note) : null)));
+  }
+
+  function renderList(invites) {
+    const hadFocus = list.contains(document.activeElement);
+    list.replaceChildren(h('li', { class: 'cat-row cat-row-add' }, addMain), ...invites.map(rowOf));
+    list.hidden = false;
+    footer.hidden = false;
+    if (invites.length) status.hidden = true;
+    else showStatus(T.empty);
+    if (hadFocus && !list.contains(document.activeElement)) addMain.focus({ preventScroll: true });
+  }
+
+  async function reload() {
+    if (loading || closed) return;
+    loading = true;
+    if (list.hidden) showStatus(T.loading);
+    let r;
+    try {
+      r = await loadInvites(deps);
+    } finally {
+      loading = false;
+    }
+    if (closed) return;
+    if (r.ok) { renderList(r.invites); return; }
+    list.hidden = true;
+    footer.hidden = true;
+    if (r.reason === 'denied') onOwnerChanged();
+    if (r.reason === 'offline' || r.reason === 'error') showStatus(r.message, { label: T.retryButton, onClick: () => reload() });
+    else if (r.reason === 'switched') showStatus(r.message, { label: T.reloadButton, onClick: () => location.reload() });
+    else showStatus(r.message);
+  }
+
+  function openNewInvite() {
+    openNewInviteSheet(deps, { onCreated: () => reload(), onDenied: () => { onOwnerChanged(); reload(); } });
+  }
+
+  const body = h('div', { class: 'nav-page-body' }, status, list, footer);
+  const page = h('div', { class: 'nav-page', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': `${uid}-title` }, bar, body);
+  trapFocus(page, page);
+
+  const handle = pushLayer({
+    element: page,
+    onClose: () => {
+      closed = true;
+      page.classList.remove('is-visible');
+      const remove = () => page.remove();
+      page.addEventListener('transitionend', (e) => { if (e.target === page) remove(); });
+      setTimeout(remove, 450); // 后备
+      if (opener && typeof opener.focus === 'function' && document.contains(opener)) opener.focus({ preventScroll: true });
+    },
+  });
+  function close() { handle.close(); }
+
+  document.body.append(page);
+  backBtn.focus({ preventScroll: true });
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (!closed) page.classList.add('is-visible'); }));
+  reload();
+  return { close };
+}
+
+/** 新增邀请码 sheet：次数（步进器）、有效期（分段 4 选 1）、备注 →「生成」→ 结果 sheet。 */
+function openNewInviteSheet(deps, { onCreated, onDenied }) {
+  const uid = `invnew-${++seq}`;
+  let uses = USES_MIN;
+  let days = DEFAULT_DAYS;
+  let saving = false;
+  let confirming = false;
+
+  // ---------- 次数：数值放在按钮中间（HIG：步进器影响的值要一眼看得到）----------
+  const value = h('span', { class: 'stepper-value', id: `${uid}-uses`, 'aria-live': 'polite' }, String(uses));
+  const minus = h('button', { type: 'button', class: 'stepper-button', 'aria-label': T.fewer, on: { click: () => setUses(uses - 1) } }, '−');
+  const plus = h('button', { type: 'button', class: 'stepper-button', 'aria-label': T.more, on: { click: () => setUses(uses + 1) } }, '+');
+  function setUses(n) {
+    uses = clampUses(n);
+    value.textContent = String(uses);
+    // 到边界用 aria-disabled（不用 disabled：焦点不会被丢掉）
+    minus.setAttribute('aria-disabled', uses <= USES_MIN ? 'true' : 'false');
+    plus.setAttribute('aria-disabled', uses >= USES_MAX ? 'true' : 'false');
+  }
+  setUses(uses);
+  const usesRow = h('div', { class: 'entry-row' },
+    h('span', { class: 'entry-row-label', id: `${uid}-uses-label` }, T.usesLabel),
+    h('div', { class: 'stepper', role: 'group', 'aria-labelledby': `${uid}-uses-label ${uid}-uses` }, minus, value, plus));
+
+  // ---------- 有效期 ----------
+  const seg = optionSegmented({
+    options: VALIDITY_OPTIONS.map((o) => ({ id: o.days === null ? 'never' : String(o.days), label: o.label })),
+    value: String(DEFAULT_DAYS),
+    label: T.validityLabel,
+    onChange: (id) => { days = id === 'never' ? null : Number(id); },
+  });
+
+  // ---------- 备注 ----------
+  const note = h('input', {
+    class: 'entry-input entry-note', type: 'text', maxlength: String(NOTE_MAX), placeholder: T.notePlaceholder,
+    'aria-label': T.noteLabel, autocomplete: 'off', enterkeyhint: 'done',
+  });
+  note.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') { e.preventDefault(); note.blur(); }
+  });
+
+  const content = h('div', { class: 'entry' },
+    h('div', { class: 'entry-section' }, h('div', { class: 'entry-card entry-list' }, usesRow)),
+    h('div', { class: 'entry-section' },
+      h('h3', { class: 'entry-section-label', id: `${uid}-validity` }, T.validityLabel), seg.element),
+    h('div', { class: 'entry-section' },
+      h('div', { class: 'entry-card entry-list' }, h('div', { class: 'entry-row' }, note)),
+      h('p', { class: 'settings-footer' }, T.newFooter)));
+
+  const isDirty = () => uses !== USES_MIN || days !== DEFAULT_DAYS || note.value.trim() !== '';
+  async function onDismissRequest(close) {
+    if (saving || confirming) return;
+    if (!isDirty()) { close(); return; }
+    confirming = true;
+    try {
+      if (await confirmDiscard()) close();
+    } finally {
+      confirming = false;
+    }
+  }
+
+  async function generate() {
+    if (saving || confirming) return;
+    saving = true;
+    sheet.rightButton.disabled = true;
+    const r = await createInvite(deps, { maxUses: uses, days, note: note.value });
+    saving = false;
+    sheet.rightButton.disabled = false;
+    if (!r.ok) {
+      if (r.reason === 'denied') { sheet.close(); onDenied(); }
+      await messageDialog({ title: T.createFailTitle, message: r.message });
+      return;
+    }
+    sheet.close();
+    openResultSheet(r.code, { onClosed: onCreated });
+  }
+
+  const sheet = openSheet({
+    title: T.newTitle,
+    content,
+    leftAction: { label: T.cancel, onClick: () => sheet.requestDismiss() },
+    rightAction: { label: T.generate, bold: true, onClick: () => { generate(); } },
+    onDismissRequest,
+  });
+  minus.focus({ preventScroll: true });
+}
+
+/** 生成结果：大字码＋复制＋分享（有分享面板才显示）。关闭后列表重新载入。 */
+function openResultSheet(code, { onClosed }) {
+  const big = h('p', { class: 'invite-big-code' },
+    h('span', { 'aria-hidden': 'true' }, formatCode(code)),
+    h('span', { class: 'sr-only' }, `邀请码 ${spokenCode(code)}`));
+  let copyTimer = null;
+  const copyBtn = h('button', { type: 'button', class: 'invite-action pressable', on: { click: () => onCopy() } }, T.copy);
+  const shareBtn = canShare(globalThis.navigator)
+    ? h('button', { type: 'button', class: 'invite-action is-secondary pressable', on: { click: () => onShare() } }, T.share)
+    : null;
+  const hint = h('p', { class: 'invite-result-hint' }, T.resultHint);
+
+  async function onCopy() {
+    const ok = await copyInvite(code);
+    clearTimeout(copyTimer);
+    if (ok) {
+      copyBtn.textContent = T.copied;
+      announce(T.copied);
+      copyTimer = setTimeout(() => { copyBtn.textContent = T.copy; }, 2000);
+      return;
+    }
+    // 复制不了：选取画面上的码，让使用者长按复制
+    const sel = globalThis.getSelection && globalThis.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(big.firstChild);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    hint.textContent = T.copyFail;
+    announce(T.copyFail);
+  }
+  function onShare() {
+    // shareInvite 会在这次点击里同步叫 navigator.share（iOS 要在手势当下）
+    shareInvite(code).then((r) => { if (r === 'fail') messageDialog({ title: T.share, message: T.shareFail }); });
+  }
+
+  const content = h('div', { class: 'entry invite-result' },
+    big, hint, h('div', { class: 'invite-actions' }, copyBtn, shareBtn));
+  const sheet = openSheet({
+    title: T.resultTitle,
+    content,
+    rightAction: { label: T.done, bold: true, onClick: () => sheet.close() },
+    onClosed: () => { clearTimeout(copyTimer); onClosed(); },
+  });
+  copyBtn.focus({ preventScroll: true });
+}

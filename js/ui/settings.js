@@ -13,6 +13,7 @@ import { formatRM } from '../money.js';
 import { createExporter } from './export-csv.js';
 import { runDeleteAccount, dangerRows, busyRowHandler } from './delete-account.js';
 import { refreshOwnerFlag, readOwnerFlag } from '../owner-check.js';
+import { openInvitesPage } from './invites-page.js';
 
 /**
  * 设置页「同步」列的文字（纯函数）。回 {text, action}；action：可点时做什么（'relogin' | 'errors' | 'start' | 'reload'），不能点为 null。
@@ -119,7 +120,7 @@ export function adminRows(isOwner) {
  * opts.session：目前登录的 session（没有就不显示账号区）。
  * opts.sync：同步引擎（status / subscribe / stop）；opts.onStartSync()：设置页按「开始」（认领，回 promise）。
  */
-export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null, openInvites = () => {} } = {}) {
+export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null } = {}) {
   let seq = 0;
   // title 空字串：不放标题（iOS 设置里单独一列的红字区就是这样），也不设 aria-labelledby
   const section = (title, rows, footer) => {
@@ -372,7 +373,9 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   };
 
   // ---------- 管理（只有站主）：先藏起来，读到快取才显示；enter()（启动、回前景、打开设置页）时需要才问服务器 ----------
-  const adminSection = section('管理', adminRows(true).map((r) => buttonRow(r.label, () => openInvites(), { chevron: true })));
+  const adminSection = section('管理', adminRows(true).map((r) => buttonRow(r.label, () => openInvitesPage(store, {
+    userId: session.user_id, onOwnerChanged: () => { renderAdmin().catch(() => {}); },
+  }), { chevron: true })));
   adminSection.hidden = true;
   const renderAdmin = async () => {
     adminSection.hidden = !(session && adminRows(await readOwnerFlag(store, session.user_id)).length);

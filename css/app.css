@@ -1881,6 +1881,48 @@ button.inset-row:active { background: var(--press-bg); }
   .nav-page.is-visible { transform: none; opacity: 1; }
 }
 
+/* =====================================================================
+   邀请码管理（2f-3，只有站主看得到）— js/ui/invites-page.js
+   - [hig-components-layout] 导航推入（同分类页）、inset grouped 列表；第二行次要字「状态 · 已用 x/y · 到期」。
+   - [hig-components-controls] 步进器：数值放在 − 与 + 中间、到边界变淡；有效期 4 选 1 分段控件（名词标签）。
+   - 码用等宽字；读屏念逐字分开的 .sr-only 版本。没有模糊、没有持续动画。
+   ===================================================================== */
+.segmented.is-multi { grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); }
+.segmented.is-multi::before { width: calc((100% - 6px) / var(--n, 2)); transform: translateX(calc(var(--i, 0) * 100%)); }
+.segmented.is-multi .segment { padding: 0 2px; line-height: 1.2; }
+.invite-list .cat-row + .cat-row .cat-row-main::before { left: 16px; }
+.invite-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.invite-code { font: var(--font-body); font-weight: 600; font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.04em; }
+.invite-meta, .invite-note { font: var(--font-footnote); color: var(--secondary-label); overflow-wrap: anywhere; }
+.invites-status { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 36px 16px; text-align: center; }
+.invites-status-text { margin: 0; font: var(--font-body); color: var(--secondary-label); }
+.invites-status-button {
+  min-height: var(--hit); padding: 0 22px; border-radius: 999px;
+  background: var(--btn-bg); color: var(--btn-fg); font: var(--font-headline);
+}
+.stepper { flex: none; display: flex; align-items: center; gap: 6px; }
+.stepper-button {
+  position: relative; width: var(--hit); height: 36px; border-radius: 10px;
+  background: var(--seg-track); color: var(--ink); font-size: 22px; line-height: 1;
+}
+.stepper-button::after { content: ""; position: absolute; inset: -4px 0; } /* 36pt 高的按钮点击区扩到 44pt */
+.stepper-button:active:not([aria-disabled="true"]) { filter: brightness(0.92); }
+.stepper-button[aria-disabled="true"] { opacity: 0.35; cursor: default; }
+.stepper-value { min-width: 2.5ch; text-align: center; font: var(--font-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.invite-result { text-align: center; }
+.invite-big-code {
+  margin: 12px 0 0; color: var(--label);
+  font: 700 2.2rem/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em;
+  -webkit-user-select: all; user-select: all; /* 复制失败时可以长按整段选取 */
+}
+.invite-result-hint { margin: 0; padding: 0 8px; font: var(--font-subhead); color: var(--secondary-label); }
+.invite-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.invite-action {
+  flex: 1 1 8rem; min-height: 52px; padding: 0 20px; border-radius: 999px;
+  background: var(--btn-bg); color: var(--btn-fg); font: var(--font-headline);
+}
+.invite-action.is-secondary { background: var(--ink-tint); color: var(--ink); }
+
 /* 设置页「有新版本 · 更新」：行高保持 44pt，点击区用 ::after 扩大 */
 button.update-action {
   appearance: none; border: 0; font: inherit;
@@ -1956,6 +1998,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 /* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
 @media (prefers-contrast: more) {
   .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-2); }
+  .stepper-button, .invite-action.is-secondary { border: 1px solid var(--ink-2); }
 }
 
 /* ---------- 登录页（2d，js/ui/login.js） ----------
