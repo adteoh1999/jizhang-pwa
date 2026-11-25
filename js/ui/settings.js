@@ -61,7 +61,8 @@ export function createSyncLabeler({ setTimer = (fn, ms) => setTimeout(fn, ms), c
 }
 
 const pad2 = (n) => String(n).padStart(2, '0');
-const DIAG_RESULT = { ok: '成功', halt: '暂停', skip: '另一个分页在同步' };
+// ok 只代表这一轮跑完、连得上服务器，不代表全部传上去（上传失败看上面「有 N 笔无法同步」）；用户 2026-11-25 选「连线正常」，不写「成功」免误会
+const DIAG_RESULT = { ok: '连线正常', halt: '暂停', skip: '另一个分页在同步' };
 /**
  * 设置页「同步」下方的诊断行（纯函数，2e-3）：上次检查时间与结果、拉回笔数、进行中、即时连线。
  * diag：sync.diagnostics()；realtime：'off' | 'connecting' | 'live' | null。时间用本地 HH:MM:SS。
@@ -82,7 +83,7 @@ export function syncDiagParts(diag, { now = Date.now(), realtime = null } = {}) 
   }
   if (diag.runningSince !== null && now - diag.runningSince >= 10_000) parts.push(`进行中 ${Math.round((now - diag.runningSince) / 1000)} 秒`);
   if (realtime === 'live') parts.push('即时连线');
-  else if (realtime === 'connecting') parts.push('连线中');
+  else if (realtime === 'connecting') parts.push('即时连线中');
   return parts;
 }
 

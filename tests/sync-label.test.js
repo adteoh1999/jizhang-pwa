@@ -191,11 +191,11 @@ test('createSyncLabeler：同步中未满 1 秒保留上一个文字；满 1 秒
 const at = (h, m, sec) => new Date(2026, 10, 25, h, m, sec).getTime(); // 本地时间
 const D = (o = {}) => ({ lastRunAt: null, lastResult: null, failures: 0, runningSince: null, lastAdopted: 0, ...o });
 
-test('诊断行：还没检查 / 成功 / 拉回 N 笔', () => {
+test('诊断行：还没检查 / 连线正常 / 收到 N 笔', () => {
   const now = at(14, 33, 0);
   assert.equal(syncDiagText(D(), { now }), '还没检查');
-  assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok' }), { now }), '上次检查 14:32:05 · 成功');
-  assert.equal(syncDiagText(D({ lastRunAt: at(9, 2, 5), lastResult: 'ok', lastAdopted: 2 }), { now }), '上次检查 09:02:05 · 成功 · 收到 2 笔');
+  assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok' }), { now }), '上次检查 14:32:05 · 连线正常');
+  assert.equal(syncDiagText(D({ lastRunAt: at(9, 2, 5), lastResult: 'ok', lastAdopted: 2 }), { now }), '上次检查 09:02:05 · 连线正常 · 收到 2 笔');
 });
 
 test('诊断行：失败（连续 N 次）、暂停、另一个分页在同步', () => {
@@ -208,17 +208,17 @@ test('诊断行：失败（连续 N 次）、暂停、另一个分页在同步',
 test('诊断行：进行中超过 10 秒才显示；即时连线状态', () => {
   const now = at(14, 33, 0);
   const base = D({ lastRunAt: at(14, 32, 5), lastResult: 'ok' });
-  assert.equal(syncDiagText({ ...base, runningSince: now - 9000 }, { now }), '上次检查 14:32:05 · 成功');
-  assert.equal(syncDiagText({ ...base, runningSince: now - 25000 }, { now }), '上次检查 14:32:05 · 成功 · 进行中 25 秒');
-  assert.equal(syncDiagText(base, { now, realtime: 'live' }), '上次检查 14:32:05 · 成功 · 即时连线');
-  assert.equal(syncDiagText(base, { now, realtime: 'connecting' }), '上次检查 14:32:05 · 成功 · 连线中');
-  assert.equal(syncDiagText(base, { now, realtime: 'off' }), '上次检查 14:32:05 · 成功');
+  assert.equal(syncDiagText({ ...base, runningSince: now - 9000 }, { now }), '上次检查 14:32:05 · 连线正常');
+  assert.equal(syncDiagText({ ...base, runningSince: now - 25000 }, { now }), '上次检查 14:32:05 · 连线正常 · 进行中 25 秒');
+  assert.equal(syncDiagText(base, { now, realtime: 'live' }), '上次检查 14:32:05 · 连线正常 · 即时连线');
+  assert.equal(syncDiagText(base, { now, realtime: 'connecting' }), '上次检查 14:32:05 · 连线正常 · 即时连线中');
+  assert.equal(syncDiagText(base, { now, realtime: 'off' }), '上次检查 14:32:05 · 连线正常');
 });
 
 test('复审 S15：诊断行分段（每段整组换行；读屏用逗号停顿、不念「·」）', () => {
   const now = at(14, 33, 0);
   assert.deepEqual(syncDiagParts(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok', lastAdopted: 1 }), { now, realtime: 'live' }),
-    ['上次检查 14:32:05', '成功', '收到 1 笔', '即时连线']);
+    ['上次检查 14:32:05', '连线正常', '收到 1 笔', '即时连线']);
 });
 
 // ---------- 2f 整体审核后用户决定：登出时按「先同步」＝已同意认领，不再问 ----------
