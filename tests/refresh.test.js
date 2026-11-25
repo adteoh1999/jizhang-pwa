@@ -247,3 +247,111 @@ test('signOut 与刷新用同一把锁：刷新进行中登出，会等刷新结
   await Promise.all([p1, p2]);
   assert.equal(await loadSession(store), null);
 });
+
+// ---------- 任务 2 审核修正 ----------
+import { bootTarget } from '../js/auth.js';
+
+test('读本机 session 丢错 → {retry:true}，不往外丢', async () => {
+  const bad = { getMeta: async () => { throw new Error('idb'); }, setMeta: async () => {} };
+  const f = fakeFetch(() => jsonRes(200, NEW_BODY));
+  assert.deepEqual(await getValidSession(bad, f, opts()), { retry: true });
+  assert.equal(f.calls.length, 0);
+});
+
+test('刷新成功但存不进本机 → 仍回新 session（这一轮能用），不往外丢', async () => {
+  const store = await setup();
+  const real = store.setMeta;
+  store.setMeta = async () => { throw new Error('disk'); };
+  const orig = console.warn;
+  console.warn = () => {};
+  let r;
+  try { r = await getValidSession(store, fakeFetch(() => jsonRes(200, NEW_BODY)), opts()); } finally { console.warn = orig; store.setMeta = real; }
+  assert.equal(r.session.access_token, 'new-access');
+});
+
+test('标记失效时写入失败 → 仍回 {invalid:true}', async () => {
+  const store = await setup();
+  store.setMeta = async () => { throw new Error('disk'); };
+  const orig = console.warn;
+  console.warn = () => {};
+  try {
+    assert.deepEqual(await getValidSession(store, fakeFetch(() => jsonRes(400, { error_code: 'session_expired' })), opts()), { invalid: true });
+  } finally { console.warn = orig; }
+});
+
+test('locks.request 本身丢错 → signOut 不用锁照样清 session、回 true', async () => {
+  const store = await setup();
+  const locks = { request: () => Promise.reject(new Error('InvalidStateError')) };
+  let reloaded = false;
+  assert.equal(await signOut(store, () => { reloaded = true; }, { fetchFn: fakeFetch(() => new Response(null, { status: 204 })), locks, isOnline: () => true }), true);
+  assert.equal(reloaded, true);
+  assert.equal(await loadSession(store), null);
+});
+
+test('failedToken 不同但目前的也快过期 → 照样刷新', async () => {
+  const store = await setup(); // 剩 30 秒
+  const f = fakeFetch(() => jsonRes(200, NEW_BODY));
+  const r = await getValidSession(store, f, opts({ failedToken: 'some-older-access' }));
+  assert.equal(f.calls.length, 1);
+  assert.equal(r.session.access_token, 'new-access');
+});
+
+test('failedToken 相同 + 回 invalid → invalid；相同 + 网络错 → retry', async () => {
+  let store = await setup({ ...OLD, expires_at: NOW + 600_000 });
+  assert.deepEqual(await getValidSession(store, fakeFetch(() => jsonRes(400, { error_code: 'session_not_found' })), opts({ failedToken: 'old-access' })), { invalid: true });
+  store = await setup({ ...OLD, expires_at: NOW + 600_000 });
+  assert.deepEqual(await getValidSession(store, fakeFetch(new Error('offline')), opts({ failedToken: 'old-access' })), { retry: true });
+});
+
+test('刷新途中别处存了新 session（例如重新登录）→ 收到 invalid 也不盖掉新的，回新的', async () => {
+  const store = await setup();
+  const newer = { ...OLD, access_token: 'login-access', refresh_token: 'login-refresh', expires_at: NOW + 3600_000 };
+  const f = fakeFetch(async () => {
+    await store.setMeta('session', newer); // 不经过锁
+    return jsonRes(400, { error_code: 'refresh_token_already_used' });
+  });
+  const r = await getValidSession(store, f, opts());
+  assert.equal(r.session.access_token, 'login-access');
+  const saved = await loadSession(store);
+  assert.equal(saved.invalid, undefined);
+  assert.equal(saved.refresh_token, 'login-refresh');
+});
+
+test('失效名单 6 个都算 invalid；401 / 403 带名单内的 code 仍是 retry', async () => {
+  assert.equal(INVALID_REFRESH_CODES.length, 6);
+  for (const code of INVALID_REFRESH_CODES) {
+    const store = await setup();
+    assert.deepEqual(await getValidSession(store, fakeFetch(() => jsonRes(400, { error_code: code })), opts()), { invalid: true }, code);
+  }
+  for (const status of [401, 403]) {
+    const store = await setup();
+    assert.deepEqual(await getValidSession(store, fakeFetch(() => jsonRes(status, { error_code: 'session_not_found' })), opts()), { retry: true }, String(status));
+  }
+});
+
+test('刷新回来的 user_id 和原本不同 → retry、session 不变', async () => {
+  const store = await setup();
+  const r = await getValidSession(store, fakeFetch(() => jsonRes(200, { ...NEW_BODY, user: { id: 'u-OTHER' } })), opts());
+  assert.deepEqual(r, { retry: true });
+  assert.deepEqual(await loadSession(store), OLD);
+});
+
+test('带 invalid 的 session：loadSession 仍回物件、bootTarget 仍是 app（用户决定 1：不踢出）', async () => {
+  const store = await setup({ ...OLD, invalid: true });
+  const s = await loadSession(store);
+  assert.equal(s.invalid, true);
+  assert.equal(bootTarget(s), 'app');
+});
+
+test('日志只印规矩的 error_code（小写字母、数字、底线，≤64），其他印「其他」', async () => {
+  const logs = [];
+  const orig = console.warn;
+  console.warn = (...a) => logs.push(a.join(' '));
+  try {
+    await refreshSession(fakeFetch(() => jsonRes(400, { error_code: 'X<script>secret-token' })), 'r', 'e', NOW);
+    await refreshSession(fakeFetch(() => jsonRes(400, { error_code: 'session_expired' })), 'r', 'e', NOW);
+  } finally { console.warn = orig; }
+  assert.doesNotMatch(logs[0], /script|secret/);
+  assert.match(logs[0], /其他/);
+  assert.match(logs[1], /session_expired/);
+});

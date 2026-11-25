@@ -224,8 +224,10 @@ test('前端 js/ 没有 secret key、service_role；Authorization 只能带变�
   for (const f of jsFiles(join(root, 'js'))) {
     const s = readFileSync(f, 'utf8');
     assert.doesNotMatch(s, /sb_secret_|service_role/i, f);
-    for (const m of s.matchAll(/Authorization/g)) {
-      assert.match(s.slice(m.index, m.index + 40), /^Authorization: `Bearer \$\{[A-Za-z_.]+\}`/, f);
+    for (const m of s.matchAll(/authorization/gi)) {
+      const x = /^Authorization: `Bearer \$\{([A-Za-z_.]+)\}`/.exec(s.slice(m.index, m.index + 60));
+      assert.ok(x, f);
+      assert.doesNotMatch(x[1], /^[A-Z_]+$|SUPABASE|KEY/, f); // 不能是 config 常数（publishable key 不是 Bearer）
     }
   }
 });

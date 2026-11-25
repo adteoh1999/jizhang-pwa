@@ -157,19 +157,31 @@ const REFRESH_MARGIN_MS = 60_000; // 剩不到 60 秒就先刷新
 const LOGOUT_TIMEOUT_MS = 2_000;
 const AUTH_LOCK = 'jizhang-auth';
 
-/** 换新 token。回 {ok:true, session} | {ok:false, invalid, status}。只有 400 + 名单内的 error_code 才算 invalid。 */
-export async function refreshSession(fetchFn, refreshToken, email, nowMs, { timeoutMs } = {}) {
+// 日志只印规矩的 error_code（服务器给的原字串可能很长或夹杂奇怪字元）
+const safeCode = (code) => (code === null ? '' : /^[a-z0-9_]{1,64}$/.test(code) ? ` ${code}` : ' 其他');
+
+/**
+ * 换新 token。回 {ok:true, session} | {ok:false, invalid, status}。只有 400 + 名单内的 error_code 才算 invalid。
+ * userId 给了而回来的账号不同 → 当成失败（retry），不存。
+ */
+export async function refreshSession(fetchFn, refreshToken, email, nowMs, { timeoutMs, userId } = {}) {
   const r = await postJson(fetchFn, `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, { refresh_token: refreshToken }, timeoutMs);
   const code = (r.body && typeof r.body.error_code === 'string') ? r.body.error_code : null;
   if (isOk(r.status)) {
+    let session;
     try {
-      return { ok: true, session: toSession(r.body, email, nowMs) };
+      session = toSession(r.body, email, nowMs);
     } catch {
       console.warn('[auth] 刷新回应缺栏位');
       return { ok: false, invalid: false, status: r.status };
     }
+    if (userId && session.user_id !== userId) {
+      console.warn('[auth] 刷新回来的账号不同，不采用');
+      return { ok: false, invalid: false, status: r.status };
+    }
+    return { ok: true, session };
   }
-  console.warn(`[auth] 刷新失败：HTTP ${r.status}${code ? ` ${code}` : ''}`);
+  console.warn(`[auth] 刷新失败：HTTP ${r.status}${safeCode(code)}`);
   return { ok: false, invalid: r.status === 400 && INVALID_REFRESH_CODES.includes(code), status: r.status };
 }
 
@@ -183,42 +195,62 @@ function localLock(name, fn) {
   tail.then(() => { if (localLocks.get(name) === tail) localLocks.delete(name); });
   return run;
 }
-/** 拿锁执行 fn（跨分页用 Web Locks；没有就用分页内的 Promise 锁）。 */
+/**
+ * 拿锁执行 fn（跨分页用 Web Locks；没有就用分页内的 Promise 锁）。
+ * 锁不能重入：拿着 jizhang-auth 锁时，不可以再调 getValidSession / signOut（会永远等）。
+ */
 export function withLock(name, fn, locks = globalThis.navigator && globalThis.navigator.locks) {
   if (locks && typeof locks.request === 'function') return locks.request(name, () => fn());
   return localLock(name, fn);
 }
 
+const errName = (e) => (e && e.name ? e.name : '未知');
+
 /**
- * 拿到可以用的 session（必要时刷新）。回 {session} | {invalid:true} | {retry:true}。
- * failedToken：刚被服务器 401 拒绝的 access token。锁内重读后若已不同（别的分页刚刷新）就直接用新的；相同就强制刷新。
- * 失效时把 session 标成 invalid（不删：用户决定 1，账本照常用、同步暂停）；之后不再发刷新请求，直到重新登录。
+ * 拿到可以用的 session（必要时刷新）。回 {session} | {invalid:true} | {retry:true}，不会 reject。
+ * 任何要用 access token 的地方都只能经过这里，不要自己 loadSession 后拿 token 去用。
+ * failedToken：刚被服务器 401 拒绝的 access token。锁内重读后若已不同（别的分页刚刷新）且没快过期就直接用；
+ * 相同就强制刷新。失效时把 session 标成 invalid（不删：用户决定 1，账本照常用、同步暂停），
+ * 之后不再发刷新请求，直到重新登录（存新 session 时 invalid 自然消失）。
  */
-export function getValidSession(store, fetchFn, { now = Date.now, locks, failedToken = null } = {}) {
-  return withLock(AUTH_LOCK, async () => {
-    const s = await loadSession(store);
-    if (!s || s.invalid) return { invalid: true };
-    const t = now();
-    if (failedToken) {
-      if (s.access_token !== failedToken) return { session: s };
-    } else if (s.expires_at - t > REFRESH_MARGIN_MS) {
-      return { session: s };
-    }
-    const r = await refreshSession(fetchFn, s.refresh_token, s.email, t);
-    if (r.ok) {
-      await saveSession(store, r.session);
-      return { session: r.session };
-    }
-    if (r.invalid) {
+export async function getValidSession(store, fetchFn, { now = Date.now, locks, failedToken = null } = {}) {
+  try {
+    return await withLock(AUTH_LOCK, async () => {
+      let s;
       try {
+        s = await loadSession(store);
+      } catch (e) {
+        console.warn(`[auth] 读取登录状态失败：${errName(e)}`);
+        return { retry: true };
+      }
+      if (!s || s.invalid) return { invalid: true };
+      const t = now();
+      const fresh = s.expires_at - t > REFRESH_MARGIN_MS;
+      if (failedToken ? (s.access_token !== failedToken && fresh) : fresh) return { session: s };
+      const r = await refreshSession(fetchFn, s.refresh_token, s.email, t, { userId: s.user_id });
+      if (r.ok) {
+        try {
+          await saveSession(store, r.session);
+        } catch (e) {
+          console.warn(`[auth] 存新登录状态失败：${errName(e)}`);
+        }
+        return { session: r.session };
+      }
+      if (!r.invalid) return { retry: true };
+      // 标 invalid 前再读一次：途中别处（例如重新登录，不经过这把锁）已存了新的 → 用新的，不盖掉
+      try {
+        const cur = await loadSession(store);
+        if (cur && cur.refresh_token !== s.refresh_token) return cur.invalid ? { invalid: true } : { session: cur };
         await saveSession(store, { ...s, invalid: true });
       } catch (e) {
-        console.warn(`[auth] 标记登录失效失败：${e && e.name ? e.name : '未知'}`);
+        console.warn(`[auth] 标记登录失效失败：${errName(e)}`);
       }
       return { invalid: true };
-    }
+    }, locks);
+  } catch (e) {
+    console.warn(`[auth] 拿锁失败：${errName(e)}`);
     return { retry: true };
-  }, locks);
+  }
 }
 
 /** 通知服务器作废这台设备的 refresh token（尽力而为，2 秒超时，结果不管）。 */
@@ -273,7 +305,7 @@ export async function signOut(store, reload, { fetchFn, locks, stopSync, isOnlin
   if (stopSync) {
     try { stopSync(); } catch { /* 停不了也照样登出 */ }
   }
-  const cleared = await withLock(AUTH_LOCK, async () => {
+  const work = async () => {
     if (fetchFn && isOnline()) {
       try {
         const s = await loadSession(store);
@@ -284,10 +316,18 @@ export async function signOut(store, reload, { fetchFn, locks, stopSync, isOnlin
       await clearSession(store);
       return true;
     } catch (e) {
-      console.warn(`[auth] 登出写入失败：${e && e.name ? e.name : '未知'}`);
+      console.warn(`[auth] 登出写入失败：${errName(e)}`);
       return false;
     }
-  }, locks);
+  };
+  let cleared;
+  try {
+    cleared = await withLock(AUTH_LOCK, work, locks);
+  } catch (e) {
+    // 拿锁本身失败：登出一定要能成功，不用锁直接清
+    console.warn(`[auth] 登出拿锁失败：${errName(e)}`);
+    cleared = await work();
+  }
   if (!cleared) return false;
   // session 已清就算登出；pending 清不掉只记日志（下次打开登录页会照常判断过期）
   await clearPending(store).catch((e) => console.warn(`[auth] 清 pending 失败：${e && e.name ? e.name : '未知'}`));
