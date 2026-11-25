@@ -10,7 +10,7 @@ type Deps = {
 };
 type Check = { limited?: boolean; exists?: boolean; owner?: boolean };
 
-const ALLOWED_ORIGINS = ['https://jizhang.adteoh.com', 'http://localhost:8000'];
+const ALLOWED_ORIGINS = ['https://jizhang.adteoh.com', 'http://localhost:8000', 'http://localhost:8001']; // 8001：测试账号（另一份本机资料）
 
 // 日志只记「哪一步、状态码、错误代码」，绝不记邮箱、邀请码、key
 const logFail = (step: string, detail: string) => console.error(`[register] ${step}: ${detail}`);

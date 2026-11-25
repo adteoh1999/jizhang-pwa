@@ -316,9 +316,13 @@ for (const [label, mod] of await loadBoth('register')) {
     assert.match(res.headers.get('access-control-allow-methods'), /POST/);
   });
 
-  test(`${label}：本机测试来源也允许`, async () => {
-    const res = await run(req({ email: 'abc' }, { origin: 'http://localhost:8000' }), routes());
-    assert.equal(res.headers.get('access-control-allow-origin'), 'http://localhost:8000');
+  test(`${label}：本机测试来源也允许（8000 开发、8001 测试账号用）`, async () => {
+    for (const o of ['http://localhost:8000', 'http://localhost:8001']) {
+      const res = await run(req({ email: 'abc' }, { origin: o }), routes());
+      assert.equal(res.headers.get('access-control-allow-origin'), o);
+    }
+    const res = await run(req({ email: 'abc' }, { origin: 'http://localhost:8002' }), routes());
+    assert.equal(res.headers.get('access-control-allow-origin'), null);
   });
 
   test(`${label}：来源不在名单 → 没有 allow-origin`, async () => {
