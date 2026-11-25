@@ -124,6 +124,12 @@ export function createSync({
   let gen = 0; // 每轮的代号：超时放弃时 +1，旧轮之后醒来就不再写入
   let debounceSince = null; // 这次防抖第一次排队的时间（上限 DEBOUNCE_MAX_MS）
   let lastForegroundForce = -Infinity;
+  // 诊断（设置页显示）：不含账目内容
+  let lastRunAt = null;
+  let lastResult = null;
+  let runningSince = null;
+  let lastAdopted = 0;
+  let roundAdopted = 0;
   let started = false;
   let stopped = false;
   const cleanups = [];
@@ -150,6 +156,7 @@ export function createSync({
     const dead = () => stopped || my !== gen; // 停了、或这轮已超时被放弃
     const setState = (st) => { if (!dead()) setStateRaw(st); };
     if (dead()) return 'halt';
+    roundAdopted = 0;
     if (!isOnline()) { setState('offline'); return 'halt'; }
     setState('syncing');
     let g = await getSession(null);
@@ -241,6 +248,7 @@ export function createSync({
     try {
       res = await pull(acc);
     } finally {
+      if (!dead()) roundAdopted = acc.adopted;
       if (acc.adopted) { // 一轮最多通知一次；中途失败也通知已采用的（审核 M-1）
         store.notifyChanged();
         try { onPulled(); } catch (e) { console.error(e); }
@@ -346,6 +354,9 @@ export function createSync({
       console.warn(`[sync] 同步出错：${e && e.name ? e.name : '未知'}`);
       res = 'fail';
     }
+    lastRunAt = now();
+    lastResult = res;
+    lastAdopted = roundAdopted;
     if (stopped) return res;
     if (res === 'ok') {
       failures = 0;
@@ -371,6 +382,7 @@ export function createSync({
   function syncNow() {
     if (stopped) return Promise.resolve('halt');
     if (running) { rerun = true; return running; }
+    runningSince = now();
     running = (async () => {
       let res;
       try {
@@ -380,6 +392,7 @@ export function createSync({
         } while (rerun && res !== 'fail' && !stopped);
       } finally {
         running = null;
+        runningSince = null;
       }
       return res;
     })();
@@ -438,6 +451,7 @@ export function createSync({
     schedule,
     syncNow,
     status,
+    diagnostics: () => ({ lastRunAt, lastResult, failures, runningSince, lastAdopted }),
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);

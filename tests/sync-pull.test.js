@@ -500,3 +500,20 @@ test('2e-3 Task 2：一轮采用了远端资料 → 呼叫 onPulled 一次（通
   await sync.syncNow(); // 同样的资料：没有新采用
   assert.equal(n, 1);
 });
+
+test('2e-3 Task 3：diagnostics()——上次检查时间、结果、拉回笔数、连续失败、进行中', async () => {
+  const server = fakePostgrest({ transactions: [rtx(1), rtx(2)] });
+  const { sync, clock } = await setup({ server });
+  assert.deepEqual(sync.diagnostics(), { lastRunAt: null, lastResult: null, failures: 0, runningSince: null, lastAdopted: 0 });
+  const p = sync.syncNow();
+  assert.equal(sync.diagnostics().runningSince, clock.now());
+  await p;
+  const d = sync.diagnostics();
+  assert.equal(d.lastResult, 'ok');
+  assert.equal(d.lastAdopted, 2);
+  assert.equal(d.failures, 0);
+  assert.equal(d.runningSince, null);
+  assert.equal(d.lastRunAt, clock.now());
+  await sync.syncNow();
+  assert.equal(sync.diagnostics().lastAdopted, 0); // 每轮重算
+});

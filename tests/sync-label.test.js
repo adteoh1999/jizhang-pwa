@@ -1,7 +1,7 @@
 // 2e 任务 6：设置页同步状态文字（js/ui/settings.js syncLabel）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { syncLabel } from '../js/ui/settings.js';
+import { syncLabel, syncDiagText } from '../js/ui/settings.js';
 
 const S = (o = {}) => ({ state: 'idle', pending: 0, errors: 0, txPending: 0, txErrors: 0, retryInMs: 0, ...o });
 const L = (o, opt) => { const r = syncLabel(S(o), opt); return [r.text, r.action]; };
@@ -182,4 +182,32 @@ test('createSyncLabeler：同步中未满 1 秒保留上一个文字；满 1 秒
   lab.label(S({ state: 'syncing' }));
   lab.dispose();
   assert.equal(timers.size, 0);
+});
+
+// ---------- 2e-3 Task 3：诊断行 ----------
+const at = (h, m, sec) => new Date(2026, 10, 25, h, m, sec).getTime(); // 本地时间
+const D = (o = {}) => ({ lastRunAt: null, lastResult: null, failures: 0, runningSince: null, lastAdopted: 0, ...o });
+
+test('诊断行：还没检查 / 成功 / 拉回 N 笔', () => {
+  const now = at(14, 33, 0);
+  assert.equal(syncDiagText(D(), { now }), '还没检查');
+  assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'ok' }), { now }), '上次检查 14:32:05 · 成功');
+  assert.equal(syncDiagText(D({ lastRunAt: at(9, 2, 5), lastResult: 'ok', lastAdopted: 2 }), { now }), '上次检查 09:02:05 · 成功 · 拉回 2 笔');
+});
+
+test('诊断行：失败（连续 N 次）、暂停、另一个分页在同步', () => {
+  const now = at(14, 33, 0);
+  assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'fail', failures: 3 }), { now }), '上次检查 14:32:05 · 失败（连续 3 次）');
+  assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'halt' }), { now }), '上次检查 14:32:05 · 暂停');
+  assert.equal(syncDiagText(D({ lastRunAt: at(14, 32, 5), lastResult: 'skip' }), { now }), '上次检查 14:32:05 · 另一个分页在同步');
+});
+
+test('诊断行：进行中超过 10 秒才显示；即时连线状态', () => {
+  const now = at(14, 33, 0);
+  const base = D({ lastRunAt: at(14, 32, 5), lastResult: 'ok' });
+  assert.equal(syncDiagText({ ...base, runningSince: now - 9000 }, { now }), '上次检查 14:32:05 · 成功');
+  assert.equal(syncDiagText({ ...base, runningSince: now - 25000 }, { now }), '上次检查 14:32:05 · 成功 · 进行中 25 秒');
+  assert.equal(syncDiagText(base, { now, realtime: 'live' }), '上次检查 14:32:05 · 成功 · 即时连线');
+  assert.equal(syncDiagText(base, { now, realtime: 'connecting' }), '上次检查 14:32:05 · 成功 · 连线中');
+  assert.equal(syncDiagText(base, { now, realtime: 'off' }), '上次检查 14:32:05 · 成功');
 });

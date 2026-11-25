@@ -56,6 +56,27 @@ export function createSyncLabeler({ setTimer = (fn, ms) => setTimeout(fn, ms), c
   };
 }
 
+const pad2 = (n) => String(n).padStart(2, '0');
+const DIAG_RESULT = { ok: '成功', halt: '暂停', skip: '另一个分页在同步' };
+/**
+ * 设置页「同步」下方的诊断行（纯函数，2e-3）：上次检查时间与结果、拉回笔数、进行中、即时连线。
+ * diag：sync.diagnostics()；realtime：'off' | 'connecting' | 'live' | null。时间用本地 HH:MM:SS。
+ */
+export function syncDiagText(diag, { now = Date.now(), realtime = null } = {}) {
+  const parts = [];
+  if (diag.lastRunAt === null) parts.push('还没检查');
+  else {
+    const d = new Date(diag.lastRunAt);
+    parts.push(`上次检查 ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`);
+    parts.push(diag.lastResult === 'fail' ? `失败（连续 ${diag.failures} 次）` : (DIAG_RESULT[diag.lastResult] || '—'));
+    if (diag.lastAdopted > 0) parts.push(`拉回 ${diag.lastAdopted} 笔`);
+  }
+  if (diag.runningSince !== null && now - diag.runningSince >= 10_000) parts.push(`进行中 ${Math.round((now - diag.runningSince) / 1000)} 秒`);
+  if (realtime === 'live') parts.push('即时连线');
+  else if (realtime === 'connecting') parts.push('连线中');
+  return parts.join(' · ');
+}
+
 const ERROR_LIST_MAX = 8;
 /** 「无法同步」明细（纯函数）：账目「日期 · 分类 · 金额」（已删除标出）、分类「分类 · 名称」；最多列 8 行。 */
 export function syncErrorMessage({ txs = [], cats = [] }, categoryById) {
@@ -87,7 +108,7 @@ export function accountRows(session) {
  * opts.session：目前登录的 session（没有就不显示账号区）。
  * opts.sync：同步引擎（status / subscribe / stop）；opts.onStartSync()：设置页按「开始」（认领，回 promise）。
  */
-export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {} } = {}) {
+export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null } = {}) {
   let seq = 0;
   const section = (title, rows, footer) => {
     const id = `settings-sec-${++seq}`;
@@ -233,8 +254,19 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     h('span', { class: 'inset-row-chevron', 'aria-hidden': 'true' }, icon('chevron-right', 16)));
   let syncAction = null;
   const labeler = createSyncLabeler({ onSlow: () => renderSync() });
+  // 诊断行：设置页账号区下方的小字（不朗读、不可点）；显示时每 5 秒更新「进行中」
+  const syncDiag = h('span', { class: 'sync-diag' });
+  const renderDiag = () => {
+    if (!sync) return;
+    syncDiag.textContent = syncDiagText(sync.diagnostics(), { now: Date.now(), realtime: realtime ? realtime.state() : null });
+  };
+  if (sync) {
+    setInterval(() => { if (syncDiag.isConnected && !document.hidden) renderDiag(); }, 5000);
+    if (realtime) realtime.subscribe(renderDiag);
+  }
   function renderSync() {
     if (!sync) return;
+    renderDiag();
     const { text, action } = labeler.label(sync.status());
     syncInfoDetail.textContent = text; // 不自动朗读（状态变化不打断读屏）
     syncBtnDetail.textContent = text;
@@ -294,7 +326,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       signOutBtn = h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: onSignOut } }, signOutLabel);
       return signOutBtn;
     }).flat().filter(Boolean);
-    return rows.length ? section('账号', rows) : null;
+    return rows.length ? section('账号', rows, sync ? syncDiag : null) : null;
   };
 
   root.replaceChildren(
