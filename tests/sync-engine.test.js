@@ -40,17 +40,21 @@ function fakeClock(start = Date.parse('2026-11-25T10:00:00Z')) {
 const settle = async () => { for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r)); };
 
 // 假服务器：记录请求；handler(table, rows, req) → Response。默认：全部 201 回原 id、updated_at
-function fakeServer(handler) {
+// 拉取（GET）另外记在 gets、默认回 200 []，不进 calls（这些测试只看上传）
+function fakeServer(handler, getHandler = () => jsonRes(200, [])) {
   const calls = [];
+  const gets = [];
   const f = async (url, init = {}) => {
     const u = new URL(url);
     const table = u.pathname.split('/').pop();
+    if ((init.method || 'GET') === 'GET') { gets.push({ url: String(url), table, init }); return getHandler(table, { url: u, init }); }
     const rows = init.body ? JSON.parse(init.body) : null;
     calls.push({ url: String(url), table, rows, init });
     if (handler) return handler(table, rows, { url: u, init, n: calls.length });
     return jsonRes(201, rows.map((r) => ({ id: r.id, updated_at: r.updated_at })));
   };
   f.calls = calls;
+  f.gets = gets;
   return f;
 }
 
@@ -65,6 +69,7 @@ async function setup({ txCount = 0, owner = ME, server, getSession, online = tru
   }
   if (owner) await store.setMeta('owner_user_id', owner);
   await store.setMeta('syncErrorVersion', appVersion);
+  await store.setMeta('fullSyncAt', clock.now()); // 这档只测上传：当成刚做过完整对账（不做 S9 补传）
   const fetchFn = server || fakeServer();
   const sessions = [];
   const onlineRef = { v: online };
@@ -629,6 +634,7 @@ test('visibilityState hidden 时不排程', async () => {
   await r.store.setMeta('noop', 1);
   r.doc.visibilityState = 'hidden';
   r.doc.dispatchEvent(new Event('visibilitychange'));
-  assert.equal(r.clock.pending(), 0);
+  assert.equal(r.clock.pending(), 1); // 只剩 60 秒检查的计时器，没有排程
   r.sync.stop();
+  assert.equal(r.clock.pending(), 0);
 });

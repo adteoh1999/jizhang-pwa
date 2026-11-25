@@ -6,6 +6,8 @@ import {
 import { compareTx } from './stats.js';
 import { toCSV, parseCSV, planImport } from './csv.js';
 import { normalizeTs, isUuid } from './timefmt.js';
+import { shouldTakeRemote } from './merge.js';
+import { UPLOAD_COLUMNS } from './rest.js';
 
 const TABLES = ['transactions', 'categories'];
 const withoutSyncError = (r) => { const { sync_error: _drop, ...rest } = r; return rest; };
@@ -246,6 +248,49 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         return n;
       });
     },
+
+    /**
+     * 套用拉回来的列（2e-2）。在队列里对「当下」的快取逐列判断 shouldTakeRemote；
+     * 采用的列只留上传栏位、时间正规化、dirty 0（不带 sync_error）。meta（游标）同一次写入。
+     * owner：写入前核对 owner_user_id 还是它，不是 → 回 null、什么都不写（别的分页换了账号）。
+     * 回采用笔数；有采用且不 silent 才通知画面。时间看不懂的列跳过。
+     */
+    applyRemote(table, rows, { meta, owner, silent = false } = {}) {
+      return enqueue(async () => {
+        if ((await db.getMeta('owner_user_id')) !== owner) return null;
+        const map = mapOf(table);
+        const cols = UPLOAD_COLUMNS[table];
+        const out = [];
+        let skipped = 0;
+        for (const r of rows) {
+          const rec = Object.fromEntries(cols.map((c) => [c, r[c]]));
+          rec.updated_at = normalizeTs(r.updated_at);
+          if ('created_at' in rec) rec.created_at = normalizeTs(r.created_at);
+          if (rec.updated_at === null || rec.created_at === null || typeof rec.id !== 'string') { skipped++; continue; }
+          if (!shouldTakeRemote(map.get(rec.id), r)) continue;
+          rec.deleted = rec.deleted === true;
+          rec.dirty = 0;
+          out.push(rec);
+        }
+        if (skipped) console.warn(`[store] 拉回 ${table} 有 ${skipped} 笔时间看不懂，跳过`);
+        if (!out.length && !meta) return 0;
+        await commit({ ...(out.length ? { [table]: out } : {}), ...(meta ? { meta } : {}) }, { silent: silent || !out.length });
+        return out.length;
+      });
+    },
+
+    /** 完整对账后（审核 S9）：dirty 0 却不在服务器上的列重新标待上传。owner 不符回 null。回笔数。 */
+    markMissingForUpload(table, serverIds, { owner } = {}) {
+      return enqueue(async () => {
+        if ((await db.getMeta('owner_user_id')) !== owner) return null;
+        const out = [...mapOf(table).values()].filter((r) => r.dirty !== 1 && !serverIds.has(r.id)).map((r) => ({ ...r, dirty: 1 }));
+        if (out.length) await commit({ [table]: out }, { silent: true });
+        return out.length;
+      });
+    },
+
+    /** 通知画面重画（同步一轮结束时有拉回变化才叫一次）。 */
+    notifyChanged() { notify(); },
 
     /** pending：待上传（两表合计，含删除）；errors：有 sync_error。tx*：只数账目（设置页显示用）。 */
     syncCounts() {

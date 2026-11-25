@@ -15,6 +15,7 @@ const ASSETS = [
   './js/dates.js',
   './js/db.js',
   './js/login-flow.js',
+  './js/merge.js',
   './js/model.js',
   './js/money.js',
   './js/rest.js',

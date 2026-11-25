@@ -1,8 +1,9 @@
-// 同步引擎（2e）：认领本地账本、背景上传（2e-1）。拉取与合并在 2e-2。
+// 同步引擎（2e）：认领本地账本、背景上传（2e-1）、拉取与合并（2e-2）。
 // 规则：只有 meta.owner_user_id === session.user_id 才同步——绝不把别人的账传到这个账号。
 // 日志只记「步骤 + 状态码 + code」，不记账目内容或 token。
 import { loadSession, getValidSession } from './auth.js';
-import { upsertRows } from './rest.js';
+import { upsertRows, selectPage } from './rest.js';
+import { normalizeTs } from './timefmt.js';
 
 /** 'mine'（属于这个账号）| 'unclaimed'（还没归属）| 'other'（属于别的账号）。 */
 export async function claimState(store, session) {
@@ -65,10 +66,14 @@ export const BATCH_SIZE = 500;
 export const DEBOUNCE_MS = 1000;
 export const BACKOFF_BASE_MS = 5000;
 export const BACKOFF_MAX_MS = 300_000;
+export const POLL_MS = 60_000; // 前景每 60 秒检查一次（尊重退避）
+export const FULL_SYNC_EVERY_MS = 24 * 3600_000; // 完整对账最多 24 小时一次（用户 2026-11-25 决定）
+const CURSOR_OVERLAP_MS = 60_000; // 增量从游标往回 60 秒（晚提交的交易不会漏）
 export const LOCK_RETRY_MS = 10_000; // 别的分页在同步：稍后再看一次（不算失败）
 const ALL_BAD_MIN = 10;   // 逐笔时至少这么多笔、全是资料错、没有一笔成功 → 当系统错误（前后端不一致），一笔都不标
 const ALL_BAD_STOP = 20;  // 连续这么多笔全错、没有成功 → 提早停
-const TABLES = ['categories', 'transactions']; // 先分类、再账目
+const TABLES = ['categories', 'transactions']; // 先分类、再账目（上传与拉取都是）
+const cursorKey = (table) => `cursor:${table}`;
 const SYNC_LOCK = 'jizhang-sync';
 
 const isOk = (st) => st >= 200 && st < 300;
@@ -108,6 +113,7 @@ export function createSync({
   let debounceTimer = null;
   let debounceForce = false;
   let retryTimer = null;
+  let pollTimer = null;
   let running = null;
   let rerun = false;
   let started = false;
@@ -148,13 +154,13 @@ export function createSync({
     }
 
     let refreshed = false;
-    // 送一次；401 → 刷新一次再送。回 upsertRows 的结果，或 'fail' / 'halt'
-    async function send(table, rows) {
+    // 发一次请求；401 → 刷新一次再发（上传与拉取合计一轮最多一次）。回请求结果，或 'fail' / 'halt'
+    async function withAuth(what, call) {
       for (;;) {
         if (stopped) return 'halt';
-        const r = await upsertRows(fetchFn, table, rows, session.access_token);
+        const r = await call(session.access_token);
         if (r.status !== 401) return r;
-        if (refreshed) { console.warn(`[sync] 上传 ${table} 失败：HTTP 401（刷新后仍被拒）`); return 'fail'; }
+        if (refreshed) { console.warn(`[sync] ${what} 失败：HTTP 401（刷新后仍被拒）`); return 'fail'; }
         refreshed = true;
         g = await getSession(session.access_token);
         if (g.invalid) { setState('signed-out'); return 'halt'; }
@@ -163,6 +169,7 @@ export function createSync({
         session = g.session;
       }
     }
+    const send = (table, rows) => withAuth(`上传 ${table}`, (tok) => upsertRows(fetchFn, table, rows, tok));
     const logFail = (table, r) => console.warn(`[sync] 上传 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
     // 2xx 但回应不是清单：不能当成功（会把没写进去的账标成已同步）
     const badOk = (table, r) => { console.warn(`[sync] 上传 ${table} 回应格式不对：HTTP ${r.status}`); return 'fail'; };
@@ -210,6 +217,54 @@ export function createSync({
         }
       }
     }
+
+    // ---- 拉取（先上传、再拉取：本地改动先进服务器，拉回来的就不会是旧版）----
+    const fullAt = await store.getMeta('fullSyncAt');
+    const fullDue = !(typeof fullAt === 'number' && now() - fullAt < FULL_SYNC_EVERY_MS);
+    let adopted = 0;
+    let missing = 0;
+    for (const table of TABLES) {
+      const cur = await store.getMeta(cursorKey(table));
+      const curTs = cur && typeof cur.ts === 'string' ? normalizeTs(cur.ts) : null;
+      const full = fullDue || curTs === null;
+      const since = full ? null : new Date(Date.parse(curTs) - CURSOR_OVERLAP_MS).toISOString();
+      // S9 只在 24 小时一次的完整对账做（没游标的完整拉取不做）：服务器若拉取永远回空，也不会无限重传
+      const ids = fullDue ? new Set() : null;
+      let after = null;
+      for (;;) { // 拉到空页才算完
+        if (stopped) return 'halt';
+        const r = await withAuth(`拉取 ${table}`, (tok) => selectPage(fetchFn, table, { after, since }, tok));
+        if (typeof r === 'string') return r;
+        if (!isOk(r.status)) {
+          console.warn(`[sync] 拉取 ${table} 失败：HTTP ${r.status}${safeCode(r.errorCode)}`);
+          // 4xx（不含 429）：游标可能坏了 → 丢掉，下次完整拉取
+          if (r.status >= 400 && r.status < 500 && r.status !== 429) await store.setMeta(cursorKey(table), null);
+          return 'fail';
+        }
+        if (!r.rows) { console.warn(`[sync] 拉取 ${table} 回应格式不对：HTTP ${r.status}`); return 'fail'; }
+        if (r.rows.length === 0) break;
+        const last = r.rows[r.rows.length - 1];
+        if (typeof last.server_updated_at !== 'string' || typeof last.id !== 'string') {
+          console.warn(`[sync] 拉取 ${table} 回应少了游标栏位`);
+          return 'fail';
+        }
+        after = { ts: last.server_updated_at, id: last.id }; // 原字串（微秒不能丢）
+        if (ids) for (const row of r.rows) ids.add(row.id);
+        // 这页资料与游标同一次写入；owner 不是这个账号了 → 停
+        const n = await store.applyRemote(table, r.rows, { meta: { [cursorKey(table)]: after }, owner: userId, silent: true });
+        if (n === null) { setState('other-owner'); return 'halt'; }
+        adopted += n;
+      }
+      if (ids) {
+        const m = await store.markMissingForUpload(table, ids, { owner: userId });
+        if (m === null) { setState('other-owner'); return 'halt'; }
+        if (m) console.warn(`[sync] 完整对账：${table} 有 ${m} 笔不在服务器上，重新上传`);
+        missing += m;
+      }
+    }
+    if (fullDue) await store.setMeta('fullSyncAt', now());
+    if (adopted) store.notifyChanged(); // 整轮结束才通知画面一次
+    if (missing) rerun = true; // 马上再跑一轮把它们传上去
     return 'ok';
   }
 
@@ -295,6 +350,16 @@ export function createSync({
         doc.addEventListener('visibilitychange', onVisible);
         cleanups.push(() => doc.removeEventListener('visibilitychange', onVisible));
       }
+      // 前景每 60 秒检查一次（不 force：退避中不发）
+      const poll = () => {
+        pollTimer = setTimer(() => {
+          pollTimer = null;
+          if (stopped) return;
+          if (!doc || doc.visibilityState === 'visible') schedule();
+          poll();
+        }, POLL_MS);
+      };
+      poll();
       schedule({ force: true });
     },
     schedule,
@@ -311,6 +376,7 @@ export function createSync({
       for (const c of cleanups.splice(0)) { try { c(); } catch { /* 忽略 */ } }
       if (debounceTimer !== null) { clearTimer(debounceTimer); debounceTimer = null; }
       clearRetry();
+      if (pollTimer !== null) { clearTimer(pollTimer); pollTimer = null; }
       listeners.clear();
     },
   };
