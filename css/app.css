@@ -1750,6 +1750,8 @@ button.inset-row:active { background: var(--press-bg); }
 .inset-row-chevron { flex: none; display: flex; color: var(--ink-3); }
 .inset-row.is-destructive { color: var(--red-text); }   /* 登出（2d） */
 .inset-row-detail.account-email { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }   /* 长邮箱换行，不撑出横向滚动 */
+.sync-row .inset-row-label { flex: 1 0 auto; white-space: nowrap; }   /* 2e 同步列：标签不换行，状态文字可缩、可换行（窄屏、大字级） */
+.sync-row .inset-row-detail { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; text-align: right; }
 
 /* =====================================================================
    17. Categories page 分类管理子画面 — js/ui/categories-page.js

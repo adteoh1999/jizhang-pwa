@@ -14,7 +14,7 @@ import { loadSession, bootTarget } from './auth.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
-import { createSync, ensureClaimed } from './sync.js';
+import { createSync, ensureClaimed, createClaimRunner } from './sync.js';
 import { askSyncStart } from './ui/sync-prompt.js';
 import { messageDialog } from './ui/dialogs.js';
 import { APP_VERSION } from './version.js';
@@ -81,20 +81,24 @@ function mountShell(root, store, session) {
   const shell = h('div', { class: 'shell' }, hintSlot, main);
   root.replaceChildren(shell);
 
-  // 同步（2e）：背景上传；账本还没归属时先问一次（用户决定 3）
+  // 同步（2e）：背景上传；账本还没归属时先问一次（用户决定 3）。引擎与认领在 mountShell 最后才开始。
   const sync = createSync({ store, fetchFn: (url, init) => fetch(url, init), userId: session.user_id, appVersion: APP_VERSION });
-  let claiming = null; // 同一时间只问一次
-  const runClaim = (fromUser) => {
-    if (claiming) return claiming;
-    claiming = ensureClaimed(store, session, { ask: (n) => askSyncStart(store, n), fromUser })
-      .then((st) => { if (st === 'mine') sync.schedule({ force: true }); }) // claim 不触发 onLocalWrite：自己排
-      .catch((e) => {
-        console.warn(`[sync] 认领失败：${e && e.name ? e.name : '未知'}`);
-        return messageDialog({ title: '没能开始同步', message: '请稍后再试一次。' });
-      })
-      .finally(() => { claiming = null; });
-    return claiming;
-  };
+  let userStarted = false; // 这次是不是用户自己按了「开始同步」
+  const runClaim = createClaimRunner({
+    ensure: (fromUser) => {
+      userStarted = fromUser;
+      return ensureClaimed(store, session, {
+        ask: async (n) => { const a = await askSyncStart(store, n); userStarted = userStarted || a === 'start'; return a; },
+        fromUser,
+      });
+    },
+    onMine: () => { sync.syncNow(); }, // claim 不触发 onLocalWrite：自己跑一轮（设置页也会马上更新）
+    onError: (e) => {
+      console.warn(`[sync] 认领失败：${e && e.name ? e.name : '未知'}`);
+      // 只有用户自己按过才提示；自动路径不在开 App 时弹窗（设置页会显示「尚未开始同步 · 开始」）
+      if (userStarted) messageDialog({ title: '没能开始同步', message: '请稍后再试一次。' });
+    },
+  });
 
   const home = screens.get('home');
   mountHome(home.querySelector('.screen-content'), store, { monthEl: home.querySelector('.large-title-aside') });
@@ -102,8 +106,6 @@ function mountShell(root, store, session) {
   mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
     session, sync, onStartSync: () => runClaim(true),
   });
-  sync.start();
-  runClaim(false);
 
   const tabbar = mountTabBar(root, {
     tabs: TABS,
@@ -145,6 +147,10 @@ function mountShell(root, store, session) {
   });
 
   maybeShowInstallHint(hintSlot, store).catch((e) => console.error(e));
+
+  // 画面都挂好了才开始同步、才问认领（前面任何一步丢错，就不会在错误画面上跑）
+  sync.start();
+  runClaim(false);
 }
 
 /** 注册 Service Worker；本机网址默认不注册（方便开发），加 ?sw=1 才注册。失败只 warn，不影响 App。 */

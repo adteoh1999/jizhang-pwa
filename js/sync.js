@@ -16,6 +16,22 @@ export function claim(store, session) {
   return store.markAllForUpload({ meta: { owner_user_id: session.user_id } });
 }
 
+/**
+ * 认领执行器：同时只跑一次（进行中再叫回同一个 promise）。ensure(fromUser) 回 claimState 的结果；
+ * 'mine' → onMine()；丢错 → onError(e, fromUser)（结果回 'error'），之后还能再叫。
+ */
+export function createClaimRunner({ ensure, onMine, onError }) {
+  let p = null;
+  return (fromUser = false) => {
+    if (p) return p;
+    p = new Promise((res) => res(ensure(fromUser))) // 立刻开始；同步丢错也变成 reject
+      .then((st) => { if (st === 'mine') onMine(); return st; })
+      .catch((e) => { onError(e, fromUser); return 'error'; })
+      .finally(() => { p = null; });
+    return p;
+  };
+}
+
 const DISMISSED = 'syncPromptDismissed'; // 关掉提醒的账号 id（下次启动不再自动问）
 
 /**

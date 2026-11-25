@@ -44,29 +44,47 @@ import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
 import { readFileSync } from 'node:fs';
 
-test('syncErrorMessage：列出日期、分类、金额，提示「修改这笔后会重新上传」；超过 8 笔只列 8 笔', () => {
+test('syncErrorMessage：列出账目（日期 · 分类 · 金额，已删除标出）与分类；超过 8 行只列 8 行', () => {
   const cat = (id) => ({ food: { name: '餐饮' } }[id]);
-  const rows = [{ occurred_on: '2026-11-20', category_id: 'food', amount_minor: 1250, kind: 'expense' }];
-  const m = syncErrorMessage(rows, cat);
-  assert.match(m, /修改这笔后会重新上传/);
-  assert.match(m, /2026-11-20/);
-  assert.match(m, /餐饮/);
-  assert.match(m, /12\.50/);
-  const many = Array.from({ length: 11 }, () => rows[0]);
-  const m2 = syncErrorMessage(many, cat);
+  const tx = { occurred_on: '2026-11-20', category_id: 'food', amount_minor: 1250, kind: 'expense', deleted: false };
+  const m = syncErrorMessage({ txs: [tx, { ...tx, deleted: true }], cats: [{ name: '很长的分类' }] }, cat);
+  assert.match(m, /修改后会重新上传/);
+  assert.match(m, /2026-11-20 · 餐饮 · −RM 12\.50\n/);
+  assert.match(m, /已删除/);
+  assert.match(m, /分类 · 很长的分类/);
+  const m2 = syncErrorMessage({ txs: Array.from({ length: 11 }, () => tx), cats: [] }, cat);
   assert.equal((m2.match(/餐饮/g) || []).length, 8);
-  assert.match(m2, /还有 3 笔/);
-  assert.match(syncErrorMessage([{ ...rows[0], category_id: 'gone' }], cat), /未分类/);
+  assert.match(m2, /还有 3 项/);
+  assert.match(syncErrorMessage({ txs: [{ ...tx, category_id: 'gone' }], cats: [] }, cat), /未分类/);
 });
 
-test('store.syncErrorRows：只回有 sync_error 的账目（复制品）', async () => {
+test('只有分类出错 → 「有分类无法同步」；账目与分类都有 → 照账目笔数', () => {
+  assert.deepEqual(L({ errors: 1, txErrors: 0 }), ['有分类无法同步', 'errors']);
+  assert.deepEqual(L({ errors: 2, txErrors: 1 }), ['有 1 笔无法同步', 'errors']);
+});
+
+test('优先顺序：登录过期 → 账号已更换 → 属于另一个账号 → 尚未开始 → 无法同步 → 其余；stopped 显示已停止', () => {
+  assert.deepEqual(L({ state: 'stale', errors: 2, txErrors: 2 }), ['账号已更换 · 重新整理', 'reload']);
+  assert.deepEqual(L({ state: 'other-owner', errors: 2, txErrors: 2 }), ['账本属于另一个账号', null]);
+  assert.deepEqual(L({ state: 'unclaimed', errors: 2, txErrors: 2 }), ['尚未开始同步 · 开始', 'start']);
+  assert.deepEqual(L({ state: 'stopped' }), ['已停止', null]);
+});
+
+test('store.syncErrorRows：回 {txs, cats}，只有带 sync_error 的（含已删除的账）', async () => {
   const store = createStore({ db: createMemoryDb() });
   await store.init();
   const a = await store.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
   await store.saveTransaction({ kind: 'expense', amountMinor: 2, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
-  await store.markSyncError('transactions', a.id, '23514', a.updated_at);
-  const rows = store.syncErrorRows();
-  assert.deepEqual(rows.map((r) => r.id), [a.id]);
+  await store.deleteTransaction(a.id);
+  const del = store.syncErrorRows; // 先确认没有
+  assert.deepEqual(del().txs, []);
+  const [row] = (await store.pendingRows('transactions')).filter((r) => r.id === a.id);
+  await store.markSyncError('transactions', a.id, '23514', row.updated_at);
+  const c = await store.saveCategory({ kind: 'expense', name: '宠物' });
+  await store.markSyncError('categories', c.id, '23514', c.updated_at);
+  const r = store.syncErrorRows();
+  assert.deepEqual(r.txs.map((t) => [t.id, t.deleted]), [[a.id, true]]);
+  assert.deepEqual(r.cats.map((x) => x.id), [c.id]);
 });
 
 test('forgetSession：清 session（重新登录用，不通知服务器），走 jizhang-auth 锁', async () => {
@@ -90,7 +108,11 @@ test('设置页接线：同步列、登出带 fetchFn 与 stopSync、「正在�
   assert.match(app, /createSync\(/);
   assert.match(app, /\.start\(\)/);
   assert.match(app, /ensureClaimed\(/);
-  assert.match(app, /schedule\(\{ force: true \}\)/);
+  assert.match(app, /createClaimRunner\(/);
+  assert.match(app, /syncNow\(\)/);
+  // 引擎与认领在 mountShell 最后才开始（之前的步骤丢错就不会在错误画面上跑）
+  const shell = app.slice(app.indexOf('function mountShell'), app.indexOf('async function boot'));
+  assert.ok(shell.lastIndexOf('sync.start()') > shell.indexOf('mountTabBar('));
 });
 
 test('版本 v2.6：version.js 与 sw.js 相同', () => {
@@ -98,4 +120,66 @@ test('版本 v2.6：version.js 与 sw.js 相同', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
   assert.match(v, /^v2\.6-/);
   assert.ok(sw.includes(`'${v}'`));
+});
+
+// ---------- 认领执行器、同步中计时 ----------
+import { createClaimRunner } from '../js/sync.js';
+import { createSyncLabeler } from '../js/ui/settings.js';
+
+test('createClaimRunner：同时叫两次只跑一次；mine 才 onMine；失败交给 onError，之后还能再叫', async () => {
+  let calls = 0;
+  let mine = 0;
+  const errs = [];
+  let result = 'mine';
+  let release;
+  const run = createClaimRunner({
+    ensure: (fromUser) => { calls++; return new Promise((res, rej) => { release = () => (result === 'boom' ? rej(new Error('x')) : res(result)); }); },
+    onMine: () => mine++,
+    onError: (e, fromUser) => errs.push(fromUser),
+  });
+  const p1 = run(false);
+  const p2 = run(true);
+  assert.equal(p1, p2);
+  release();
+  await p1;
+  assert.deepEqual([calls, mine], [1, 1]);
+  for (const st of ['unclaimed', 'other']) {
+    result = st;
+    const p = run(false); release(); await p;
+  }
+  assert.equal(mine, 1);
+  result = 'boom';
+  const p3 = run(true); release(); await p3;
+  assert.deepEqual(errs, [true]);
+  result = 'mine';
+  const p4 = run(false); release(); await p4;
+  assert.equal(mine, 2);
+});
+
+test('createSyncLabeler：同步中未满 1 秒保留上一个文字；满 1 秒才「同步中…」；离开就清计时', () => {
+  const timers = new Map();
+  let seq = 0;
+  let slow = 0;
+  const lab = createSyncLabeler({
+    setTimer: (fn, ms) => { timers.set(++seq, { fn, ms }); return seq; },
+    clearTimer: (id) => timers.delete(id),
+    onSlow: () => slow++,
+  });
+  assert.equal(lab.label(S({ state: 'error', txPending: 1, pending: 1 })).text, '稍后重试 · 待上传 1 笔');
+  assert.equal(lab.label(S({ state: 'syncing', txPending: 1, pending: 1 })).text, '稍后重试 · 待上传 1 笔');
+  assert.equal(timers.size, 1);
+  const [[, t]] = [...timers];
+  assert.equal(t.ms, 1000);
+  t.fn();
+  assert.equal(slow, 1);
+  assert.equal(lab.label(S({ state: 'syncing', txPending: 1, pending: 1 })).text, '同步中…');
+  assert.equal(lab.label(S({ state: 'idle' })).text, '已同步');
+  timers.clear();
+  lab.label(S({ state: 'syncing' }));
+  assert.equal(timers.size, 1);
+  lab.label(S({ state: 'idle' }));
+  assert.equal(timers.size, 0); // 离开 syncing 就清掉
+  lab.label(S({ state: 'syncing' }));
+  lab.dispose();
+  assert.equal(timers.size, 0);
 });
