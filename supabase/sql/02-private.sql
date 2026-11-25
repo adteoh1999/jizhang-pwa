@@ -286,7 +286,14 @@ begin
 end;
 $$;
 
+-- 站主判断（2f）：邮箱比对前先转小写、去空白；null 当成不是
+create or replace function svc.svc_is_owner(p_email text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from private.owner_emails o where o.email = lower(btrim(coalesce(p_email, ''))));
+$$;
+
 -- 产生新邀请码，回传 8 个字（不加连字号）
+-- 次数 1–20；天数 1–365，传 null = 永不过期；备注最多 40 字（超过就截掉）
 create or replace function svc.svc_new_invite_code(p_max_uses integer default 1, p_days integer default 7, p_note text default '')
 returns text
 language plpgsql security definer set search_path = '' as $$
@@ -296,8 +303,11 @@ declare
   b      bytea;
   x      integer;
 begin
-  if p_max_uses is null or p_max_uses < 1 or p_days is null or p_days < 1 then
-    raise exception '可用次数和天数都要至少 1';
+  if p_max_uses is null or p_max_uses < 1 or p_max_uses > 20 then
+    raise exception '可用次数要在 1 到 20 之间';
+  end if;
+  if p_days is not null and (p_days < 1 or p_days > 365) then
+    raise exception '天数要在 1 到 365 之间';
   end if;
   loop
     v_code := '';
@@ -313,12 +323,110 @@ begin
     end loop;
     begin
       insert into private.invite_codes (code, max_uses, expires_at, note)
-        values (v_code, p_max_uses, now() + make_interval(days => p_days), coalesce(p_note, ''));
+        values (v_code, p_max_uses,
+                case when p_days is null then null else now() + make_interval(days => p_days) end,
+                left(coalesce(p_note, ''), 40));
       return v_code;
     exception when unique_violation then
       null;  -- 撞到旧码，重抽
     end;
   end loop;
+end;
+$$;
+
+-- 邀请码清单（2f），由新到旧。status 依序判断：disabled → used_up → expired → active
+create or replace function svc.svc_invites_list() returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'code',       c.code,
+           'max_uses',   c.max_uses,
+           'used_count', c.used_count,
+           'active',     c.active,
+           'expires_at', c.expires_at,
+           'note',       c.note,
+           'created_at', c.created_at,
+           'status',     case
+                           when not c.active                                       then 'disabled'
+                           when c.used_count >= c.max_uses                         then 'used_up'
+                           when c.expires_at is not null and c.expires_at <= now() then 'expired'
+                           else 'active'
+                         end)
+         order by c.created_at desc, c.code), '[]'::jsonb)
+    from private.invite_codes c;
+$$;
+
+-- 停用／重新启用（2f）。找不到码回 false
+create or replace function svc.svc_invite_set_active(p_code text, p_active boolean) returns boolean
+language plpgsql security definer set search_path = '' as $$
+begin
+  if p_active is null then
+    raise exception 'active 不能是 null';
+  end if;
+  update private.invite_codes set active = p_active where code = p_code;
+  return found;
+end;
+$$;
+
+-- 某个码的使用明细（2f），由新到旧
+-- user_id：纪录上有就用；没有（旧纪录或没记到）就用邮箱对现有账号
+-- 列出：已使用（used）；保留（reserved）但邮箱对得到账号（账号建好了、只是没记到，当一般使用者）；
+--       保留、对不到账号、超过 15 分钟 → pending = true（前端显示「注册未完成」）。刚保留又没账号的不列（可能正在注册）
+-- deleted：不是 pending，且对不到活着的账号（email 已清空、或那个邮箱已没有账号）
+--   email 已清空但账号还在（删号做到一半）→ deleted = false，前端显示「删除未完成」、可以再移除一次
+-- owner：快照邮箱「或」账号现在的邮箱是站主，任一成立就算（deleted 时一律 false）
+-- user_id 只给 Edge Function 内部判断用，回前端前要拿掉
+create or replace function svc.svc_invite_uses(p_code text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  with base as (
+    select iu.id, iu.email, iu.used_at, iu.status,
+           coalesce(iu.user_id,
+                    case when iu.email <> '' then
+                      (select u.id from auth.users u where lower(u.email) = iu.email order by u.created_at limit 1)
+                    end) as uid
+      from private.invite_uses iu
+     where iu.code = p_code
+  ), flagged as (
+    select b.*, (b.status = 'reserved' and b.uid is null and b.email <> '') as pending
+      from base b
+     where b.status = 'used' or b.uid is not null or b.used_at < now() - interval '15 minutes'
+  ), marked as (
+    select f.*,
+           (f.uid is null and not f.pending) as deleted,
+           (select lower(u.email) from auth.users u where u.id = f.uid) as cur_email
+      from flagged f
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id',      m.id,
+           'user_id', m.uid,
+           'email',   m.email,
+           'used_at', m.used_at,
+           'deleted', m.deleted,
+           'owner',   not m.deleted and (svc.svc_is_owner(m.email) or svc.svc_is_owner(m.cur_email)),
+           'pending', m.pending)
+         order by m.used_at desc, m.id desc), '[]'::jsonb)
+    from marked m;
+$$;
+
+-- 删除某个用户的全部资料（2f：删号、站主移除用户都先叫这个，再删 auth 账号）。可以重复执行
+-- 使用纪录不删（码的次数照算），只清掉邮箱与名字：user_id 是这个人的，或 user_id 没记到但邮箱是他的（含保留列）
+-- 保留列一起改成 used：人确实用过这个码；而且两笔保留都清成 '' 会撞 (code, email) where reserved 的唯一索引
+-- 账号已不存在（重复执行）时查不到邮箱，只清 user_id 对得上的
+create or replace function svc.svc_delete_user_data(p_user_id uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_email text;
+begin
+  if p_user_id is null then
+    raise exception 'user_id 不能是 null';
+  end if;
+  select lower(u.email) into v_email from auth.users u where u.id = p_user_id;
+  delete from public.transactions      where user_id = p_user_id;
+  delete from public.categories        where user_id = p_user_id;
+  delete from public.category_keywords where user_id = p_user_id;
+  delete from private.telegram_links   where user_id = p_user_id;
+  update private.invite_uses set email = '', display_name = '', status = 'used'
+   where user_id = p_user_id
+      or (v_email is not null and v_email <> '' and user_id is null and email = v_email);
 end;
 $$;
 
@@ -330,6 +438,11 @@ revoke all on function svc.svc_redeem_invite(text, text)                from pub
 revoke all on function svc.svc_refund_invite(text, text)                from public, anon, authenticated;
 revoke all on function svc.svc_record_invite_use(text, text, uuid)      from public, anon, authenticated;
 revoke all on function svc.svc_new_invite_code(integer, integer, text)  from public, anon, authenticated;
+revoke all on function svc.svc_is_owner(text)                          from public, anon, authenticated;
+revoke all on function svc.svc_invites_list()                          from public, anon, authenticated;
+revoke all on function svc.svc_invite_set_active(text, boolean)        from public, anon, authenticated;
+revoke all on function svc.svc_invite_uses(text)                       from public, anon, authenticated;
+revoke all on function svc.svc_delete_user_data(uuid)                  from public, anon, authenticated;
 grant execute on function svc.svc_otp_reserve(text)                       to service_role;
 grant execute on function svc.svc_otp_release(bigint)                     to service_role;
 grant execute on function svc.svc_register_check(text, text, boolean)     to service_role;
@@ -337,6 +450,11 @@ grant execute on function svc.svc_redeem_invite(text, text)               to ser
 grant execute on function svc.svc_refund_invite(text, text)               to service_role;
 grant execute on function svc.svc_record_invite_use(text, text, uuid)     to service_role;
 grant execute on function svc.svc_new_invite_code(integer, integer, text) to service_role;
+grant execute on function svc.svc_is_owner(text)                         to service_role;
+grant execute on function svc.svc_invites_list()                         to service_role;
+grant execute on function svc.svc_invite_set_active(text, boolean)       to service_role;
+grant execute on function svc.svc_invite_uses(text)                      to service_role;
+grant execute on function svc.svc_delete_user_data(uuid)                 to service_role;
 
 -- 兜底：svc 里「所有」函数（包括以后新增、忘了写进上面名单的）一律只给 service_role
 do $$
@@ -352,7 +470,7 @@ begin
 end
 $$;
 -- 注意：Postgres 新建函数默认开放给 public，而且无法只针对 svc 改掉这个默认。
---       所以在 svc 新增函数后，一定要重跑本文件，再跑 verify-2b（第 39 项会抓漏）。
+--       所以在 svc 新增函数后，一定要重跑本文件，再跑 verify-2b（第 39 项会抓漏）与 verify-2f。
 
 -- 请 API 重新读一次函数清单（函数参数改过时需要；重复通知无害）
 notify pgrst, 'reload schema';
