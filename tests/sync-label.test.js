@@ -101,8 +101,11 @@ test('forgetSession：清 session（重新登录用，不通知服务器），�
 test('设置页接线：同步列、登出带 fetchFn 与 stopSync、「正在登出…」、关于不再说只存在这台设备', () => {
   const s = readFileSync(new URL('../js/ui/settings.js', import.meta.url), 'utf8');
   assert.match(s, /syncLabel\(/);
-  assert.match(s, /stopSync/);
-  assert.match(s, /正在登出…/);
+  // 登出流程在 2f Task 10 搬到 sign-out.js（行为见 tests/settings-signout.test.js）
+  const so = readFileSync(new URL('../js/ui/sign-out.js', import.meta.url), 'utf8');
+  assert.match(so, /stopSync/);
+  assert.match(so, /正在登出…/);
+  assert.match(s, /runSignOut\(/);
   assert.doesNotMatch(s, /数据只存在这台设备/);
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
   assert.match(app, /createSync\(/);

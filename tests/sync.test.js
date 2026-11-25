@@ -159,3 +159,17 @@ test('ensureClaimed：问的时候登出了或换了账号 → 不认领', async
     assert.equal(await store.getMeta('owner_user_id'), undefined);
   }
 });
+
+test('ensureClaimed：ask 期间别的分页登出清掉账本、又用同一账号登录 → 不把 dismissed 写进新账本（Task 10 前）', async () => {
+  const { db, store } = await setup({ txCount: 1 });
+  let n = 100;
+  const other = createStore({ db, uuid: () => fakeUuid(++n) });
+  await other.init();
+  const ask = async () => {
+    await other.wipeLocal(); // 另一个分页登出：清空账本、换新 ledgerId
+    await saveSession(other, ME); // 之后同一账号又登录（还没认领）
+    return 'dismiss';
+  };
+  assert.equal(await ensureClaimed(store, ME, { ask }), 'unclaimed');
+  assert.equal(await store.getMeta('syncPromptDismissed'), undefined);
+});

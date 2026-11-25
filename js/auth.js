@@ -296,7 +296,7 @@ export function forgetSession(store, { locks, waitMs } = {}) {
   return withLock(AUTH_LOCK, () => clearSession(store), locks, { waitMs });
 }
 
-export const LOCK_WAIT_MS = 5000; // 删号流程等 jizhang-auth 锁的上限（2f-2 审核 5）
+export const LOCK_WAIT_MS = 5000; // 删号、登出等 jizhang-auth 锁的上限（2f-2 审核 5、Task 10）
 /**
  * 清空这台设备的账本（登出、删号共用，2f 审核 M2）：拿 jizhang-auth 锁再 store.wipeLocal()，
  * 才不会和正在进行的 token 刷新交错（刷新写回 session 会把刚清掉的登录又写回去）。
@@ -331,7 +331,7 @@ export async function logoutServer(fetchFn, accessToken, { timeoutMs = LOGOUT_TI
 
 // ---------- 存本机（IndexedDB meta）----------
 // session：登录后的 token；loginPending：「等待输入验证码」（切去邮件 App、PWA 被重载后还能回来）；
-// lastUserId：上次登录的账号（登出不清；换账号时提醒，2e 认领本地资料也用它）。
+// lastUserId：上次登录的账号（换账号时提醒，2e 认领本地资料也用它；2f 起登出会跟账本一起清掉）。
 export const OTP_TTL_MS = 600_000; // 验证码 10 分钟有效（Supabase 后台设定 600 秒）
 export const RESEND_MS = 60_000;   // 60 秒后才能重发
 
@@ -366,11 +366,14 @@ export function bootTarget(session) {
 }
 
 /**
- * 登出：只清登录状态，账本与 lastUserId 保留（用户决定 4；清本地资料留到 2f）。
- * 顺序：先停同步 → 拿 jizhang-auth 锁（不与刷新同时进行）→ 在线就通知服务器作废 token（最多 2 秒）→ 清 session。
- * 清 session 成功才调 reload；失败回 false（呼叫者显示「登出失败」）。没给 fetchFn 就不通知服务器。
+ * 登出：清掉这台设备的账本（2f 用户决定 1，与删号共用 store.wipeLocal()：账、分类、全部 meta，
+ * 连 session、pending、lastUserId 一起清，与全新安装相同）。
+ * 顺序：先停同步 → 拿 jizhang-auth 锁（不与刷新同时进行）→ 在线且 session 还有效就通知服务器作废 token（最多 2 秒）
+ * → 清本机。session 已失效或离线也照样清（删号后另一台设备只能靠登出离开）。
+ * 等锁超过 waitMs（默认 5 秒）或拿锁失败 → 不用锁直接清。清成功才调 reload；失败回 false（资料不变，呼叫者显示「登出失败」）。
+ * 没给 fetchFn 就不通知服务器。
  */
-export async function signOut(store, reload, { fetchFn, locks, stopSync, isOnline = () => globalThis.navigator ? globalThis.navigator.onLine !== false : true } = {}) {
+export async function signOut(store, reload, { fetchFn, locks, stopSync, waitMs = LOCK_WAIT_MS, isOnline = () => globalThis.navigator ? globalThis.navigator.onLine !== false : true } = {}) {
   if (stopSync) {
     try { stopSync(); } catch { /* 停不了也照样登出 */ }
   }
@@ -382,24 +385,22 @@ export async function signOut(store, reload, { fetchFn, locks, stopSync, isOnlin
       } catch { /* 尽力而为 */ }
     }
     try {
-      await clearSession(store);
+      await store.wipeLocal();
       return true;
     } catch (e) {
-      console.warn(`[auth] 登出写入失败：${errName(e)}`);
+      console.warn(`[auth] 登出清除失败：${errName(e)}`);
       return false;
     }
   };
   let cleared;
   try {
-    cleared = await withLock(AUTH_LOCK, work, locks);
+    cleared = await withLock(AUTH_LOCK, work, locks, { waitMs });
   } catch (e) {
-    // 拿锁本身失败：登出一定要能成功，不用锁直接清
+    // 拿锁失败或等太久：登出一定要能成功，不用锁直接清
     console.warn(`[auth] 登出拿锁失败：${errName(e)}`);
     cleared = await work();
   }
   if (!cleared) return false;
-  // session 已清就算登出；pending 清不掉只记日志（下次打开登录页会照常判断过期）
-  await clearPending(store).catch((e) => console.warn(`[auth] 清 pending 失败：${e && e.name ? e.name : '未知'}`));
   reload();
   return true;
 }

@@ -285,3 +285,87 @@ test('lastUserId：存、读', async () => {
   await saveLastUserId(store, 'u-1');
   assert.equal(await loadLastUserId(store), 'u-1');
 });
+
+// ---------- 2f Task 10：登出时清掉这台设备的账本 ----------
+import { signOut, saveSession as saveSess, loadSession as loadSess } from '../js/auth.js';
+import { INSTALL_HINT_KEY } from '../js/store.js';
+
+const SO_SESSION = { access_token: 'acc', refresh_token: 'ref', expires_at: NOW + 3600e3, user_id: 'u-1', email: 'me@x.com', platform: 'pwa' };
+async function soSetup(session = SO_SESSION) {
+  const db = createMemoryDb();
+  let n = 0;
+  const store = createStore({ db, uuid: () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}` });
+  await store.init();
+  await store.setMetas({ owner_user_id: 'u-1', lastUserId: 'u-1', fullSyncAt: 1, [INSTALL_HINT_KEY]: 1 });
+  await saveSess(store, session);
+  await store.saveTransaction({ kind: 'expense', amountMinor: 690, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  return { db, store };
+}
+const noFetch = () => { throw new Error('不该发请求'); };
+
+test('signOut：清掉账本——账 0 笔、默认分类在、meta 只剩新 ledgerId 与安装提示，之后才 reload', async () => {
+  const { db, store } = await soSetup();
+  const oldLedger = await db.getMeta('ledgerId');
+  const order = [];
+  assert.equal(await signOut(store, () => order.push(`reload:${store.transactions().length}`)), true);
+  assert.deepEqual(order, ['reload:0']);
+  assert.equal((await db.getAll('transactions')).length, 0);
+  assert.equal(store.categories('expense').length, 6);
+  assert.deepEqual(db.metaKeys(), [INSTALL_HINT_KEY, 'ledgerId'].sort());
+  assert.notEqual(await db.getMeta('ledgerId'), oldLedger);
+  assert.equal(await loadSess(store), null);
+});
+
+test('signOut：只用一次写入（session、pending 跟账本一起清，不另外清 pending）', async () => {
+  const { db, store } = await soSetup();
+  await store.setMeta('loginPending', { email: 'me@x.com', sentAt: NOW });
+  const before = db.calls.length;
+  await signOut(store, () => {});
+  assert.equal(db.calls.length - before, 1);
+});
+
+test('signOut 之后，旧同步一轮的写回被挡（账本已不属于 u-1）', async () => {
+  const { db, store } = await soSetup();
+  await signOut(store, () => {});
+  const row = { id: '00000000-0000-4000-8000-000000000999', kind: 'expense', amount_minor: 100, category_id: 'food', occurred_on: '2026-11-20', note: '', deleted: false, updated_at: '2026-11-25T10:00:00.000Z' };
+  assert.equal(await store.applyRemote('transactions', [row], { owner: 'u-1' }), null);
+  assert.equal(await store.setMeta('fullSyncAt', 2, { owner: 'u-1' }), null);
+  assert.equal((await db.getAll('transactions')).length, 0);
+  assert.equal(await db.getMeta('fullSyncAt'), undefined);
+});
+
+test('signOut：session 已失效又离线 → 不发请求，照样清掉本机（删号后另一台设备的出口）', async () => {
+  const { db, store } = await soSetup({ ...SO_SESSION, invalid: true });
+  let reloaded = false;
+  assert.equal(await signOut(store, () => { reloaded = true; }, { fetchFn: noFetch, isOnline: () => false }), true);
+  assert.equal(reloaded, true);
+  assert.equal((await db.getAll('transactions')).length, 0);
+  assert.equal(await db.getMeta('owner_user_id'), undefined);
+});
+
+test('signOut：别的分页一直拿着 jizhang-auth 锁 → 等 waitMs 后不用锁照样清', async () => {
+  const { db, store } = await soSetup();
+  const locks = { request: (name, opts, fn) => new Promise(() => {}) }; // 永远拿不到
+  const orig = console.warn;
+  console.warn = () => {};
+  let ok;
+  try {
+    ok = await signOut(store, () => {}, { fetchFn: noFetch, isOnline: () => false, locks, waitMs: 20 });
+  } finally { console.warn = orig; }
+  assert.equal(ok, true);
+  assert.equal((await db.getAll('transactions')).length, 0);
+});
+
+test('signOut：清除写入失败 → 回 false、不 reload、账本与 session 都还在', async () => {
+  const { db, store } = await soSetup();
+  db.failNextWrite(new Error('disk'));
+  const orig = console.warn;
+  console.warn = () => {};
+  let reloaded = false;
+  let ok;
+  try { ok = await signOut(store, () => { reloaded = true; }); } finally { console.warn = orig; }
+  assert.equal(ok, false);
+  assert.equal(reloaded, false);
+  assert.equal(store.transactions().length, 1);
+  assert.equal((await loadSess(store)).user_id, 'u-1');
+});

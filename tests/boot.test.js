@@ -26,22 +26,21 @@ test('accountRows：有 session → 邮箱一列、登出一列；没有 → 空
   assert.deepEqual(accountRows(null), []);
 });
 
-test('signOut：清 session、pending 都写完才 reload；lastUserId 与账本保留', async () => {
+test('signOut：session、pending、lastUserId 都清掉才 reload（2f：登出清本机账本，lastUserId 也不留）', async () => {
   const db = createMemoryDb();
   const store = createStore({ db });
   await store.init();
   await saveSession(store, SESSION);
   await savePending(store, { email: 'me@x.com', sentAt: NOW });
   await saveLastUserId(store, 'u-1');
-  const before = store.categories('expense').length;
   const order = [];
   const ok = await signOut(store, () => order.push('reload'));
   assert.equal(ok, true);
   assert.deepEqual(order, ['reload']);
   assert.equal(await loadSession(store), null);
   assert.equal(await loadPending(store, NOW), null);
-  assert.equal(await loadLastUserId(store), 'u-1');
-  assert.equal(store.categories('expense').length, before);
+  assert.equal(await loadLastUserId(store), null);
+  assert.equal(store.categories('expense').length, 6);
 });
 
 test('signOut：写入失败 → 回 false、不 reload', async () => {
@@ -61,17 +60,4 @@ test('app.js：开库后先读 session，决定登录页或 App；登录成功�
   assert.match(app, /bootTarget\(/);
   assert.match(app, /mountLogin\(/);
   assert.match(app, /mountShell\(root, store, s(ession)?\)/);
-});
-
-test('signOut：session 清掉了但 pending 清不掉 → 仍算登出、会 reload', async () => {
-  const db = createMemoryDb();
-  const store = createStore({ db });
-  await saveSession(store, SESSION);
-  let n = 0;
-  const realWrite = db.write.bind(db);
-  db.write = async (c) => { if (++n === 2) throw new Error('disk'); return realWrite(c); };
-  let reloaded = false;
-  assert.equal(await signOut(store, () => { reloaded = true; }), true);
-  assert.equal(reloaded, true);
-  assert.equal(await loadSession(store), null);
 });

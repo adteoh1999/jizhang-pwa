@@ -140,7 +140,7 @@ test('登录已失效：不叫 delete-account、不停同步、提示重新登�
   const { log, dialogs, deps } = await setup({ session: { ...SESSION, invalid: true } });
   assert.equal(await runDeleteAccount(deps), 'fail');
   assert.equal(dialogs.lastMessage.title, '请重新登录后再试');
-  assert.equal(dialogs.lastMessage.message, '登录已过期。请先在上面「同步」那一列重新登录，再删除账号。');
+  assert.equal(dialogs.lastMessage.message, '登录已过期。请先在上面「同步」那一列重新登录，再删除账号。账号若已删除，直接登出即可。');
   assert.ok(!ran(log, 'fetch:/functions') && !ran(log, 'sync.stop'));
   assertReset(log);
   // 复审小事：重新整理后同步那一列才一定会出现「重新登录」

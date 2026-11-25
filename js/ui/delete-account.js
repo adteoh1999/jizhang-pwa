@@ -26,7 +26,7 @@ export const DELETE_TEXT = Object.freeze({
   requireText: '删除',
   confirmLabel: '永久删除',
   reloginTitle: '请重新登录后再试',
-  reloginMessage: '登录已过期。请先在上面「同步」那一列重新登录，再删除账号。',
+  reloginMessage: '登录已过期。请先在上面「同步」那一列重新登录，再删除账号。账号若已删除，直接登出即可。',
   retryTitle: '暂时连不上',
   retryMessage: '请稍后再试。',
   switchedTitle: '账号已更换',
@@ -47,12 +47,12 @@ export function dangerRows(session) {
 }
 
 /**
- * 删除那一列的忙碌显示（审核 9）：改文字、aria-disabled（不用 disabled；连按由 running 旗标挡）。
+ * 删除／登出那一列的忙碌显示（审核 9）：改文字（busyText）、aria-disabled（不用 disabled；连按由 running 旗标挡）。
  * 朗读交给「正在删除…」遮罩（焦点移过去会念，方案 B），这里不另外念。回 onBusy(bool)。
  */
-export function busyRowHandler({ btn, label, idleText }) {
+export function busyRowHandler({ btn, label, idleText, busyText = T.busyLabel }) {
   return (busy) => {
-    label.textContent = busy ? T.busyLabel : idleText;
+    label.textContent = busy ? busyText : idleText;
     if (busy) btn.setAttribute('aria-disabled', 'true');
     else btn.removeAttribute('aria-disabled');
   };

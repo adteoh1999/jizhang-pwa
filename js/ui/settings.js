@@ -8,12 +8,13 @@ import { showToast } from './toast.js';
 import { openCategoriesPage } from './categories-page.js';
 import { APP_VERSION } from '../version.js';
 import { onUpdateAvailable, applyUpdate } from '../update.js';
-import { signOut, forgetSession } from '../auth.js';
+import { forgetSession } from '../auth.js';
 import { formatRM } from '../money.js';
 import { createExporter } from './export-csv.js';
 import { runDeleteAccount, dangerRows, busyRowHandler } from './delete-account.js';
 import { refreshOwnerFlag, readOwnerFlag } from '../owner-check.js';
 import { openInvitesPage } from './invites-page.js';
+import { runSignOut, SIGNOUT_TEXT } from './sign-out.js';
 
 /**
  * 设置页「同步」列的文字（纯函数）。回 {text, action}；action：可点时做什么（'relogin' | 'errors' | 'start' | 'reload'），不能点为 null。
@@ -223,39 +224,25 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   });
 
   // ---------- 账号 ----------
-  let signingOut = false;
-  const signOutLabel = h('span', { class: 'inset-row-label' }, '登出');
+  const signOutLabel = h('span', { class: 'inset-row-label' }, SIGNOUT_TEXT.rowLabel);
   let signOutBtn = null;
   const reloadAfter = async (title) => {
     // 同步已停：提示后重新整理，让它重新开始（账本与登录都还在）
     await messageDialog({ title, message: '请再试一次。' });
     location.reload();
   };
-  async function onSignOut() {
-    if (signingOut) return;
-    const ok = await confirmDialog({
-      title: '要登出吗？', message: '这台设备上的账本会保留。', confirmLabel: '登出', destructive: true,
-    });
-    if (!ok) return;
-    signingOut = true;
-    // 通知服务器最多等 2 秒：先给即时反馈（HIG）
-    signOutLabel.textContent = '正在登出…';
-    if (signOutBtn) signOutBtn.disabled = true;
-    let done = false;
-    try {
-      done = await signOut(store, () => location.reload(), {
-        fetchFn: (url, init) => fetch(url, init),
-        stopSync: () => { if (sync) sync.stop(); },
-      });
-    } catch (e) {
+  // 登出（2f Task 10）：流程在 sign-out.js；忙碌时改文字＋aria-disabled（不用 disabled，焦点不会被丢掉；连按由流程挡）
+  function onSignOut() {
+    runSignOut({
+      store, sync, realtime, onStartSync,
+      userId: session.user_id, // 只登出挂载这个设置页时的账号
+      fetchFn: (url, init) => fetch(url, init),
+      reload: () => location.reload(),
+      onBusy: busyRowHandler({ btn: signOutBtn, label: signOutLabel, idleText: SIGNOUT_TEXT.rowLabel, busyText: SIGNOUT_TEXT.busyLabel }),
+    }).catch((e) => {
       console.warn(`[settings] 登出出错：${e && e.name ? e.name : '未知'}`);
-    }
-    if (!done) {
-      signingOut = false;
-      signOutLabel.textContent = '登出';
-      if (signOutBtn) signOutBtn.disabled = false;
-      await reloadAfter('登出失败');
-    }
+      location.reload();
+    });
   }
 
   // ---- 同步列：没有动作时是普通列，有动作时才是按钮（VoiceOver 不会念成「调暗的按钮」）----

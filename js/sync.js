@@ -53,7 +53,8 @@ export async function ensureClaimed(store, session, { ask, fromUser = false }) {
     const cur = await loadSession(store); // 问的时候可能登出了或换了账号
     if (!cur || cur.user_id !== session.user_id) return 'unclaimed';
     if (answer !== 'start') {
-      await store.setMeta(DISMISSED, session.user_id);
+      // 核对仍未归属、账本代号没变：问的时候别的分页可能登出清掉、又登录（不写进新账本）
+      await store.setMeta(DISMISSED, session.user_id, { owner: null });
       return 'unclaimed';
     }
   }

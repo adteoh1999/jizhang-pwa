@@ -49,7 +49,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     }
   }
   // 旧引擎写回前核对：owner 给了却已不是 owner_user_id（别的分页换了账号）→ false（审核 5 S-4）
-  const ownerOk = async (owner) => owner === undefined || (await db.getMeta('owner_user_id')) === owner;
+  // owner 可以是 null：核对「还没归属」（写 syncPromptDismissed 时用，Task 10 前）
+  const ownerOk = async (owner) => owner === undefined || ((await db.getMeta('owner_user_id')) ?? null) === owner;
   // 先读一次（早点发现、不必写），写入时再在同一个 transaction 里核对一次（审核 S-1）。不符 → null
   async function ownerCommit(owner, changes, opts = {}) {
     if (owner === undefined) { await commit(changes, opts); return true; }
