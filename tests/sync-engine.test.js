@@ -156,8 +156,7 @@ test('整批 400 + 资料错（23514）→ 逐笔；只有坏那笔标 sync_erro
   assert.equal(all.find((r) => r.id === bad).sync_error.code, '23514');
   assert.ok(all.filter((r) => r.id !== bad).every((r) => r.dirty === 0 && !r.sync_error));
   assert.equal(server.calls.length, 1 + 3);
-  assert.deepEqual([store.syncCounts().txErrors, sync.status().state], [1, 'idle']);
-  assert.equal(sync.status().txErrors, 1);
+  assert.deepEqual([sync.status().txErrors, sync.status().state], [1, 'idle']);
 });
 
 test('非资料类 4xx（403、404、400+PGRST、没有 code）→ 不标任何列、状态 error、进退避', async () => {
@@ -349,7 +348,7 @@ test('5xx 期间连续触发，请求次数受退避限制', async () => {
   r.sync.start();
   for (let i = 0; i < 60; i++) { r.sync.schedule(); await r.clock.advance(1000); }
   // 60 秒内：0、5、15、35 秒各一次（5+10+20 退避）
-  assert.ok(server.calls.length <= 5, `请求 ${server.calls.length} 次`);
+  assert.equal(server.calls.length, 4);
   r.sync.stop();
 });
 
@@ -412,4 +411,224 @@ test('上传请求与日志不含账目内容或 token', async () => {
   } finally { console.warn = orig; }
   assert.ok(logs.length > 0);
   for (const l of logs) assert.doesNotMatch(l, /tok-1|secret-note/);
+});
+
+// ---------- 任务 5 审核修正 ----------
+const okRes = (rows) => jsonRes(201, rows.map((r) => ({ id: r.id, updated_at: r.updated_at })));
+
+test('stop() 在一轮进行中：放行后不再送下一批、不排 retryTimer、状态 stopped', async () => {
+  let release;
+  const server = fakeServer(async (table, rows, { n }) => {
+    if (n === 1) await new Promise((r) => { release = r; });
+    return okRes(rows);
+  });
+  const r = await setup({ txCount: 0, server });
+  for (let i = 0; i < 600; i++) await r.store.saveTransaction({ kind: 'expense', amountMinor: 1 + i, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  const p = r.sync.syncNow();
+  await settle();
+  r.sync.stop();
+  release();
+  await p;
+  await r.clock.advance(400000);
+  assert.equal(server.calls.length, 1);
+  assert.equal(r.clock.pending(), 0);
+  assert.equal(r.sync.status().state, 'stopped');
+});
+
+test('拿不到同步锁（别的分页在跑）→ 10 秒后再试一次、不算失败', async () => {
+  let busy = true;
+  const locks = { request: (name, opts, cb) => cb(busy ? null : { name }) };
+  const r = await setup({ txCount: 1, locks });
+  await r.sync.syncNow();
+  assert.equal(r.fetchFn.calls.length, 0);
+  assert.equal(r.sync.status().retryInMs, 0);
+  busy = false;
+  await r.clock.advance(10000);
+  assert.equal(r.fetchFn.calls.length, 1);
+});
+
+test('防抖里只要有一次 force，就算后来是一般排程也不管退避', async () => {
+  let fail = true;
+  const server = fakeServer((t, rows) => (fail ? jsonRes(500, {}) : okRes(rows)));
+  const r = await setup({ txCount: 1, server });
+  r.sync.start();
+  await r.clock.advance(1000); // 失败 → 退避 5 s
+  fail = false;
+  r.win.dispatchEvent(new Event('online')); // force
+  r.doc.dispatchEvent(new Event('visibilitychange')); // 一般
+  await r.clock.advance(1000);
+  assert.equal(server.calls.length, 2);
+  assert.equal(pendingTx(r.store), 0);
+  r.sync.stop();
+});
+
+test('2xx 但回应不是清单 → 当失败退避、不清 dirty', async () => {
+  for (const res of [() => jsonRes(201, { ok: true }), () => new Response('', { status: 201 })]) {
+    const r = await setup({ txCount: 1, server: fakeServer(res) });
+    await r.sync.syncNow();
+    assert.equal(pendingTx(r.store), 1);
+    assert.equal(r.sync.status().state, 'error');
+  }
+});
+
+test('归属不对的分页不碰 sync_error（版本检查在认领核对之后）', async () => {
+  const r = await setup({ txCount: 1, owner: 'u-A', appVersion: 'v-new' });
+  await r.store.setMeta('syncErrorVersion', 'v-old');
+  const [t] = await r.store.pendingRows('transactions');
+  await r.store.markSyncError('transactions', t.id, '23514', t.updated_at);
+  await r.sync.syncNow();
+  assert.equal(r.store.syncCounts().errors, 1);
+  assert.equal(await r.store.getMeta('syncErrorVersion'), 'v-old');
+});
+
+test('整批（≥10 笔）逐笔全是资料错 → 当系统错误：一笔都不标、退避；连续 20 笔全错就提早停', async () => {
+  const server = fakeServer(() => jsonRes(400, { code: '23514' }));
+  const r = await setup({ txCount: 30, server });
+  await r.sync.syncNow();
+  assert.equal(r.store.syncCounts().errors, 0);
+  assert.equal(pendingTx(r.store), 30);
+  assert.equal(r.sync.status().state, 'error');
+  assert.equal(server.calls.length, 1 + 20);
+  const small = await setup({ txCount: 3, server: fakeServer(() => jsonRes(400, { code: '23514' })) });
+  await small.sync.syncNow();
+  assert.equal(small.store.syncCounts().errors, 3); // 少于 10 笔：照标
+});
+
+test('只有 1 笔的批次资料错 → 直接标，不重送', async () => {
+  const server = fakeServer(() => jsonRes(400, { code: '23514' }));
+  const r = await setup({ txCount: 1, server });
+  await r.sync.syncNow();
+  assert.equal(server.calls.length, 1);
+  assert.equal(r.store.syncCounts().errors, 1);
+});
+
+test('只把 5 位的 22xxx / 23xxx 当资料错', async () => {
+  for (const code of ['23', '2351', '235140', '23514; drop', 'P0001', '42501']) {
+    const r = await setup({ txCount: 1, server: fakeServer(() => jsonRes(400, { code })) });
+    await r.sync.syncNow();
+    assert.equal(r.store.syncCounts().errors, 0, code);
+    assert.equal(r.sync.status().state, 'error', code);
+  }
+});
+
+test('retryInMs 是「还剩多久」：halt（离线）后为 0、没有 timer', async () => {
+  const r = await setup({ txCount: 1, server: fakeServer(() => jsonRes(500, {})) });
+  await r.sync.syncNow();
+  await r.clock.advance(2000);
+  assert.equal(r.sync.status().retryInMs, 3000);
+  r.onlineRef.v = false;
+  await r.sync.syncNow();
+  assert.equal(r.sync.status().retryInMs, 0);
+  assert.equal(r.clock.pending(), 0);
+});
+
+test('syncNow 回传这次的结果', async () => {
+  let r = await setup({ txCount: 1 });
+  assert.equal(await r.sync.syncNow(), 'ok');
+  r = await setup({ txCount: 1, server: fakeServer(() => jsonRes(500, {})) });
+  assert.equal(await r.sync.syncNow(), 'fail');
+  r = await setup({ txCount: 1, online: false });
+  assert.equal(await r.sync.syncNow(), 'halt');
+});
+
+test('一轮进行中叫 syncNow，那轮回 500 → 不立刻再发，等退避', async () => {
+  let release;
+  const server = fakeServer(async (t, rows, { n }) => {
+    if (n === 1) await new Promise((x) => { release = x; });
+    return jsonRes(500, {});
+  });
+  const r = await setup({ txCount: 1, server });
+  const p = r.sync.syncNow();
+  await settle();
+  r.sync.syncNow();
+  release();
+  await p;
+  await settle();
+  assert.equal(server.calls.length, 1);
+  await r.clock.advance(5000);
+  assert.equal(server.calls.length, 2);
+});
+
+test('引擎层：上传途中改同一笔 → 第一轮后仍待上传，下一轮送新内容', async () => {
+  let release;
+  let first = true;
+  const server = fakeServer(async (t, rows) => {
+    if (first) { first = false; await new Promise((x) => { release = x; }); }
+    return okRes(rows);
+  });
+  const r = await setup({ txCount: 1, server });
+  const [a] = await r.store.pendingRows('transactions');
+  const p = r.sync.syncNow();
+  await settle();
+  await r.store.saveTransaction({ id: a.id, kind: 'expense', amountMinor: 4242, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  release();
+  await p;
+  assert.equal(pendingTx(r.store), 1);
+  await r.sync.syncNow();
+  assert.equal(server.calls.at(-1).rows[0].amount_minor, 4242);
+  assert.equal(pendingTx(r.store), 0);
+});
+
+test('同一轮：第一批 401 刷新成功、第二批又 401 → fail，getSession 只多叫一次；逐笔路径的 401 也会刷新', async () => {
+  const sessions = [];
+  const getSession = async (f) => { sessions.push(f); return { session: { ...SESSION, access_token: f ? 'tok-2' : 'tok-1' } }; };
+  let n = 0;
+  const server = fakeServer((t, rows) => { n++; return n === 1 || n === 3 ? jsonRes(401, {}) : okRes(rows); });
+  const r = await setup({ txCount: 0, server, getSession });
+  for (let i = 0; i < 600; i++) await r.store.saveTransaction({ kind: 'expense', amountMinor: 1 + i, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
+  assert.equal(await r.sync.syncNow(), 'fail');
+  assert.deepEqual(sessions, [null, 'tok-1']);
+
+  const s2 = [];
+  let m = 0;
+  const server2 = fakeServer((t, rows) => {
+    m++;
+    if (m === 1) return jsonRes(400, { code: '23514' }); // 整批 → 逐笔
+    if (m === 2) return jsonRes(401, {}); // 逐笔第一笔 401 → 刷新
+    return okRes(rows);
+  });
+  const r2 = await setup({ txCount: 2, server: server2, getSession: async (f) => { s2.push(f); return { session: SESSION }; } });
+  assert.equal(await r2.sync.syncNow(), 'ok');
+  assert.equal(s2.length, 2);
+  assert.equal(pendingTx(r2.store), 0);
+});
+
+test('halt 会清掉 retryTimer：先失败退避，再离线跑一轮 → 没有 timer', async () => {
+  const r = await setup({ txCount: 1, server: fakeServer(() => jsonRes(500, {})) });
+  await r.sync.syncNow();
+  assert.equal(r.clock.pending(), 1);
+  r.onlineRef.v = false;
+  await r.sync.syncNow();
+  assert.equal(r.clock.pending(), 0);
+});
+
+test('一轮里丢例外（写入失败、读 meta 失败）→ error、退避', async () => {
+  let r = await setup({ txCount: 1 });
+  r.db.failNextWrite(new Error('disk'));
+  const orig = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(await r.sync.syncNow(), 'fail');
+    assert.equal(r.sync.status().state, 'error');
+    r = await setup({ txCount: 1 });
+    r.store.getMeta = async () => { throw new Error('idb'); };
+    assert.equal(await r.sync.syncNow(), 'fail');
+  } finally { console.warn = orig; }
+});
+
+test('服务器回 200 []（LWW 略过）→ pending 0', async () => {
+  const r = await setup({ txCount: 2, server: fakeServer(() => jsonRes(200, [])) });
+  assert.equal(await r.sync.syncNow(), 'ok');
+  assert.equal(pendingTx(r.store), 0);
+});
+
+test('visibilityState hidden 时不排程', async () => {
+  const r = await setup({ txCount: 0 });
+  r.sync.start();
+  await r.clock.advance(1000);
+  await r.store.setMeta('noop', 1);
+  r.doc.visibilityState = 'hidden';
+  r.doc.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(r.clock.pending(), 0);
+  r.sync.stop();
 });

@@ -36,7 +36,8 @@ export async function upsertRows(fetchFn, table, rows, accessToken, { timeoutMs 
     try { body = await res.json(); } catch { /* 不是 JSON */ }
     const ok = res.status >= 200 && res.status < 300;
     const errorCode = !ok && body && typeof body.code === 'string' ? body.code : null;
-    return { status: res.status, rows: ok && Array.isArray(body) ? body : (ok ? [] : null), errorCode };
+    // rows：2xx 且回应是清单才有；2xx 但不是清单 → null（呼叫者当失败，不能当全部成功）
+    return { status: res.status, rows: ok && Array.isArray(body) ? body : null, errorCode };
   } catch {
     return { status: 0, rows: null, errorCode: null };
   } finally {
