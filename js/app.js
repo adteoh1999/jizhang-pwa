@@ -11,7 +11,8 @@ import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
 import { onLedgerResetElsewhere, onPulledElsewhere, announcePulled } from './ledger-channel.js';
 import { mountLogin } from './ui/login.js';
-import { loadSession, bootTarget } from './auth.js';
+import { loadSession, bootTarget, getValidSession } from './auth.js';
+import { createRealtime } from './realtime.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
@@ -26,6 +27,9 @@ const TABS = [
   { id: 'stats', label: '统计', icon: 'tab-stats', title: '统计' },
   { id: 'settings', label: '设置', icon: 'tab-settings', title: '设置' },
 ];
+
+// 同步引擎在这些状态时，Realtime 不连线（登录过期、换了账号、账本不是这个账号的、还没开始同步、已停止）
+const REALTIME_BLOCKED = new Set(['signed-out', 'stale', 'other-owner', 'unclaimed', 'stopped']);
 
 const isDevHost = () => location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
@@ -116,8 +120,16 @@ function mountShell(root, store, session) {
   const home = screens.get('home');
   mountHome(home.querySelector('.screen-content'), store, { monthEl: home.querySelector('.large-title-aside') });
   const stats = mountStats(screens.get('stats').querySelector('.screen-content'), store);
+  // Realtime 门铃（2e-3）：服务器上自己的资料有改动 → 跑一轮同步。同步引擎在这些状态时不连
+  const realtime = createRealtime({
+    userId: session.user_id,
+    getSession: (failedToken) => getValidSession(store, (url, init) => fetch(url, init), { failedToken }),
+    onPoke: () => sync.schedule(),
+    allowed: () => !REALTIME_BLOCKED.has(sync.status().state),
+  });
+  sync.subscribe(() => realtime.check());
   mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
-    session, sync, onStartSync: () => runClaim(true),
+    session, sync, realtime, onStartSync: () => runClaim(true),
   });
 
   const tabbar = mountTabBar(root, {
@@ -163,6 +175,7 @@ function mountShell(root, store, session) {
 
   // 画面都挂好了才开始同步、才问认领（前面任何一步丢错，就不会在错误画面上跑）
   sync.start();
+  realtime.start();
   runClaim(false);
 }
 
