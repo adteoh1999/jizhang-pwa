@@ -303,3 +303,10 @@ test('closeMiniApp：叫 close；丢错或没有 webApp 都不会当掉', () => 
   assert.doesNotThrow(() => closeMiniApp({ close() { throw new Error('x'); } }));
   assert.doesNotThrow(() => closeMiniApp(null));
 });
+
+test('TG_BIND_MAX_SEC：前端与服务器相同', async () => {
+  const { TG_BIND_MAX_SEC } = await import('../js/telegram.js');
+  const server = await import('../supabase/functions/_shared/telegram.ts');
+  assert.equal(TG_BIND_MAX_SEC, 600);
+  assert.equal(TG_BIND_MAX_SEC, server.TG_BIND_MAX_SEC);
+});

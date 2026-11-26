@@ -1,4 +1,4 @@
-// 登录画面：欢迎 → 邮箱（＋邀请码）→ 6 位数验证码。照登录页预览（晨雾背景、静态光晕、钱包硬币插图、按钮紧跟输入框）。
+// 登录画面：欢迎 → 邮箱（＋邀请码）→ 6 位数验证码 →（Telegram 模式）确认连接。照登录页预览（晨雾背景、静态光晕、钱包硬币插图、按钮紧跟输入框）。
 // 流程逻辑都在 js/login-flow.js；这里只负责画、绑事件、键盘、倒数。
 // 规则：DOM 一次建好，状态变化只改文字与属性，不重建输入框（内容、焦点、键盘不丢）。
 import { h } from './dom.js';
@@ -46,7 +46,32 @@ export const LOGIN_TEXT = Object.freeze({
   sentTo: (email) => `已寄到 ${email}，10 分钟内有效。`,
   sentToTail: '10 分钟内有效。',
   resendIn: (sec) => `没收到？${sec} 秒后可以重新发送`,
+  // 3b-8：Telegram 模式
+  linkTitle: '连接 Telegram',
+  linkNote: '连接后，这个 Telegram 账号可以直接打开、修改这本账。只连接你自己的 Telegram。',
+  linkButton: '连接',
+  linking: '正在连接…',
+  linkCancel: '取消',
+  tgEmailHint: '登录后会连接到这个 Telegram。',
+  tgNameFallback: '这个 Telegram',
 });
+
+/**
+ * 连接确认句的片段：「要把 Telegram 用户 ＜名字＞ 连接到 ＜邮箱＞ 吗？」（名字空 →「要把这个 Telegram 连接到…」）。
+ * 回 [{text, strong?}]；名字是对方填的，画的时候一律当文字（h() 用 text node），不解析。
+ */
+export function linkLeadParts(label, email) {
+  const name = typeof label === 'string' ? label.trim() : '';
+  const lead = name
+    ? [{ text: '要把 Telegram 用户 ' }, { text: name, strong: true }, { text: ' 连接到 ' }]
+    : [{ text: '要把' }, { text: LOGIN_TEXT.tgNameFallback, strong: true }, { text: ' 连接到 ' }];
+  return [...lead, { text: email, strong: true }, { text: ' 吗？' }];
+}
+
+/** 平台不同时多／少显示的东西：Telegram 里没有「加到主屏幕」这回事，邮箱页改提示会连接这个 Telegram。 */
+export function loginExtras({ telegram, iosTab }) {
+  return { safari: !telegram && !!iosTab, tgHint: !!telegram };
+}
 
 /**
  * 键盘挡住表单时要往上移多少 px（纯函数）。
@@ -155,7 +180,7 @@ export async function askReset(store, { txCount }, { choice = choiceDialog, conf
  * 挂载登录画面。store：读写 meta、换账号时导出与清除；fetchFn：fetch；onSignedIn(session)。
  * 回 { destroy() }。登录成功时会先自动 destroy 再叫 onSignedIn。
  */
-export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.now() }) {
+export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.now(), telegram = null }) {
   const T = LOGIN_TEXT;
   const cleanups = [];
   let destroyed = false;
@@ -175,7 +200,9 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     confirmReset: (info) => askReset(store, info),
     onReset: announceLedgerReset,
     onSignedIn: (s) => { destroy(); onSignedIn(s); },
+    telegram,
   });
+  const extras = loginExtras({ telegram, iosTab: isIosBrowserTab() });
 
   // ---------- 共用小件 ----------
   const primary = (label, attrs = {}) => h('button', { class: 'login-primary pressable', ...attrs }, label);
@@ -189,7 +216,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     const [head, t] = splitTail(text, tail);
     return t ? [head, h('span', { class: 'nowrap' }, t)] : [head];
   };
-  const safariHint = () => (isIosBrowserTab()
+  const safariHint = () => (extras.safari
     ? h('div', { class: 'install-hint login-hint', role: 'note' },
       h('span', { class: 'install-hint-icon' }, icon('square-arrow-up', 20)),
       h('p', { class: 'install-hint-text' }, T.safariHint))
@@ -235,7 +262,8 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
   inviteInput.addEventListener('input', () => flow.editField('invite'));
   emailForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitEmail(emailInput.value, inviteInput.value); });
   // Safari 提示放在 .login-body 里：键盘上移时和标题一起移动，不会叠在一起
-  const emailBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回'), emailTitle, h('p', { class: 'login-sub' }, withTail(T.emailSub, T.emailSubTail)), emailForm);
+  const emailBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回'), emailTitle,
+    h('p', { class: 'login-sub' }, withTail(T.emailSub, T.emailSubTail), extras.tgHint ? [h('br'), T.tgEmailHint] : null), emailForm);
   const emailStep = h('section', { class: 'login-step', 'data-step': 'email', 'aria-labelledby': 'login-title-email' }, emailBody);
 
   // ---------- 3. 验证码 ----------
@@ -270,8 +298,20 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
   const codeBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回，换一个邮箱'), codeTitle, codeDesc, codeForm);
   const codeStep = h('section', { class: 'login-step', 'data-step': 'code', 'aria-labelledby': 'login-title-code' }, codeBody);
 
-  const steps = { welcome, email: emailStep, code: codeStep };
-  const el = h('div', { class: 'login' }, welcome, emailStep, codeStep);
+  // ---------- 4. 确认连接 Telegram（只有 Telegram 模式会走到） ----------
+  const linkLead = h('p', { class: 'login-sub login-link-lead' });
+  const linkStatus = statusRows();
+  const linkBtn = primary(T.linkButton, { type: 'button', on: { click: () => flow.confirmLink().catch((e) => console.error(e)) } });
+  const linkCancelBtn = h('button', { type: 'button', class: 'login-secondary pressable', on: { click: () => flow.cancelLink() } }, T.linkCancel);
+  const linkTitle = h('h1', { class: 'login-title', id: 'login-title-link', tabindex: '-1' }, T.linkTitle);
+  const linkBody = h('div', { class: 'login-body' }, linkTitle, linkLead,
+    h('p', { class: 'login-field-hint login-link-note' }, T.linkNote),
+    linkStatus.notice, linkStatus.error, linkBtn, linkCancelBtn);
+  const linkStep = h('section', { class: 'login-step', 'data-step': 'link', 'aria-labelledby': 'login-title-link' }, linkBody);
+  let linkLeadKey = null;
+
+  const steps = { welcome, email: emailStep, code: codeStep, link: linkStep };
+  const el = h('div', { class: 'login' }, welcome, emailStep, codeStep, linkStep);
   for (const node of Object.values(steps)) node.hidden = true; // start() 读完前三步都不显示（避免欢迎页一闪）
   root.replaceChildren(el);
 
@@ -364,7 +404,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
   let sentText = null;
   function render(s) {
     if (destroyed || !s.ready) return;
-    const step = s.step === 'done' ? 'code' : s.step;
+    const step = s.step === 'done' ? (prevStep === 'link' ? 'link' : 'code') : s.step;
     const changed = step !== prevStep;
 
     // 邮箱页：回来时预先填好
@@ -373,6 +413,12 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     const sent = T.sentTo(s.email);
     if (sent !== sentText) { sentText = sent; codeDesc.replaceChildren(...withTail(sent, T.sentToTail)); }
     if (codeInput.value.replace(/\D/g, '').slice(0, 6) !== s.code) codeInput.value = s.code;
+    // 连接页：名字、邮箱一律当文字
+    const leadKey = `${s.linkLabel}\n${s.linkEmail}`;
+    if (leadKey !== linkLeadKey) {
+      linkLeadKey = leadKey;
+      linkLead.replaceChildren(...linkLeadParts(s.linkLabel, s.linkEmail).map((p) => (p.strong ? h('strong', null, p.text) : p.text)));
+    }
     codeCells(s.code).forEach((c, i) => {
       cells[i].textContent = c.v;
       cells[i].classList.toggle('is-active', c.active && !s.busy);
@@ -382,7 +428,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
       // 先显示新步骤、移焦点，再藏旧步骤（有焦点的输入框先被藏起来，iOS 会收键盘）
       const next = steps[step];
       next.hidden = false;
-      for (const b of [emailBody, codeBody]) b.style.transform = '';
+      for (const b of [emailBody, codeBody, linkBody]) b.style.transform = '';
       lift = 0;
       if (prevStep && !reducedMotion()) fade(next, 'in', { id: 'login' });
       if (step === 'code') {
@@ -391,7 +437,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
       } else {
         if (timer) { clearInterval(timer); timer = null; }
         if (step === 'email' && prevStep === 'welcome') emailInput.focus({ preventScroll: true });
-        else if (prevStep) (step === 'welcome' ? welcomeTitle : emailTitle).focus({ preventScroll: true });
+        else if (prevStep) ({ welcome: welcomeTitle, email: emailTitle, link: linkTitle })[step].focus({ preventScroll: true });
       }
       for (const [k, node] of Object.entries(steps)) if (k !== step) node.hidden = true;
     } else if (step === 'code') {
@@ -400,10 +446,12 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     }
 
     // 讯息
-    const status = step === 'code' ? codeStatus : emailStatus;
-    const other = step === 'code' ? emailStatus : codeStatus;
-    other.notice.textContent = '';
-    other.error.textContent = '';
+    const status = step === 'code' ? codeStatus : step === 'link' ? linkStatus : emailStatus;
+    for (const other of [codeStatus, emailStatus, linkStatus]) {
+      if (other === status) continue;
+      other.notice.textContent = '';
+      other.error.textContent = '';
+    }
     status.notice.textContent = s.notice || '';
     // 提示（过期、已重新发送…）：步骤切换同时出现的字 VoiceOver 常不念，改走 announce
     if (s.notice && s.noticeSeq !== prevNoticeSeq) announce(s.notice);
@@ -413,8 +461,10 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     // 送出中：按钮文字只跟自己的动作
     sendBtn.textContent = s.busy === 'send' ? T.sending : T.sendButton;
     enterBtn.textContent = s.busy === 'verify' ? T.signingIn : T.codeButton;
-    for (const b of [sendBtn, enterBtn, resendBtn]) b.setAttribute('aria-disabled', s.busy ? 'true' : 'false');
+    linkBtn.textContent = s.busy === 'link' ? T.linking : T.linkButton;
+    for (const b of [sendBtn, enterBtn, resendBtn, linkBtn, linkCancelBtn]) b.setAttribute('aria-disabled', s.busy ? 'true' : 'false');
     if (s.busy === 'verify' && prevBusy !== 'verify') announce('正在登录');
+    if (s.busy === 'link' && prevBusy !== 'link') announce('正在连接');
 
     // 栏位标示错误（aria-invalid 要是字串 "true"，空值等于没错）
     for (const [field, input] of [['email', emailInput], ['invite', inviteInput]]) {

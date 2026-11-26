@@ -2094,6 +2094,11 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 }
 .login-welcome .login-primary { min-height: 56px; }
 .login-primary[aria-disabled="true"] { opacity: 0.6; }
+/* 3b-8 连接 Telegram：次按钮「取消」（不是破坏性动作，用一般文字色；和主按钮同宽、同触控高度） */
+.login-secondary { width: 100%; min-height: var(--hit); margin-top: 8px; padding: 0 24px; border-radius: 999px; background: none; color: var(--ink); font: var(--font-subhead); font-weight: 600; }
+.login-secondary[aria-disabled="true"] { opacity: 0.6; }
+.login-link-lead strong { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.login-link-note { margin-bottom: 8px; }
 .login-footnote { margin-top: 14px; text-align: center; font: var(--font-footnote); color: var(--ink-2); }
 .login-body { transition: transform 0.2s var(--ease-out); }
 .login-back {

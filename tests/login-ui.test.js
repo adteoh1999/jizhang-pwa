@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { keyboardLift, codeCells, splitTail, makeErrorWriter, LOGIN_TEXT } from '../js/ui/login.js';
+import { keyboardLift, codeCells, splitTail, makeErrorWriter, LOGIN_TEXT, linkLeadParts, loginExtras } from '../js/ui/login.js';
 import { css } from './helpers/css-tokens.js';
 
 const base = { blockTop: 300, currentLift: 0, vvOffsetTop: 0, minTop: 60 };
@@ -167,4 +167,43 @@ test('登录相关的 js 不打印 session 或 token', () => {
     assert.doesNotMatch(s, /console\.log\(/, f);
     assert.doesNotMatch(s, /console\.\w+\([^)]*(session|token|refresh|access)/i, f);
   }
+});
+
+
+// ---------- 3b-8：连接 Telegram 画面 ----------
+test('连接画面文字（r1-M1c）', () => {
+  assert.equal(LOGIN_TEXT.linkTitle, '连接 Telegram');
+  assert.equal(LOGIN_TEXT.linkNote, '连接后，这个 Telegram 账号可以直接打开、修改这本账。只连接你自己的 Telegram。');
+  assert.equal(LOGIN_TEXT.linkButton, '连接');
+  assert.equal(LOGIN_TEXT.linking, '正在连接…');
+  assert.equal(LOGIN_TEXT.linkCancel, '取消');
+  assert.equal(LOGIN_TEXT.tgEmailHint, '登录后会连接到这个 Telegram。');
+});
+
+test('linkLeadParts：「要把 Telegram 用户 ＜名字＞ 连接到 ＜邮箱＞ 吗？」，名字与邮箱是粗体片段', () => {
+  const parts = linkLeadParts('@zed', 'me@x.com');
+  assert.equal(parts.map((p) => p.text).join(''), '要把 Telegram 用户 @zed 连接到 me@x.com 吗？');
+  assert.deepEqual(parts.filter((p) => p.strong).map((p) => p.text), ['@zed', 'me@x.com']);
+});
+
+test('linkLeadParts：名字含 <b> 等符号 → 原样当文字（不解析）；名字空或只有空白 → 「这个 Telegram」', () => {
+  const evil = linkLeadParts('<b>x</b><img src=x>', 'me@x.com');
+  assert.equal(evil.find((p) => p.strong).text, '<b>x</b><img src=x>');
+  for (const label of ['', '   ', null, undefined]) {
+    const parts = linkLeadParts(label, 'me@x.com');
+    assert.equal(parts.map((p) => p.text).join(''), '要把这个 Telegram 连接到 me@x.com 吗？', String(label));
+    assert.deepEqual(parts.filter((p) => p.strong).map((p) => p.text), ['这个 Telegram', 'me@x.com']);
+  }
+});
+
+test('login.js：不用 innerHTML（Telegram 名字一律当文字）', () => {
+  const src = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML|outerHTML/);
+});
+
+test('loginExtras：Telegram 模式不显示 Safari 提示、邮箱页多一句连接提示；PWA 照旧', () => {
+  assert.deepEqual(loginExtras({ telegram: true, iosTab: true }), { safari: false, tgHint: true });
+  assert.deepEqual(loginExtras({ telegram: true, iosTab: false }), { safari: false, tgHint: true });
+  assert.deepEqual(loginExtras({ telegram: false, iosTab: true }), { safari: true, tgHint: false });
+  assert.deepEqual(loginExtras({ telegram: false, iosTab: false }), { safari: false, tgHint: false });
 });

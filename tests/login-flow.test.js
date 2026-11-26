@@ -22,7 +22,7 @@ function fakeApi(handlers = {}) {
   return { api, calls };
 }
 
-function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmReset = async () => true, store = createStore({ db }), onReset } = {}) {
+function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmReset = async () => true, store = createStore({ db }), onReset, telegram } = {}) {
   const { api, calls } = fakeApi(handlers);
   const signed = [];
   const switches = [];
@@ -31,6 +31,7 @@ function setup({ handlers, nowRef = { t: T0 }, db = createMemoryDb(), confirmRes
     confirmReset: async (info) => { switches.push(info); return confirmReset(info); },
     onSignedIn: (s) => signed.push(s),
     onReset,
+    telegram,
   });
   return { flow, store, db, calls, signed, switches, nowRef };
 }
@@ -140,14 +141,40 @@ test('同一邮箱、pending 还有效 → 直接进验证码页，不发请求'
   assert.equal(calls.registerEmail.length, 0);
 });
 
-test('otp 回「刚寄过」（Auth 60 秒或钩子秒数）→ 进验证码页，提示刚才已寄出', async () => {
-  const { flow, store } = setup({ handlers: { requestOtp: () => ({ ok: false, status: 429, message: '请 42 秒后再试', retrySec: 42 }) } });
+// R1-11（3b-1 实测：Telegram 的 generate_link 也会占用 60 秒限制，但不寄信）：
+// 只有这个流程 60 秒内对同一邮箱送过 requestOtp、或本机有同邮箱的 pending，才说「验证码刚才已寄出」
+test('R1-11：otp 回「刚寄过」但这里没寄过、本机也没 pending → 留在邮箱页显示秒数', async () => {
+  const { flow, store } = setup({ handlers: { requestOtp: () => ({ ok: false, status: 429, message: '请 45 秒后再试', retrySec: 45 }) } });
   flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.deepEqual([flow.state.step, flow.state.error], ['email', '请 45 秒后再试']);
+  assert.equal(await loadPending(store, T0), null);
+});
+
+test('R1-11：上一次送出超时（其实可能寄出了）、60 秒内再送同一邮箱回「刚寄过」→ 进验证码页，提示刚才已寄出', async () => {
+  let n = 0;
+  const { flow, store, nowRef } = setup({ handlers: { requestOtp: () => (++n === 1 ? { ok: false, status: 0, message: NET } : { ok: false, status: 429, message: '请 42 秒后再试', retrySec: 42 }) } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(flow.state.step, 'email');
+  nowRef.t += 18_000;
   await flow.submitEmail('me@x.com', '');
   assert.equal(flow.state.step, 'code');
   assert.equal(flow.state.notice, '验证码刚才已寄出');
   assert.equal(flow.resendLeft(), 42);
-  assert.equal((await loadPending(store, T0)).email, 'me@x.com');
+  assert.equal((await loadPending(store, nowRef.t)).email, 'me@x.com');
+});
+
+test('R1-11：送过的是别的邮箱、或已超过 60 秒 → 不算刚寄过', async () => {
+  for (const [first, wait] of [['other@x.com', 5_000], ['me@x.com', 61_000]]) {
+    let n = 0;
+    const { flow, nowRef } = setup({ handlers: { requestOtp: () => (++n === 1 ? { ok: false, status: 0, message: NET } : { ok: false, status: 429, message: '请 30 秒后再试', retrySec: 30 }) } });
+    flow.goEmail();
+    await flow.submitEmail(first, '');
+    nowRef.t += wait;
+    await flow.submitEmail('me@x.com', '');
+    assert.deepEqual([flow.state.step, flow.state.error], ['email', '请 30 秒后再试'], `${first} ${wait}`);
+  }
 });
 
 test('otp 回其他错误（例如已达上限）→ 留在邮箱页显示讯息', async () => {
@@ -376,9 +403,13 @@ test('onSignedIn 丢错不会被吞成「出了点问题」，也不会被调两
 });
 
 test('retrySec 超过 60 也只当 60（倒数不会卡住）', async () => {
-  const { flow } = setup({ handlers: { requestOtp: () => ({ ok: false, status: 429, message: '请 90 秒后再试', retrySec: 90 }) } });
+  // R1-11：要本机刚送过才进验证码页 → 第一次送出超时，第二次回 90 秒
+  let n = 0;
+  const { flow } = setup({ handlers: { requestOtp: () => (++n === 1 ? { ok: false, status: 0, message: NET } : { ok: false, status: 429, message: '请 90 秒后再试', retrySec: 90 }) } });
   flow.goEmail();
   await flow.submitEmail('me@x.com', '');
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(flow.state.step, 'code');
   assert.equal(flow.resendLeft(), 60);
 });
 
@@ -764,4 +795,219 @@ test('复审 8：验证成功但重新载入失败 → 不登录、尽力作废 
   try { await flow.inputCode('481203'); } finally { console.warn = orig; }
   assert.equal(signed.length, 0);
   assert.equal(calls.discardSession.length, 1);
+});
+
+
+// ---------- 3b-8：Telegram 模式的「连接」步骤（R1）、事前检查 ----------
+const SEC = (ms) => Math.floor(ms / 1000);
+function tg({ link = async () => ({ ok: true, data: { result: 'linked' } }), authDate = SEC(T0) - 60, bindDeadline = null, label = '@zed' } = {}) {
+  const tc = { link: [], stale: 0 };
+  const telegram = {
+    tgId: '987654321', label, authDate, bindDeadline,
+    link: async (s) => { tc.link.push(s); return link(s); },
+    onInitStale: () => { tc.stale += 1; },
+  };
+  return { telegram, tc };
+}
+function spyMetas(store) {
+  const seen = [];
+  const orig = store.setMetas.bind(store);
+  store.setMetas = (m, ...rest) => { seen.push(Object.keys(m).sort()); return orig(m, ...rest); };
+  return seen;
+}
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+test('Telegram：验证成功后先不存 session，进「连接」步骤（带邮箱与名字），pending 清掉', async () => {
+  const { telegram, tc } = tg();
+  const { flow, store, signed } = setup({ telegram });
+  await login(flow);
+  assert.equal(flow.state.step, 'link');
+  assert.equal(flow.state.linkEmail, 'me@x.com');
+  assert.equal(flow.state.linkLabel, '@zed');
+  assert.equal(await loadSession(store), null);
+  assert.equal(await loadPending(store, T0), null);
+  assert.equal(signed.length, 0);
+  assert.equal(tc.link.length, 0);
+});
+
+test('Telegram：按「连接」成功 → 一次 setMetas 写入 session、lastUserId、tgId → onSignedIn', async () => {
+  const { telegram, tc } = tg();
+  const { flow, store, signed } = setup({ telegram });
+  await login(flow);
+  const seen = spyMetas(store);
+  await flow.confirmLink();
+  assert.equal(tc.link.length, 1);
+  assert.equal(tc.link[0].user_id, 'u-1');
+  assert.deepEqual(seen, [['lastUserId', 'session', 'tgId']]);
+  assert.equal((await loadSession(store)).user_id, 'u-1');
+  assert.equal(await store.getMeta('tgId'), '987654321');
+  assert.equal(flow.state.step, 'done');
+  assert.equal(signed.length, 1);
+});
+
+test('Telegram：换账号（已确认清除）→ 连接成功才 resetForAccount（meta 含 tgId）、onReset', async () => {
+  const { telegram } = tg();
+  const resets = [];
+  const { flow, store, signed } = setup({ ...B(), telegram, onReset: () => resets.push(1) });
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 2 });
+  await login(flow);
+  assert.equal(flow.state.step, 'link');
+  assert.equal(store.transactions().length, 2, '连接前不清');
+  await flow.confirmLink();
+  assert.equal(store.transactions().length, 0);
+  assert.equal(await store.getMeta('owner_user_id'), 'u-B');
+  assert.equal(await store.getMeta('tgId'), '987654321');
+  assert.equal(resets.length, 1);
+  assert.equal(signed.length, 1);
+});
+
+test('Telegram：user_taken → 作废 session、不存、本地账不动、回邮箱页显示服务器句子', async () => {
+  const msg = '这个邮箱已连接另一个 Telegram，请先在 PWA 设置里解除连接';
+  const { telegram } = tg({ link: async () => ({ ok: false, status: 409, code: 'user_taken', error: msg, retry: false }) });
+  const { flow, store, calls, signed } = setup({ ...B(), telegram });
+  await prep(store, { owner: 'u-A', last: 'u-A', txs: 2 });
+  await login(flow);
+  await flow.confirmLink();
+  await flush();
+  assert.equal(calls.discardSession.length, 1);
+  assert.equal(await loadSession(store), null);
+  assert.equal(store.transactions().length, 2);
+  assert.equal(flow.state.step, 'email');
+  assert.equal(flow.state.error, msg);
+  assert.equal(signed.length, 0);
+});
+
+test('Telegram：init_stale → 作废 session、onInitStale 一次、不回邮箱页', async () => {
+  const { telegram, tc } = tg({ link: async () => ({ ok: false, status: 422, code: 'init_stale', error: '太久没有完成，请关掉再重新打开', retry: false }) });
+  const { flow, store, calls } = setup({ telegram });
+  await login(flow);
+  await flow.confirmLink();
+  await flush();
+  assert.equal(calls.discardSession.length, 1);
+  assert.equal(tc.stale, 1);
+  assert.notEqual(flow.state.step, 'email');
+  assert.equal(await loadSession(store), null);
+});
+
+test('Telegram：retry（网络错／busy）→ 留在连接步骤显示错误，再按一次成功', async () => {
+  let n = 0;
+  const { telegram, tc } = tg({ link: async () => (++n === 1 ? { ok: false, status: 0, code: null, error: '需要网络', retry: true } : { ok: true, data: { result: 'already' } }) });
+  const { flow, calls, signed } = setup({ telegram });
+  await login(flow);
+  await flow.confirmLink();
+  assert.equal(flow.state.step, 'link');
+  assert.equal(flow.state.error, '需要网络');
+  assert.equal(calls.discardSession.length, 0);
+  await flow.confirmLink();
+  assert.equal(tc.link.length, 2);
+  assert.equal(flow.state.step, 'done');
+  assert.equal(signed.length, 1);
+});
+
+test('Telegram：连接成功但写入失败 → 作废 session、回邮箱页、不登录', async () => {
+  const { telegram } = tg();
+  const db = createMemoryDb();
+  const { flow, store, calls, signed } = setup({ db, telegram });
+  await login(flow);
+  db.failNextWrite(new Error('disk'));
+  await flow.confirmLink();
+  await flush();
+  assert.equal(calls.discardSession.length, 1);
+  assert.equal(await loadSession(store), null);
+  assert.equal(flow.state.step, 'email');
+  assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
+  assert.equal(signed.length, 0);
+});
+
+test('Telegram：取消、或在连接步骤按返回 → 作废 session、回欢迎页、本地资料不动', async () => {
+  for (const how of ['cancelLink', 'back']) {
+    const { telegram } = tg();
+    const { flow, store, calls } = setup({ ...B(), telegram });
+    await prep(store, { owner: 'u-A', last: 'u-A', txs: 2 });
+    await login(flow);
+    flow[how]();
+    await flush();
+    assert.equal(calls.discardSession.length, 1, how);
+    assert.equal(flow.state.step, 'welcome', how);
+    assert.equal(store.transactions().length, 2, how);
+    assert.equal(await loadSession(store), null, how);
+    await flow.confirmLink(); // 取消之后按连接没作用
+    assert.equal(flow.state.step, 'welcome');
+  }
+});
+
+test('Telegram：连接中再按一次 → 只叫一次 link', async () => {
+  const d = deferred();
+  const { telegram, tc } = tg({ link: () => d.p });
+  const { flow } = setup({ telegram });
+  await login(flow);
+  const a = flow.confirmLink();
+  assert.equal(flow.state.busy, 'link');
+  await flow.confirmLink();
+  d.resolve({ ok: true, data: { result: 'linked' } });
+  await a;
+  assert.equal(tc.link.length, 1);
+});
+
+test('Telegram 事前检查：只剩 100 秒 → 送邮箱不叫 register、送验证码不叫 verify（pending 还在），都叫 onInitStale', async () => {
+  const { telegram, tc } = tg({ authDate: SEC(T0) - 500 });
+  const { flow, store, calls } = setup({ telegram });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.equal(calls.registerEmail.length, 0);
+  assert.equal(tc.stale, 2, 'goEmail 与 submitEmail 各一次');
+
+  const t2 = tg({ authDate: SEC(T0) - 60 });
+  const s2 = setup({ telegram: t2.telegram, nowRef: { t: T0 } });
+  s2.flow.goEmail();
+  await s2.flow.submitEmail('me@x.com', '');
+  assert.equal(s2.flow.state.step, 'code');
+  s2.nowRef.t += 430_000; // 剩 110 秒
+  await s2.flow.inputCode('481203');
+  assert.equal(s2.calls.verifyOtp.length, 0);
+  assert.equal(t2.tc.stale, 1);
+  assert.equal((await loadPending(s2.store, s2.nowRef.t)).email, 'me@x.com');
+});
+
+test('Telegram 事前检查：start() 时已不够 → onInitStale，不读 pending 换页', async () => {
+  const { telegram, tc } = tg({ authDate: SEC(T0) - 590 });
+  const { flow, store } = setup({ telegram });
+  await savePending(store, { email: 'me@x.com', sentAt: T0 - 30_000 });
+  await flow.start();
+  assert.equal(tc.stale, 1);
+  assert.notEqual(flow.state.step, 'code');
+  assert.equal((await loadPending(store, T0)).email, 'me@x.com', 'pending 保留');
+});
+
+test('Telegram 事前检查用 bindDeadline（服务器算的）：手机时钟快 8 分钟也能登录', async () => {
+  // 本机时间比真实快 480 秒：用 authDate 算会以为只剩 60 秒；服务器说还剩 540 秒
+  const { telegram, tc } = tg({ authDate: SEC(T0) - 540, bindDeadline: T0 + 540_000 });
+  const { flow, signed } = setup({ telegram });
+  await login(flow);
+  await flow.confirmLink();
+  assert.equal(tc.stale, 0);
+  assert.equal(signed.length, 1);
+});
+
+test('Telegram：按「连接」时只剩 5 秒以内 → 不送 bind、作废 session、onInitStale', async () => {
+  const { telegram, tc } = tg({ bindDeadline: T0 + 300_000 });
+  const { flow, calls, nowRef } = setup({ telegram });
+  await login(flow);
+  nowRef.t = T0 + 296_000;
+  await flow.confirmLink();
+  await flush();
+  assert.equal(tc.link.length, 0);
+  assert.equal(calls.discardSession.length, 1);
+  assert.equal(tc.stale, 1);
+});
+
+test('PWA（没有 telegram）：没有连接步骤，confirmLink／cancelLink 没作用', async () => {
+  const { flow, signed, store } = setup();
+  await login(flow);
+  assert.equal(flow.state.step, 'done');
+  assert.equal(signed.length, 1);
+  assert.equal((await store.getMeta('tgId')) ?? null, null);
+  await flow.confirmLink();
+  flow.cancelLink();
+  assert.equal(flow.state.step, 'done');
 });

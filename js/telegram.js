@@ -7,6 +7,8 @@
 export const TG_SDK_URL = 'https://telegram.org/js/telegram-web-app.js?65';
 export const TG_SDK_TIMEOUT_MS = 8000;
 export const TG_BRIDGE_WAIT_MS = 1500;
+// 连接（tg-link bind）的 initData 时效；要和服务器 _shared/telegram.ts 的 TG_BIND_MAX_SEC 相同（tests/telegram-env 检查）
+export const TG_BIND_MAX_SEC = 600;
 const HINT_KEY = 'jz_tg';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
