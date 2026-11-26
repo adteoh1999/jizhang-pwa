@@ -52,6 +52,10 @@
   --login-sheen: 0.55;
   --login-halo: 0.9;
   --login-error: #B4000F;
+  /* 欢迎页（3c-1）：示例账单小卡（实心、不模糊）的底、内框线、投影 */
+  --chip-bg: rgba(255, 255, 255, 0.86);
+  --chip-edge: rgba(255, 255, 255, 0.95);
+  --chip-shadow: 0 14px 30px -16px rgba(50, 60, 110, 0.38), 0 2px 6px -3px rgba(40, 50, 90, 0.14);
   --income: #157A35;
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
@@ -116,6 +120,7 @@
     --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #4CD07A; --red: rgb(255, 66, 69);
     --field: rgba(255, 255, 255, 0.07); --coin: rgba(30, 36, 46, 0.85); --login-sheen: 0.12; --login-halo: 0.5; --login-error: #FF6B6F;
+    --chip-bg: rgba(30, 34, 42, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
     --track: rgba(255, 255, 255, 0.14);
     --glass-sheen: rgba(255, 255, 255, 0.18);
     --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
@@ -148,6 +153,7 @@
   --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #4CD07A; --red: rgb(255, 66, 69);
   --field: rgba(255, 255, 255, 0.07); --coin: rgba(30, 36, 46, 0.85); --login-sheen: 0.12; --login-halo: 0.5; --login-error: #FF6B6F;
+  --chip-bg: rgba(30, 34, 42, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
   --track: rgba(255, 255, 255, 0.14);
   --glass-sheen: rgba(255, 255, 255, 0.18);
   --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);

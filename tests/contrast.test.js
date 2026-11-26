@@ -27,6 +27,10 @@ const STACKS = ['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((
   // 登录页（2d）：输入框（--field）压在晨雾上，框内文字 ink、次要字 ink-2
   .concat(['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) => [
     ['--ink', [sky, '--field'], 4.5], ['--ink-2', [sky, '--field'], 4.5],
+  ]))
+  // 3c-1 欢迎页：示例账单小卡（--chip-bg）压在晨雾上，名称 ink、备注 ink-2、收入金额 income
+  .concat(['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) => [
+    ['--ink', [sky, '--chip-bg'], 4.5], ['--ink-2', [sky, '--chip-bg'], 4.5], ['--income', [sky, '--chip-bg'], 4.5],
   ]));
 
 const tokens = { light, dark: { ...light, ...attrDark } };
