@@ -48,7 +48,7 @@ const T = SIGNOUT_TEXT;
 export const unsyncedTitle = (txCount) => (txCount > 0 ? `还有 ${txCount} 笔没同步` : '还有改动没同步');
 
 // 不能「先同步」的原因（null＝可以）
-function noSyncReason({ sync, owner, userId, store, online }) {
+function noSyncReason({ sync, owner, userId, store, online, T = SIGNOUT_TEXT }) {
   if (!sync) return T.reasonNoSync;
   const st = sync.status().state;
   if (st === 'signed-out') return T.reasonSignedOut;
@@ -93,6 +93,7 @@ async function flow({
   syncWaitMs = 25_000, // 「正在同步…」最多挡这么久（审核 S-6：一轮上限 120 秒，不能挡那么久）
   text = null,
   beforeWipe = null,
+  exportable = true, // false：不提供「导出 CSV」（Telegram 里暂不支援，3c 再处理）
 }) {
   const T = text ? { ...SIGNOUT_TEXT, ...text } : SIGNOUT_TEXT;
   for (;;) {
@@ -120,7 +121,7 @@ async function flow({
       if (!ok) return 'cancel';
       break;
     }
-    const reason = noSyncReason({ sync, owner, userId, store, online: !offlineNote });
+    const reason = noSyncReason({ sync, owner, userId, store, online: !offlineNote, T });
     const answer = await dialogs.choiceDialog({
       title: unsyncedTitle(info.txCount),
       // 原因另起一行（2f 截图⑥：接在同一段句尾会落单）；离线那句已含「要连上网络才能再登录」，不再重复
@@ -128,7 +129,7 @@ async function flow({
       // 直排四个（用户决定）；焦点放「取消」（登出会丢资料，Enter 不该往下走）
       buttons: [
         ...(reason ? [] : [{ label: T.syncLabel, value: 'sync' }]),
-        { label: T.exportLabel, keepOpen: true, onClick: exportCsv },
+        ...(exportable ? [{ label: T.exportLabel, keepOpen: true, onClick: exportCsv }] : []),
         { label: T.forceLabel, value: 'signout', destructive: true },
         { label: T.cancelLabel, value: 'cancel', focus: true },
       ],

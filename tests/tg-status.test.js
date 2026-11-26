@@ -85,3 +85,17 @@ test('refreshTgStatus：同时叫两次 → 只问一次', async () => {
   assert.deepEqual(a, b);
   assert.equal(calls.length, 1);
 });
+
+test('审核：旧的回应晚到，不会盖掉之后 force 写入的新结果', async () => {
+  const store = await mk();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const slow = opts(store, { now: T0, status: async () => { await gate; return { ok: true, data: { linked: true, label: '旧' } }; } });
+  const p = refreshTgStatus(store, slow.o);
+  await new Promise((r) => setTimeout(r, 0));
+  const fast = opts(store, { now: T0 + 1000, status: { ok: true, data: { linked: false } } });
+  assert.deepEqual(await refreshTgStatus(store, { ...fast.o, force: true }), { linked: false, label: '' });
+  release();
+  assert.equal(await p, null);
+  assert.deepEqual(await readTgStatus(store, 'u-A'), { linked: false, label: '' });
+});

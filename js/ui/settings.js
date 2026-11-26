@@ -333,6 +333,8 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       if (sync) sync.stop();
       try { await forgetSession(store); } catch (e) { console.warn(`[settings] 清登录失败：${e && e.name ? e.name : '未知'}`); }
       closeMiniApp(telegram.webApp);
+      // close() 没作用时的后备：重新载入会凭 initData 换新登录（账本保留）
+      setTimeout(() => location.reload(), 800);
       return;
     }
     // 离线时清了登录也收不到验证码，会卡在登录页：先挡下

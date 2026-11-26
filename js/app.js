@@ -16,10 +16,9 @@ import { mountLogin, askReset } from './ui/login.js';
 import { loadSession, bootTarget, getValidSession, replaceSessionIfSameUser, wipeLocalLocked, logoutServer } from './auth.js';
 import { detectTelegram, closeMiniApp } from './telegram.js';
 import { tgLogin, tgLink } from './tg-api.js';
-import { runTgBoot, runTgCheck, shouldRecheck, TG_TEXT } from './tg-boot.js';
+import { runTgBoot, runTgCheck, checkDue, TG_TEXT } from './tg-boot.js';
 import { runTgGone } from './ui/tg-gone.js';
 import { renderFatal, renderDbError, renderLoading } from './ui/fatal.js';
-import { createExporter } from './ui/export-csv.js';
 import { HIDE_KEY } from './ui/home.js';
 import { announceLedgerReset } from './ledger-channel.js';
 import { createRealtime } from './realtime.js';
@@ -52,12 +51,20 @@ async function wipeDevice(store) {
   return ok;
 }
 
+/** 按了「关闭」但 close() 没作用（例如内建浏览器）时显示的挡画面。 */
+function renderClosed(tg) {
+  renderFatal(document.getElementById('app'), {
+    title: TG_TEXT.closedTitle, message: TG_TEXT.closedMessage, buttonLabel: TG_TEXT.close, onClick: () => closeMiniApp(tg.webApp),
+  });
+}
+
 /** 「Telegram 已解除连接」流程（启动时、App 开着检查到时共用）。stop：停同步与即时连线。 */
 function tgGone(store, tg, stop = () => {}) {
   return runTgGone({
     store, stop, wipe: () => wipeDevice(store), reload: () => location.reload(),
-    choice: choiceDialog, message: messageDialog, exportCsv: createExporter(store),
+    choice: choiceDialog, message: messageDialog,
     closeMiniApp: () => closeMiniApp(tg.webApp), announceReset: announceLedgerReset,
+    onClosed: () => renderClosed(tg),
   });
 }
 
@@ -202,15 +209,14 @@ function mountShell(root, store, session, { telegram = null } = {}) {
   settings.enter(); // 站主判断：启动时、回前景时（S16）
   document.addEventListener('visibilitychange', () => { if (!document.hidden) settings.enter(); });
 
-  // Telegram：确认这个 Telegram 还连着这个账号（启动后一次；回前景最多 30 分钟一次，r1-S11）。
-  // initData 过 24 小时后 check 会回 init_stale → skip（要关掉重开才会再检查）。
+  // Telegram：确认这个 Telegram 还连着这个账号（启动后一次；回前景时 ok 之后最多 30 分钟一次、skip 之后 1 分钟，r1-S11；
+  // 连上网络时也检查）。initData 过 24 小时后 check 会回 init_stale → skip（要关掉重开才会再检查）。
   if (telegram) {
-    let lastCheck = 0;
+    const last = { lastAt: 0, lastResult: null };
     let running = false;
     const check = async () => {
       if (running || !navigator.onLine) return;
       running = true;
-      lastCheck = Date.now();
       try {
         const r = await runTgCheck({
           env: telegram, userId: session.user_id,
@@ -220,15 +226,19 @@ function mountShell(root, store, session, { telegram = null } = {}) {
           saveSession: (s) => replaceSessionIfSameUser(store, s, session.user_id),
           discard: (s) => { logoutServer(fetchFn, s.access_token).catch(() => {}); },
         });
+        Object.assign(last, { lastAt: Date.now(), lastResult: r });
+        if (r === 'renewed') { sync.schedule({ force: true }); realtime.check(); } // 同步可能已停在「登录已过期」
         if (r === 'gone') await tgGone(store, telegram, () => { realtime.stop(); sync.stop(); });
       } catch (e) {
+        Object.assign(last, { lastAt: Date.now(), lastResult: 'skip' });
         console.warn(`[tg] 检查连接失败：${e && e.name ? e.name : '未知'}`);
       } finally {
         running = false;
       }
     };
     check();
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && shouldRecheck(lastCheck, Date.now())) check(); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && checkDue(last, Date.now())) check(); });
+    window.addEventListener('online', () => { if (checkDue(last, Date.now())) check(); });
   }
 }
 
@@ -257,7 +267,7 @@ async function bootTelegram(root, store, tg) {
     tgLogin: (initData) => tgLogin(fetchFn, initData, Date.now()),
     logoutServer: (s) => { logoutServer(fetchFn, s.access_token).catch(() => {}); },
     choice: choiceDialog,
-    askReset: (info) => askReset(store, info),
+    askReset: (info) => askReset(store, info, { exportable: false }), // Telegram 里暂不提供导出（3c）
     wipe: () => wipeDevice(store),
     showScreen: (o) => renderFatal(root, o),
     showLoading: () => renderLoading(root, '正在载入…'),
@@ -267,12 +277,17 @@ async function bootTelegram(root, store, tg) {
       telegram: {
         tgId: tg.tgId, label: r.label, authDate: tg.authDate, bindDeadline: r.bindDeadline,
         link: (s) => tgLink(fetchFn, s.access_token, 'bind', { initData: tg.initData }),
+        status: (s) => tgLink(fetchFn, s.access_token, 'status'),
         onInitStale: stale,
+        onCancelUncertain: (linked) => messageDialog({
+          title: linked ? '已经连接成功' : '可能已经连接成功',
+          message: '如果不想让这个 Telegram 使用这本账，请到手机 PWA 的设置里按「解除 Telegram 连接」。',
+        }),
       },
       onSignedIn: (s) => enterApp(root, store, s, { telegram: tg }),
     }),
     closeMiniApp: () => closeMiniApp(tg.webApp),
-    toast: (text) => showToast(text),
+    toast: (text) => showToast(text, { duration: 8000 }), // 第一次用 Telegram 身份进入的提示（伪造身份的防线之一）：留久一点
     announceReset: announceLedgerReset,
     runTgGone: () => tgGone(store, tg),
   });

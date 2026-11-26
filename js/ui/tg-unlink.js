@@ -16,6 +16,10 @@ export const TG_UNLINK_TEXT = Object.freeze({
   needNetMessage: '连上网络后再试一次。',
   reloginTitle: '请重新登录后再试',
   reloginMessage: '登录已过期，没办法解除连接。',
+  retryTitle: '暂时无法完成，请稍后再试',
+  retryMessage: '请确认网络后再试一次。',
+  staleTitle: '请关掉后重新打开再试',
+  staleMessage: '这次打开太久了，要重新从 @adjizhangbot 打开。',
   pwaFailTitle: '没能解除连接',
   doneToast: '已解除连接',
   partialTitle: '已解除连接，但没能登出其他设备',
@@ -28,6 +32,15 @@ export const TG_UNLINK_TEXT = Object.freeze({
   miniTitle: '要解除连接吗？',
   miniMessage: '这台设备上的账本会清除。这个账号在其他设备（包括 iPhone 的 PWA）也会被登出，最晚 1 小时内生效。',
   miniForce: '仍要解除连接',
+  // Mini App 没有「登出」：登出流程里提到登出／登录的句子都换掉
+  mini: Object.freeze({
+    unsyncedMessage: '解除连接会遗失这些记录。',
+    offlineNote: '现在离线，联网才能解除连接。',
+    reasonSignedOut: '登录已过期，现在无法同步。',
+    reasonOffline: '现在离线，无法同步，也要连上网络才能解除连接。',
+    reasonErrors: '这些记录上传不了。',
+    failTitle: '没能解除连接',
+  }),
 });
 const U = TG_UNLINK_TEXT;
 const defaultOnline = () => (globalThis.navigator ? globalThis.navigator.onLine !== false : true);
@@ -53,10 +66,15 @@ export async function runTgUnlinkPwa({
     const unblock = block(U.busy);
     try {
       const got = await getSession();
-      if (!got || !got.session || got.session.user_id !== userId) r = 'relogin';
+      if (got && got.retry) r = 'retry'; // 断网、等锁超时：不是登录过期
+      else if (!got || !got.session || got.session.user_id !== userId) r = 'relogin';
       else r = await link(got.session.access_token, 'unlink');
     } finally {
       try { unblock(); } catch { /* 忽略 */ }
+    }
+    if (r === 'retry') {
+      await dialogs.messageDialog({ title: U.retryTitle, message: U.retryMessage });
+      return 'fail';
     }
     if (r === 'relogin') {
       await dialogs.messageDialog({ title: U.reloginTitle, message: U.reloginMessage });
@@ -70,7 +88,7 @@ export async function runTgUnlinkPwa({
     if (r.data && r.data.others === false) {
       const v = await dialogs.choiceDialog({
         title: U.partialTitle, message: U.partialMessage,
-        buttons: [{ label: U.retry, value: 'retry', bold: true }, { label: U.later, value: 'later' }],
+        buttons: [{ label: U.later, value: 'later' }, { label: U.retry, value: 'retry', bold: true }], // 安全选项在左
       });
       if (v === 'retry') continue; // unlink 可以重试：已解除的回 unlinked:false，但会再登出其他设备一次
       return 'partial';
@@ -113,6 +131,10 @@ export function runTgUnlinkMiniApp(deps) {
       // token 失效：凭 initData 问 tg-login
       const l = await login(env.initData);
       if (l && l.ok && l.status === 'unlinked') return true; // 服务器已经没有这个连接：直接清本机
+      if (l && l.ok && l.status === 'stale') { // 打开太久：稍后再试也不会好，要关掉重开
+        await dialogs.messageDialog({ title: U.staleTitle, message: U.staleMessage });
+        return false;
+      }
       if (!(l && l.ok && l.status === 'linked' && l.session.user_id === userId)) {
         if (l && l.ok && l.session) discard(l.session);
         return fail();
@@ -132,7 +154,8 @@ export function runTgUnlinkMiniApp(deps) {
 
   return runSignOut({
     ...deps, dialogs, isOnline,
-    text: { plainTitle: U.miniTitle, plainMessage: U.miniMessage, confirmLabel: U.confirmLabel, forceLabel: U.miniForce, busyLabel: U.busy },
+    text: { ...U.mini, plainTitle: U.miniTitle, plainMessage: U.miniMessage, confirmLabel: U.confirmLabel, forceLabel: U.miniForce, busyLabel: U.busy },
     beforeWipe,
+    exportable: false,
   });
 }

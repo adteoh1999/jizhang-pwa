@@ -33,7 +33,8 @@ const TG_LINK_MIN_SEC = 5;     // 按「连接」时至少要剩这么多秒
  * api：{ registerEmail(email, invite), requestOtp(email), verifyOtp(email, code, nowMs), discardSession?(session) }（已绑好 fetch）
  * confirmReset({txCount})：换账号、本地还有没上传的记录时问（导出 CSV 后清除）→ Promise<boolean>
  * onReset()：换账号清除成功后（通知其他分页）
- * telegram：null（PWA）或 { tgId, label, authDate, bindDeadline, link(session) → tgLink 的回传, onInitStale() }
+ * telegram：null（PWA）或 { tgId, label, authDate, bindDeadline, link(session) → tgLink 的回传, status(session) → tgLink status 的回传,
+ *   onInitStale(), onCancelUncertain(linked: true | null) }
  */
 export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn, confirmReset = async () => true, onReset = () => {}, telegram = null }) {
   const state = {
@@ -48,6 +49,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
   let lastSend = null;        // {email, at}：这个流程最近一次送出 requestOtp（送出前就记；R1-11）
   let linkSession = null;     // Telegram：验证成功、等按「连接」的 session（还没写入）
   let linkSwitching = false;
+  let linkUncertain = false;  // 按过「连接」但结果不明（超时、5xx）：服务器可能已经连好了
 
   const discard = (s) => {
     if (s && api.discardSession) Promise.resolve().then(() => api.discardSession(s)).catch(warn('discardSession'));
@@ -108,7 +110,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
     state.step = 'code';
     lastFailedCode = '';
     pendingUsed = false;
-    savePending(store, { email, sentAt }).catch(warn('savePending')); // 写不进去也照样进验证码页（信已寄出）
+    savePending(store, { email, sentAt, tgId: telegram ? telegram.tgId : undefined }).catch(warn('savePending')); // 写不进去也照样进验证码页（信已寄出）
   }
 
   const flow = {
@@ -120,6 +122,12 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
       let p = null;
       try { p = await loadPending(store, now()); } catch (e) { warn('loadPending')(e); }
       if (touched) { set({ ready: true }); return; }
+      if (p && telegram && p.tgId !== telegram.tgId) {
+        // 别的 Telegram（同一台手机换了账号）要的验证码：不显示那个邮箱
+        clearPending(store).catch(warn('clearPending'));
+        set({ ready: true, step: 'welcome' });
+        return;
+      }
       if (p && !p.expired) {
         state.sentAt = p.sentAt;
         set({ ready: true, step: 'code', email: p.email, code: '' });
@@ -187,6 +195,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
         setNotice('');
         let pending = null;
         try { pending = await loadPending(store, now()); } catch (e) { warn('loadPending')(e); }
+        if (pending && telegram && pending.tgId !== telegram.tgId) pending = null;
         if (pending && !pending.expired && pending.email === email && !pendingUsed) { enterCode(email, pending.sentAt); return; }
 
         const reg = await api.registerEmail(email, invite);
@@ -209,6 +218,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
 
     resend() {
       if (state.step !== 'code' || flow.resendLeft() > 0) return Promise.resolve();
+      if (tgTooLate()) return Promise.resolve();
       return guarded('resend', async () => {
         const otp = await sendOtp(state.email);
         if (otp.ok) { enterCode(state.email, now(), '已重新发送'); return; }
@@ -305,7 +315,11 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
         try {
           if (switching) await store.resetForAccount(s.user_id, { meta });
           else await store.setMetas(meta);
-        } catch (e) { notSaved(switching ? 'resetForAccount' : 'saveSession')(e); return; }
+        } catch (e) {
+          notSaved(switching ? 'resetForAccount' : 'saveSession')(e);
+          discard(s); // 没存起来的 session：尽力作废
+          return;
+        }
         if (switching) { try { onReset(); } catch (e) { warn('onReset')(e); } }
         await clearPending(store).catch(warn('clearPending'));
         state.step = 'done';
@@ -338,7 +352,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
             linkSession = null;
             discard(s);
             Object.assign(state, { step: 'email' });
-            setError('登录资料没存好，请重新发送验证码');
+            setError('登录资料没存好，请关掉后重新打开'); // 服务器已连接：重新打开就会直接进入
             return;
           }
           if (linkSwitching) { try { onReset(); } catch (e) { warn('onReset')(e); } }
@@ -348,7 +362,7 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
           return;
         }
         if (r && r.code === 'init_stale') { linkSession = null; discard(s); stale = true; return; }
-        if (r && r.retry) { setError(r.error || UNEXPECTED); return; } // 留在连接步骤，可以再按（不必重要验证码）
+        if (r && r.retry) { linkUncertain = true; setError(r.error || UNEXPECTED); return; } // 留在连接步骤，可以再按（不必重要验证码）
         linkSession = null;
         discard(s);
         state.step = 'email';
@@ -358,15 +372,34 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
       if (signedIn) onSignedIn(signedIn);
     },
 
-    /** Telegram：不连接。作废这次的 session、回欢迎页，本地资料不动。 */
-    cancelLink() {
+    /**
+     * Telegram：不连接。作废这次的 session、回欢迎页，本地资料不动。
+     * 之前按「连接」结果不明（超时、5xx）：服务器可能已经连好了 → 先问状态（用户 2026-11-26 选），
+     * 连上了或问不到 → onCancelUncertain(true | null) 让画面说明「可以到 PWA 设置里解除」。
+     */
+    async cancelLink() {
       if (state.busy || state.step !== 'link') return;
       const s = linkSession;
       linkSession = null;
+      let linked = false;
+      if (linkUncertain && s && telegram.status) {
+        state.busy = 'cancel';
+        emit();
+        try {
+          const r = await telegram.status(s);
+          linked = r && r.ok ? r.data.linked === true : null;
+        } catch (e) {
+          warn('status')(e);
+          linked = null;
+        }
+        state.busy = false;
+      }
+      linkUncertain = false;
       discard(s);
       setError('');
       setNotice('');
       set({ step: 'welcome', linkLabel: '', linkEmail: '' });
+      if (linked !== false) { try { telegram.onCancelUncertain(linked); } catch (e) { warn('onCancelUncertain')(e); } }
     },
   };
   return flow;

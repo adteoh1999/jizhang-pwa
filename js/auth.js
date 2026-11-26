@@ -372,9 +372,10 @@ export const clearSession = (store) => store.setMeta('session', null);
 export async function loadPending(store, nowMs) {
   const p = await store.getMeta('loginPending');
   if (!p || !isStr(p.email) || !Number.isFinite(p.sentAt)) return null;
-  return { email: p.email, sentAt: p.sentAt, expired: nowMs - p.sentAt >= OTP_TTL_MS };
+  return { email: p.email, sentAt: p.sentAt, expired: nowMs - p.sentAt >= OTP_TTL_MS, ...(isStr(p.tgId) ? { tgId: p.tgId } : {}) };
 }
-export const savePending = (store, { email, sentAt }) => store.setMeta('loginPending', { email, sentAt });
+// tgId：Telegram 模式记下是哪个 Telegram 要的验证码（同一台手机换了 Telegram 账号，不显示别人的邮箱，3b 前端审核 7）
+export const savePending = (store, { email, sentAt, tgId }) => store.setMeta('loginPending', { email, sentAt, ...(isStr(tgId) ? { tgId } : {}) });
 export const clearPending = (store) => store.setMeta('loginPending', null);
 
 export async function loadLastUserId(store) {

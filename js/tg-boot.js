@@ -4,6 +4,7 @@
 import { loadSession, loadLastUserId } from './auth.js';
 
 export const TG_RECHECK_MS = 30 * 60_000; // 回前景最多 30 分钟检查一次（initData 过 24 小时后 check 会回 init_stale → skip）
+export const TG_RETRY_CHECK_MS = 60_000;  // 上次 skip（网络错、等锁超时）：1 分钟后就可以再试
 const LOADING_AFTER_MS = 1000;
 
 export const TG_TEXT = Object.freeze({
@@ -21,7 +22,11 @@ export const TG_TEXT = Object.freeze({
   close: '关闭',
   foreignTitle: '这台设备上有另一个账号的账本',
   foreignMessage: (label) => `继续会用${label ? ` Telegram ${label} ` : '这个 Telegram '}登录，并清除这本账（还没上传的记录会消失）。不认识这个名字就按「关闭」。`,
+  foreignUnlinkedMessage: '继续会清除这本账（还没上传的记录会消失），之后要用邮箱登录。不认识这本账就按「关闭」。',
   foreignClear: '清除并继续',
+  // 按了「关闭」但 close() 没作用（例如 Telegram 内建浏览器）：不要留白屏
+  closedTitle: '请关掉这个页面',
+  closedMessage: '下次从 @adjizhangbot 打开时会再问一次。',
   signedInToast: (label, email) => `已用 Telegram ${label ? `${label} ` : ''}登录 · ${email}`,
 });
 
@@ -58,6 +63,12 @@ export function tgAfterLogin({ local, envTgId, result }) {
 
 export const shouldRecheck = (lastMs, nowMs) => nowMs - lastMs >= TG_RECHECK_MS;
 
+/** 现在该不该再检查连接：从没检查 → 是；上次 skip → 1 分钟后；ok／renewed → 30 分钟后。 */
+export function checkDue({ lastAt, lastResult }, nowMs) {
+  if (!lastResult) return true;
+  return nowMs - lastAt >= (lastResult === 'skip' ? TG_RETRY_CHECK_MS : TG_RECHECK_MS);
+}
+
 /**
  * Telegram 启动。deps：
  *   store, env（detectTelegram 的 telegram 结果）, online(), tgLogin(initData) → tg-api.tgLogin 的结果,
@@ -72,6 +83,12 @@ export async function runTgBoot(deps) {
   const screen = (title, message, buttonLabel, onClick) => { deps.showScreen({ title, message, buttonLabel, onClick }); return 'screen'; };
   const retryScreen = (title, message) => screen(title, message, TG_TEXT.retry, reload);
   const closeScreen = () => screen(TG_TEXT.invalidTitle, TG_TEXT.invalidMessage, TG_TEXT.close, () => deps.closeMiniApp());
+  // 用户选了关闭：先画挡画面再 close()（close() 没作用时不是白屏）
+  const closeNow = () => {
+    screen(TG_TEXT.closedTitle, TG_TEXT.closedMessage, TG_TEXT.close, () => deps.closeMiniApp());
+    deps.closeMiniApp();
+    return 'closed';
+  };
   const discard = (s) => { try { if (s) deps.logoutServer(s); } catch { /* 尽力 */ } };
   const notSaved = (s) => { discard(s); return retryScreen(TG_TEXT.notSavedTitle, TG_TEXT.notSavedMessage); };
 
@@ -85,12 +102,22 @@ export async function runTgBoot(deps) {
   let result;
   try { result = await deps.tgLogin(env.initData); } finally { clearTimeout(timer); }
 
+  const fresh = result && result.status === 'linked' ? result.session : null;
+  try {
+    return await afterLogin(deps, { session, tgId, result, fresh, screen, retryScreen, closeScreen, closeNow, discard, notSaved });
+  } catch (e) {
+    discard(fresh); // 后面出意外：刚换来的 session 没人用，先作废
+    throw e;
+  }
+}
+
+async function afterLogin(deps, { session, tgId, result, fresh, retryScreen, closeScreen, closeNow, discard, notSaved }) {
+  const { store, env } = deps;
   const owner = (await store.getMeta('owner_user_id')) || null;
   const last = await loadLastUserId(store);
   const prevUser = owner ?? last ?? (session ? session.user_id : null);
   const owned = store.hasOwnedData();
   const { do: act } = tgAfterLogin({ local: { session, tgId, prevUser, owned }, envTgId: env.tgId, result });
-  const fresh = result && result.status === 'linked' ? result.session : null;
   const meta = fresh ? { session: fresh, tgId: env.tgId, lastUserId: fresh.user_id } : null;
   const oldValid = session && !session.invalid && (!fresh || session.access_token !== fresh.access_token) ? session : null;
   const toastIn = () => deps.toast(TG_TEXT.signedInToast(result.label, fresh.email));
@@ -117,8 +144,7 @@ export async function runTgBoot(deps) {
       const info = store.unsyncedInfo({ all: !owner });
       if (info.any && !(await deps.askReset(info))) {
         discard(fresh);
-        deps.closeMiniApp();
-        return 'closed';
+        return closeNow();
       }
       try { await store.resetForAccount(fresh.user_id, { meta }); } catch { return notSaved(fresh); }
       deps.announceReset();
@@ -131,16 +157,16 @@ export async function runTgBoot(deps) {
       // 别的 Telegram 留下的账本：不提供导出（那不是这个人的资料），只能清除或关闭
       const v = await deps.choice({
         title: TG_TEXT.foreignTitle,
-        message: TG_TEXT.foreignMessage(result.label),
+        message: fresh ? TG_TEXT.foreignMessage(result.label) : TG_TEXT.foreignUnlinkedMessage,
+        // 安全选项在左（同 confirmDialog）
         buttons: [
-          { label: TG_TEXT.foreignClear, destructive: true, value: 'clear' },
           { label: TG_TEXT.close, value: 'close', focus: true },
+          { label: TG_TEXT.foreignClear, destructive: true, value: 'clear' },
         ],
       });
       if (v !== 'clear') {
         discard(fresh);
-        deps.closeMiniApp();
-        return 'closed';
+        return closeNow();
       }
       if (!(await deps.wipe())) return notSaved(fresh);
       deps.announceReset();

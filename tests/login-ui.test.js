@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { keyboardLift, codeCells, splitTail, makeErrorWriter, LOGIN_TEXT, linkLeadParts, loginExtras } from '../js/ui/login.js';
+import { keyboardLift, codeCells, splitTail, makeErrorWriter, LOGIN_TEXT, linkLeadParts, loginExtras, askReset } from '../js/ui/login.js';
 import { css } from './helpers/css-tokens.js';
 
 const base = { blockTop: 300, currentLift: 0, vvOffsetTop: 0, minTop: 60 };
@@ -206,4 +206,17 @@ test('loginExtras：Telegram 模式不显示 Safari 提示、邮箱页多一句�
   assert.deepEqual(loginExtras({ telegram: true, iosTab: false }), { safari: false, tgHint: true });
   assert.deepEqual(loginExtras({ telegram: false, iosTab: true }), { safari: true, tgHint: false });
   assert.deepEqual(loginExtras({ telegram: false, iosTab: false }), { safari: false, tgHint: false });
+});
+
+test('审核：askReset exportable:false（Telegram 里）→ 没有「导出 CSV」，内文不提导出', async () => {
+  let seen = null;
+  const r = await askReset({}, { txCount: 2 }, {
+    exportable: false,
+    choice: async (o) => { seen = o; return 'cancel'; },
+    confirm: async () => true,
+    exporter: () => () => {},
+  });
+  assert.equal(r, false);
+  assert.deepEqual(seen.buttons.map((b) => b.label), [LOGIN_TEXT.switchClear, LOGIN_TEXT.switchCancel]);
+  assert.doesNotMatch(seen.message, /导出/);
 });

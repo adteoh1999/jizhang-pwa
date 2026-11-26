@@ -1,7 +1,8 @@
 // 3b-9：Telegram 启动决策（纯函数）、runTgBoot、runTgCheck、replaceSessionIfSameUser
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tgBootStep, tgAfterLogin, runTgBoot, runTgCheck, shouldRecheck, TG_RECHECK_MS, TG_TEXT } from '../js/tg-boot.js';
+import { tgBootStep, tgAfterLogin, runTgBoot, runTgCheck, shouldRecheck, checkDue, TG_RECHECK_MS, TG_RETRY_CHECK_MS, TG_TEXT } from '../js/tg-boot.js';
+import { readFileSync } from 'node:fs';
 import { replaceSessionIfSameUser, loadSession, saveSession } from '../js/auth.js';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
@@ -25,7 +26,6 @@ test('tgBootStep：session 在、没有 invalid、tgId 相同才 reuse', () => {
       assert.equal(tgBootStep({ session: s, tgId: t, envTgId: ENV_TG }), want, `${sk}/${tk}`);
     }
   }
-  assert.equal(tgBootStep({ session: SESSIONS.invalid, tgId: ENV_TG, envTgId: ENV_TG }), 'login');
 });
 
 test('tgAfterLogin：穷举 session × tgId × owned × 结果，检查四条不变量', () => {
@@ -70,6 +70,15 @@ test('tgAfterLogin：典型情况', () => {
     assert.equal(tgAfterLogin({ local: L({}), envTgId: ENV_TG, result: { ok: false, kind } }).do, kind);
   }
   assert.equal(tgAfterLogin({ local: L({}), envTgId: ENV_TG, result: { ok: true, status: 'stale' } }).do, 'stale');
+});
+
+test('checkDue：上次 ok／renewed → 30 分钟；skip（网络错等）→ 1 分钟后可以再试；从没检查 → 马上', () => {
+  assert.equal(TG_RETRY_CHECK_MS, 60_000);
+  assert.equal(checkDue({ lastAt: 0, lastResult: null }, T0), true);
+  assert.equal(checkDue({ lastAt: T0, lastResult: 'ok' }, T0 + TG_RECHECK_MS - 1), false);
+  assert.equal(checkDue({ lastAt: T0, lastResult: 'renewed' }, T0 + TG_RECHECK_MS), true);
+  assert.equal(checkDue({ lastAt: T0, lastResult: 'skip' }, T0 + 59_999), false);
+  assert.equal(checkDue({ lastAt: T0, lastResult: 'skip' }, T0 + 60_000), true);
 });
 
 test('shouldRecheck：最多 30 分钟一次', () => {
@@ -222,6 +231,9 @@ test('runTgBoot：switch 取消 → 作废新 session、closeMiniApp、本机不
   assert.equal(log.closed, 1);
   assert.equal(store.transactions().length, 2);
   assert.equal((await loadSession(store)).user_id, 'u-A');
+  // close() 没作用（内建浏览器）时也不是白屏
+  assert.equal(log.screens.length, 1);
+  assert.equal(log.screens[0].title, TG_TEXT.closedTitle);
 });
 
 test('runTgBoot：foreign（别的 Telegram 的账本）→ 对话框不提供导出；按关闭 → 没写入、作废新 session、closeMiniApp', async () => {
@@ -231,14 +243,16 @@ test('runTgBoot：foreign（别的 Telegram 的账本）→ 对话框不提供�
   const c = log.choices[0];
   assert.equal(c.title, '这台设备上有另一个账号的账本');
   assert.equal(c.message, '继续会用 Telegram @zed 登录，并清除这本账（还没上传的记录会消失）。不认识这个名字就按「关闭」。');
-  assert.deepEqual(c.buttons.map((b) => b.label), ['清除并继续', '关闭']);
-  assert.equal(c.buttons[0].destructive, true);
-  assert.equal(c.buttons[1].focus, true);
+  assert.deepEqual(c.buttons.map((b) => b.label), ['关闭', '清除并继续'], '安全选项在左');
+  assert.equal(c.buttons[1].destructive, true);
+  assert.equal(c.buttons[0].focus, true);
   assert.ok(!c.buttons.some((b) => /导出/.test(b.label)));
   assert.deepEqual(log.logout, ['new-u-B']);
   assert.equal(log.closed, 1);
   assert.equal((await loadSession(store)).user_id, 'u-A');
   assert.equal(store.transactions().length, 2);
+  assert.equal(log.screens.length, 1);
+  assert.equal(log.screens[0].title, TG_TEXT.closedTitle);
 });
 
 test('runTgBoot：foreign 按「清除并继续」→ wipe、announceReset、作废旧 session、写新 session、mountShell、toast', async () => {
@@ -258,7 +272,8 @@ test('runTgBoot：foreign＋没连接 → 按清除后到登录页；名字空 �
   const { store } = await makeStore({ tgId: OTHER_TG, owner: 'u-A', txs: 1 });
   const { deps, log } = bootDeps(store, { result: { ...UNLINKED, label: '' }, choice: async () => 'clear' });
   assert.equal(await runTgBoot(deps), 'login');
-  assert.match(log.choices[0].message, /^继续会用这个 Telegram 登录/);
+  assert.equal(log.choices[0].message, TG_TEXT.foreignUnlinkedMessage);
+  assert.equal(TG_TEXT.foreignUnlinkedMessage, '继续会清除这本账（还没上传的记录会消失），之后要用邮箱登录。不认识这本账就按「关闭」。');
   assert.equal(log.wipes, 1);
 });
 
@@ -283,16 +298,16 @@ test('runTgBoot：写入失败 → 作废新 session、「登录资料没存好�
 test('runTgBoot：tgLogin 超过 1 秒才回 → 先显示「正在载入…」；很快回就不显示', async () => {
   const { store } = await makeStore();
   const slow = bootDeps(store);
-  slow.deps.loadingAfterMs = 20;
-  slow.deps.tgLogin = () => new Promise((r) => setTimeout(() => r(linked('u-A')), 60));
+  slow.deps.loadingAfterMs = 30;
+  slow.deps.tgLogin = () => new Promise((r) => setTimeout(() => r(linked('u-A')), 300));
   await runTgBoot(slow.deps);
   assert.equal(slow.log.loading, 1);
   const s2 = await makeStore();
   const fast = bootDeps(s2.store);
-  fast.deps.loadingAfterMs = 50;
-  fast.deps.tgLogin = () => new Promise((r) => setTimeout(() => r(linked('u-A')), 10));
+  fast.deps.loadingAfterMs = 300;
+  fast.deps.tgLogin = () => new Promise((r) => setTimeout(() => r(linked('u-A')), 30));
   await runTgBoot(fast.deps);
-  await new Promise((r) => setTimeout(r, 80));
+  await new Promise((r) => setTimeout(r, 400));
   assert.equal(fast.log.loading, 0);
 });
 
@@ -382,4 +397,26 @@ test('replaceSessionIfSameUser：新 session 不是这个账号 → false；写�
   db.failNextWrite(new Error('disk'));
   assert.equal(await replaceSessionIfSameUser(store, ses('u-A', { access_token: 'NEW' }), 'u-A'), false);
   await saveSession(store, ses('u-A'));
+});
+
+
+test('runTgBoot：tgLogin 之后出意外（例如对话框丢错）→ 新 session 先作废再往外丢', async () => {
+  const { store } = await makeStore({ session: ses('u-A'), tgId: OTHER_TG, owner: 'u-A', txs: 1 });
+  const { deps, log } = bootDeps(store, { result: linked('u-B'), choice: async () => { throw new Error('boom'); } });
+  await assert.rejects(runTgBoot(deps), /boom/);
+  assert.ok(log.logout.includes('new-u-B'));
+});
+
+// app.js 不能在 node 执行：用原始码检查接线（审核建议）
+test('app.js 接线：Telegram 进 App 都带 telegram；renewed 后叫同步；检查用 checkDue、online 也会触发；Telegram 不显示安装提示', () => {
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  const boot = app.slice(app.indexOf('async function bootTelegram'), app.indexOf('async function boot()'));
+  assert.match(boot, /mountShell: \(s\) => enterApp\(root, store, s, \{ telegram: tg \}\)/);
+  assert.match(boot, /onSignedIn: \(s\) => enterApp\(root, store, s, \{ telegram: tg \}\)/);
+  assert.match(app, /saveSession: \(s\) => replaceSessionIfSameUser\(store, s, session\.user_id\)/);
+  assert.match(app, /if \(!telegram\) maybeShowInstallHint/);
+  assert.match(app, /r === 'renewed'[^\n]*sync\.schedule\(\{ force: true \}\)/);
+  assert.match(app, /checkDue\(/);
+  assert.match(app, /addEventListener\('online'/);
+  assert.match(app, /exportable: false/);
 });

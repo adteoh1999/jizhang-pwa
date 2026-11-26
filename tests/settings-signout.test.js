@@ -590,9 +590,36 @@ test('Mini App 解除连接：others:false → 先说明「已解除连接，但
   assert.ok(ran(b.log, 'reload:0'));
 });
 
-test('Mini App 解除连接：有没同步的 → 四个选项照旧（标题沿用登出的）', async () => {
+test('Mini App 解除连接：有没同步的 → 先同步／仍要解除连接／取消；Telegram 里没有「导出 CSV」（用户 2026-11-26 决定）', async () => {
   const b = await setup({ unsynced: 'tx', choices: ['cancel'] });
   const { deps } = tgDeps(b);
   assert.equal(await runTgUnlinkMiniApp(deps), 'cancel');
-  assert.deepEqual(b.dialogs.lastChoice.buttons.map((x) => x.label), [T.syncLabel, T.exportLabel, '仍要解除连接', T.cancelLabel]);
+  assert.deepEqual(b.dialogs.lastChoice.buttons.map((x) => x.label), [T.syncLabel, '仍要解除连接', T.cancelLabel]);
+});
+
+test('runSignOut：exportable:false → 没有「导出 CSV」；不给时照旧有', async () => {
+  const a = await setup({ unsynced: 'tx', choices: ['cancel'] });
+  await runSignOut({ ...a.deps, exportable: false });
+  assert.ok(!a.dialogs.lastChoice.buttons.some((x) => x.label === T.exportLabel));
+  const b = await setup({ unsynced: 'tx', choices: ['cancel'] });
+  await runSignOut(b.deps);
+  assert.ok(b.dialogs.lastChoice.buttons.some((x) => x.label === T.exportLabel));
+});
+
+test('审核：Mini App 解除连接，token 失效＋tg-login 回 stale → 「请关掉后重新打开再试」', async () => {
+  const b = await setup({ confirms: [true] });
+  const { deps } = tgDeps(b, { got: { invalid: true }, login: { ok: true, status: 'stale' } });
+  assert.equal(await runTgUnlinkMiniApp(deps), 'fail');
+  assert.equal(b.dialogs.lastMessage.title, U.staleTitle);
+  assert.equal(U.staleTitle, '请关掉后重新打开再试');
+});
+
+test('审核：Mini App 解除连接的文字没有「登出」（未同步、离线、失败都换掉）', async () => {
+  const b = await setup({ unsynced: 'tx', online: false, choices: ['cancel'] });
+  const { deps } = tgDeps(b);
+  await runTgUnlinkMiniApp(deps);
+  assert.doesNotMatch(b.dialogs.lastChoice.message, /登出|登录/);
+  for (const k of ['unsyncedMessage', 'offlineNote', 'reasonSignedOut', 'reasonOffline', 'reasonErrors', 'failTitle']) {
+    assert.ok(U.mini[k] && !/登出/.test(U.mini[k]), k);
+  }
 });

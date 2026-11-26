@@ -56,7 +56,8 @@ export async function tgLogin(fetchFn, initData, nowMs, { timeoutMs = LOGIN_TIME
   if (status === 200 && isObj(body)) {
     if (body.status === 'linked') {
       try {
-        return { ok: true, status: 'linked', session: toSession(body, '', nowMs), label };
+        const session = toSession(body, '', nowMs);
+        if (session.email) return { ok: true, status: 'linked', session, label }; // 没有邮箱也当不完整（提示与设置页要用）
       } catch { /* 不完整 → 下面当 server */ }
     } else if (body.status === 'unlinked') {
       const left = body.bindLeft;
@@ -74,7 +75,7 @@ export async function tgLogin(fetchFn, initData, nowMs, { timeoutMs = LOGIN_TIME
 
 /**
  * 叫 tg-link：{ok:true, data} | {ok:false, status, code, error, retry}
- * retry：网络错、超时、5xx（含 503 busy）、2xx 但内容不对——都不是明确答案，呼叫端不能据此清资料。
+ * retry：网络错、超时、5xx（含 503 busy）、429、2xx 但内容不对——都不是明确答案，呼叫端不能据此清资料。
  */
 export async function tgLink(fetchFn, accessToken, action, { initData, timeoutMs } = {}) {
   const ms = timeoutMs ?? (action === 'bind' ? BIND_TIMEOUT_MS : LINK_TIMEOUT_MS);
@@ -85,7 +86,7 @@ export async function tgLink(fetchFn, accessToken, action, { initData, timeoutMs
   console.warn(`[tg] tg-link ${action} 失败：HTTP ${status}`);
   if (status === 0) return { ok: false, status: 0, code: null, error: NET, retry: true };
   const code = isObj(body) && LINK_CODES.includes(body.code) ? body.code : null;
-  const retry = isOk(status) || status >= 500;
+  const retry = isOk(status) || status >= 500 || status === 429; // 429：稍后再按一次就好，不是明确失败
   return { ok: false, status, code, error: pick(body, LINK_MESSAGES), retry };
 }
 

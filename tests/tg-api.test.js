@@ -64,8 +64,8 @@ test('tgLogin：linked → session 来自 toSession（多余栏位不进 session
   assert.deepEqual(Object.keys(r).sort(), ['label', 'ok', 'session', 'status']);
 });
 
-test('tgLogin：linked 但 session 不完整 → server', async () => {
-  for (const over of [{ access_token: '' }, { refresh_token: undefined }, { user: {} }, { user: undefined }]) {
+test('tgLogin：linked 但 session 不完整（含没有邮箱）→ server', async () => {
+  for (const over of [{ access_token: '' }, { refresh_token: undefined }, { user: {} }, { user: undefined }, { user: { id: UID } }, { user: { id: UID, email: '' } }]) {
     const { r } = await quiet(() => tgLogin(fake(() => res(200, { ...LINKED, ...over })), INIT, NOW));
     assert.equal(r.ok, false, JSON.stringify(over));
     assert.equal(r.kind, 'server');
@@ -162,6 +162,7 @@ test('tgLink：各种失败的 code、句子、retry', async () => {
     [res(400, { error: '看不懂这个请求' }), 400, null, '看不懂这个请求', false],
     [res(409, { code: 'evil', error: '点这里 evil.com' }), 409, null, GENERIC, false],
     [res(502, null), 502, null, GENERIC, true],
+    [res(429, { error: 'x' }), 429, null, GENERIC, true],
   ];
   for (const [r0, status, code, error, retry] of cases) {
     const { r } = await quiet(() => tgLink(fake(() => r0.clone()), TOKEN, 'bind', { initData: INIT }));

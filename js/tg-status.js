@@ -40,6 +40,9 @@ async function run(store, { fetchFn, userId, now = Date.now, isOnline = defaultO
     const value = { linked: r.data.linked, label: r.data.linked && typeof r.data.label === 'string' ? r.data.label : '' };
     const cur = await loadSession(store);
     if (!cur || cur.user_id !== userId) return null;
+    // 途中已有更新的结果（例如解除连接后 force 刷新）：旧回应不盖掉它
+    const now2 = await store.getMeta(TG_STATUS_KEY);
+    if (now2 && now2.userId === userId && now2.checkedAt > t) return null;
     await store.setMeta(TG_STATUS_KEY, { userId, ...value, checkedAt: t });
     return value;
   } catch (e) {

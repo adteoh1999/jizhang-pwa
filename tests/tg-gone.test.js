@@ -1,6 +1,7 @@
 // 3b-9：「Telegram 已解除连接」流程（js/ui/tg-gone.js）与共用全屏画面（js/ui/fatal.js）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { runTgGone, TG_GONE_TEXT } from '../js/ui/tg-gone.js';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
@@ -29,11 +30,12 @@ function goneDeps(store, answers, { wipeOk = [true] } = {}) {
       exportCsv: () => { log.exports += 1; },
       closeMiniApp: () => { log.closed += 1; },
       announceReset: () => { log.resets += 1; },
+      onClosed: () => { log.onClosed = (log.onClosed || 0) + 1; },
     },
   };
 }
 
-test('runTgGone：都上传了 → 「清除」（红）＋「先关闭」（焦点），没有导出；先停同步', async () => {
+test('runTgGone：都上传了 → 「先关闭」（焦点、左）＋「清除」（红、右），没有导出；先停同步；关闭后画挡画面', async () => {
   const store = await makeStore();
   const { deps, log } = goneDeps(store, ['close']);
   assert.equal(await runTgGone(deps), 'closed');
@@ -41,23 +43,22 @@ test('runTgGone：都上传了 → 「清除」（红）＋「先关闭」（焦
   const c = log.choices[0];
   assert.equal(c.title, 'Telegram 已解除连接');
   assert.equal(c.message, '这台设备上的账本会清除。');
-  assert.deepEqual(c.buttons.map((b) => b.label), ['清除', '先关闭']);
-  assert.equal(c.buttons[0].destructive, true);
-  assert.equal(c.buttons[1].focus, true);
+  assert.deepEqual(c.buttons.map((b) => b.label), ['先关闭', '清除']);
+  assert.equal(c.buttons[1].destructive, true);
+  assert.equal(c.buttons[0].focus, true);
   assert.equal(log.closed, 1);
+  assert.equal(log.onClosed, 1, 'close() 没作用时也不是白屏');
   assert.equal(log.wipes, 0);
 });
 
-test('runTgGone：有没上传的 → 内文多一句（笔数），多「导出 CSV」（keepOpen，按了不关窗）', async () => {
+test('runTgGone：有没上传的 → 内文多两句（笔数、请先关闭）；Telegram 里不提供导出（用户 2026-11-26 选：3b 先拿掉）', async () => {
   const store = await makeStore({ owner: null, txs: 3 });
   const { deps, log } = goneDeps(store, ['close']);
   await runTgGone(deps);
   const c = log.choices[0];
-  assert.equal(c.message, '这台设备上的账本会清除。还有 3 笔没上传，清除后会消失。');
-  assert.deepEqual(c.buttons.map((b) => b.label), ['导出 CSV', '清除', '先关闭']);
-  assert.equal(c.buttons[0].keepOpen, true);
-  c.buttons[0].onClick();
-  assert.equal(log.exports, 1);
+  assert.equal(c.message, '这台设备上的账本会清除。还有 3 笔没上传，清除后会消失。要保留没上传的记录，请先按「先关闭」。');
+  assert.deepEqual(c.buttons.map((b) => b.label), ['先关闭', '清除']);
+  assert.equal(log.exports, 0);
 });
 
 test('runTgGone：按「清除」→ wipe、announceReset、reload', async () => {
@@ -95,6 +96,7 @@ function fakeDocument() {
     Object.assign(el, {
       tagName: tag.toUpperCase(), className: '', attrs: {}, children: [], listeners: {},
       setAttribute(k, v) { this.attrs[k] = v; },
+      focus() { this.focused = true; },
       addEventListener(t, fn) { (this.listeners[t] ||= []).push(fn); },
       append(...cs) { for (const c of cs) this.children.push(typeof c === 'string' ? { text: c } : c); },
       replaceChildren(...cs) { this.children = []; this.append(...cs); },
@@ -124,6 +126,8 @@ test('renderFatal：标题、内文、按钮（点了叫 onClick）；renderDbEr
     assert.equal(btn.textContent, '再试一次');
     btn.listeners.click[0]();
     assert.equal(clicked, 1);
+    assert.equal(h1.attrs.tabindex, '-1');
+    assert.equal(h1.focused, true, '换成挡画面后焦点移到标题（读屏）');
 
     renderDbError(root, new Error('IndexedDB 已停用'));
     const [t2, m2, b2] = root.children[0].children;
@@ -134,4 +138,9 @@ test('renderFatal：标题、内文、按钮（点了叫 onClick）；renderDbEr
     globalThis.document = prevDoc;
     globalThis.Node = prevNode;
   }
+});
+
+test('fatal.js：「正在载入…」用 announce 念（role=status 跟内容一起插入时 VoiceOver 常不念）', () => {
+  const src = readFileSync(new URL('../js/ui/fatal.js', import.meta.url), 'utf8');
+  assert.match(src, /announce\(text\)/);
 });

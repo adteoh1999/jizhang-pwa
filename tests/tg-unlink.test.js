@@ -57,7 +57,7 @@ test('others:false → 「已解除连接，但没能登出其他设备」＋「
   assert.equal(await runTgUnlinkPwa(a.deps), 'done');
   assert.equal(a.log.filter((l) => l.startsWith('unlink:')).length, 2);
   assert.equal(a.log.choice.title, '已解除连接，但没能登出其他设备');
-  assert.deepEqual(a.log.choice.buttons.map((b) => b.label), ['再试一次', '稍后']);
+  assert.deepEqual(a.log.choice.buttons.map((b) => b.label), ['稍后', '再试一次'], '安全选项在左');
   const b = mk({ unlinks: [half], choices: ['later'] });
   assert.equal(await runTgUnlinkPwa(b.deps), 'partial');
   assert.equal(b.log.filter((l) => l.startsWith('unlink:')).length, 1);
@@ -73,11 +73,20 @@ test('服务器失败 → messageDialog 显示服务器句子、不 toast', asyn
 });
 
 test('拿不到有效 session、或是别的账号 → 请重新登录，不叫 unlink', async () => {
-  for (const got of [{ invalid: true }, { retry: true }, { session: { access_token: 'x', user_id: 'u-B' } }]) {
+  for (const got of [{ invalid: true }, { session: { access_token: 'x', user_id: 'u-B' } }]) {
     const { deps, log } = mk({ got });
     assert.equal(await runTgUnlinkPwa(deps), 'fail');
+    assert.ok(log.includes(`message:${U.reloginTitle}`), JSON.stringify(got));
     assert.ok(!log.some((l) => l.startsWith('unlink')), JSON.stringify(got));
   }
+});
+
+test('审核：拿 session 时 retry（断网、等锁超时）→ 「暂时无法完成，请稍后再试」，不叫人重新登录', async () => {
+  const { deps, log } = mk({ got: { retry: true } });
+  assert.equal(await runTgUnlinkPwa(deps), 'fail');
+  assert.ok(log.includes(`message:${U.retryTitle}`));
+  assert.equal(U.retryTitle, '暂时无法完成，请稍后再试');
+  assert.ok(!log.some((l) => l.startsWith('unlink')));
 });
 
 test('tg-unlink.js、settings.js 不用 innerHTML（Telegram 名字一律当文字）', () => {

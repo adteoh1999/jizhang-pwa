@@ -37,11 +37,13 @@ export const LOGIN_TEXT = Object.freeze({
   safariHint: '请先加到主屏幕再使用：点 分享 → 添加到主屏幕。在这里登录后，加到主屏幕还要再登录一次。',
   switchTitle: (n) => (n > 0 ? `还有 ${n} 笔记录没上传` : '还有没上传的改动'),
   switchMessage: '换成新账号会清除这台设备上的账本。已上传的记录还在原来的账号里，没上传的会消失。可以先导出 CSV，或取消后用原来的账号登录、等它上传完。',
+  switchMessageNoExport: '换成新账号会清除这台设备上的账本。已上传的记录还在原来的账号里，没上传的会消失。要保留，请取消后用原来的账号登录、等它上传完。',
   switchExport: '导出 CSV',
   switchClear: '清除并登录',
   switchCancel: '取消登录',
   clearTitle: '清除没上传的记录？',
   clearMessage: 'CSV 存好了吗？清除后无法恢复。',
+  clearMessageNoExport: '清除后无法恢复。',
   clearConfirm: '清除',
   sentTo: (email) => `已寄到 ${email}，10 分钟内有效。`,
   sentToTail: '10 分钟内有效。',
@@ -155,24 +157,26 @@ function heroArt() {
  * 换账号、本地还有没上传的记录（审核 M5）：先「导出 CSV」（在点击里直接导出、不关窗），
  * 再「清除并登录」→ 第二个破坏性确认；第二个按取消 → 回到第一个。回 true = 清除。
  */
-export async function askReset(store, { txCount }, { choice = choiceDialog, confirm = confirmDialog, exporter = createExporter } = {}) {
+// exportable：false → 不提供「导出 CSV」（Telegram 里暂不支援导出，用户 2026-11-26 决定，3c 再处理）
+export async function askReset(store, { txCount }, { choice = choiceDialog, confirm = confirmDialog, exporter = createExporter, exportable = true } = {}) {
   const T = LOGIN_TEXT;
-  const exportCsv = exporter(store);
+  const exportCsv = exportable ? exporter(store) : null;
   // 先收起键盘：关对话框时焦点回到验证码栏，iOS 会在两个对话框之间弹一下键盘（审核 S-6）
   if (globalThis.document && document.activeElement && document.activeElement.blur) document.activeElement.blur();
   for (;;) {
     const v = await choice({
       title: T.switchTitle(txCount),
-      message: T.switchMessage,
+      message: exportable ? T.switchMessage : T.switchMessageNoExport,
       // 直排三个：建议动作（导出）最上、红字清除、取消在最下且有焦点（Enter 不会直接清除）
       buttons: [
-        { label: T.switchExport, bold: true, keepOpen: true, onClick: exportCsv },
+        ...(exportable ? [{ label: T.switchExport, bold: true, keepOpen: true, onClick: exportCsv }] : []),
         { label: T.switchClear, destructive: true, value: 'clear' },
         { label: T.switchCancel, value: 'cancel', focus: true },
       ],
     });
     if (v !== 'clear') return false;
-    if (await confirm({ title: T.clearTitle, message: T.clearMessage, confirmLabel: T.clearConfirm, destructive: true })) return true;
+    const message = exportable ? T.clearMessage : T.clearMessageNoExport;
+    if (await confirm({ title: T.clearTitle, message, confirmLabel: T.clearConfirm, destructive: true })) return true;
   }
 }
 
@@ -197,7 +201,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     },
     store,
     now,
-    confirmReset: (info) => askReset(store, info),
+    confirmReset: (info) => askReset(store, info, { exportable: !telegram }),
     onReset: announceLedgerReset,
     onSignedIn: (s) => { destroy(); onSignedIn(s); },
     telegram,

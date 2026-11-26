@@ -800,12 +800,14 @@ test('复审 8：验证成功但重新载入失败 → 不登录、尽力作废 
 
 // ---------- 3b-8：Telegram 模式的「连接」步骤（R1）、事前检查 ----------
 const SEC = (ms) => Math.floor(ms / 1000);
-function tg({ link = async () => ({ ok: true, data: { result: 'linked' } }), authDate = SEC(T0) - 60, bindDeadline = null, label = '@zed' } = {}) {
-  const tc = { link: [], stale: 0 };
+function tg({ link = async () => ({ ok: true, data: { result: 'linked' } }), authDate = SEC(T0) - 60, bindDeadline = null, label = '@zed', status = async () => ({ ok: true, data: { linked: false, label: '' } }), tgId = '987654321' } = {}) {
+  const tc = { link: [], stale: 0, status: [], uncertain: [] };
   const telegram = {
-    tgId: '987654321', label, authDate, bindDeadline,
+    tgId, label, authDate, bindDeadline,
     link: async (s) => { tc.link.push(s); return link(s); },
+    status: async (s) => { tc.status.push(s); return status(s); },
     onInitStale: () => { tc.stale += 1; },
+    onCancelUncertain: (linked) => { tc.uncertain.push(linked); },
   };
   return { telegram, tc };
 }
@@ -915,7 +917,7 @@ test('Telegram：连接成功但写入失败 → 作废 session、回邮箱页�
   assert.equal(calls.discardSession.length, 1);
   assert.equal(await loadSession(store), null);
   assert.equal(flow.state.step, 'email');
-  assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
+  assert.equal(flow.state.error, '登录资料没存好，请关掉后重新打开');
   assert.equal(signed.length, 0);
 });
 
@@ -1010,4 +1012,86 @@ test('PWA（没有 telegram）：没有连接步骤，confirmLink／cancelLink �
   await flow.confirmLink();
   flow.cancelLink();
   assert.equal(flow.state.step, 'done');
+});
+
+
+// ---------- 3b 前端审核修正 ----------
+test('审核：连接结果不明（retry）之后按取消 → 先问服务器状态；连上了 → onCancelUncertain(true)；问不到 → (null)；没连上 → 不说明', async () => {
+  const retry = async () => ({ ok: false, status: 0, code: null, error: '需要网络', retry: true });
+  for (const [status, want] of [
+    [async () => ({ ok: true, data: { linked: true, label: '@zed' } }), [true]],
+    [async () => ({ ok: false, status: 0, code: null, error: '需要网络', retry: true }), [null]],
+    [async () => ({ ok: true, data: { linked: false, label: '' } }), []],
+  ]) {
+    const { telegram, tc } = tg({ link: retry, status });
+    const { flow, calls } = setup({ telegram });
+    await login(flow);
+    await flow.confirmLink();
+    await flow.cancelLink();
+    await flush();
+    assert.equal(tc.status.length, 1);
+    assert.equal(tc.status[0].user_id, 'u-1');
+    assert.deepEqual(tc.uncertain, want);
+    assert.equal(calls.discardSession.length, 1);
+    assert.equal(flow.state.step, 'welcome');
+  }
+});
+
+test('审核：没有结果不明的 bind 就取消 → 不问状态', async () => {
+  const { telegram, tc } = tg();
+  const { flow } = setup({ telegram });
+  await login(flow);
+  await flow.cancelLink();
+  assert.equal(tc.status.length, 0);
+  assert.deepEqual(tc.uncertain, []);
+});
+
+test('审核：Telegram 模式的 pending 绑 tgId；换了别的 Telegram 打开 → 清掉 pending、回欢迎页（不显示别人的邮箱）', async () => {
+  const a = tg({ tgId: 'A-111' });
+  const s1 = setup({ telegram: a.telegram });
+  s1.flow.goEmail();
+  await s1.flow.submitEmail('me@x.com', '');
+  assert.equal((await s1.store.getMeta('loginPending')).tgId, 'A-111');
+  const b = tg({ tgId: 'B-222' });
+  const s2 = setup({ telegram: b.telegram, store: s1.store, db: s1.db });
+  await s2.flow.start();
+  assert.equal(s2.flow.state.step, 'welcome');
+  assert.equal(s2.flow.state.email, '');
+  assert.equal(await loadPending(s1.store, T0), null);
+  // 同一个 Telegram 重开 → 照样回验证码页
+  const s3 = setup({ telegram: a.telegram });
+  s3.flow.goEmail();
+  await s3.flow.submitEmail('me@x.com', '');
+  const s4 = setup({ telegram: a.telegram, store: s3.store, db: s3.db });
+  await s4.flow.start();
+  assert.equal(s4.flow.state.step, 'code');
+});
+
+test('审核：PWA 的 pending 不存 tgId（行为不变）', async () => {
+  const { flow, store } = setup();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  assert.equal((await store.getMeta('loginPending')).tgId, undefined);
+});
+
+test('审核：重发也做事前检查（剩不到 120 秒不再寄）', async () => {
+  const { telegram, tc } = tg({ authDate: SEC(T0) - 60 });
+  const { flow, calls, nowRef } = setup({ telegram });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  nowRef.t += 430_000;
+  await flow.resend();
+  assert.equal(calls.requestOtp.length, 1);
+  assert.equal(tc.stale, 1);
+});
+
+test('审核：PWA 存登录资料（setMetas）失败 → 也尽力作废这次的 session', async () => {
+  const { flow, calls, store } = setup();
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  store.setMetas = async () => { throw new Error('disk'); };
+  await flow.inputCode('481203');
+  assert.equal(flow.state.error, '登录资料没存好，请重新发送验证码');
+  await flush();
+  assert.equal(calls.discardSession.length, 1);
 });
