@@ -1,7 +1,7 @@
 // 3b-7：js/tg-api.js（tg-login、tg-link、tg-admin 的前端客户端）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tgLogin, tgLink, tgAdminSetup } from '../js/tg-api.js';
+import { tgLogin, tgLink, tgAdminSetup, tgAdminStatus, tgAdminPause } from '../js/tg-api.js';
 import { SUPABASE_KEY, TG_LOGIN_URL, TG_LINK_URL, TG_ADMIN_URL } from '../js/config.js';
 
 const TOKEN = 'eyJ.user-token.sig';
@@ -228,5 +228,29 @@ test('tgAdminSetup：失败句子照白名单；网络错 → 需要网络', asy
   const { r } = await quiet(() => tgAdminSetup(async () => { throw new TypeError('x'); }, TOKEN));
   assert.deepEqual(r, { ok: false, error: '需要网络' });
   const seen = await delaysOf(() => tgAdminSetup(fake(() => res(200, { ok: true })), TOKEN));
-  assert.ok(seen.includes(10000));
+  assert.ok(seen.includes(20000));
+});
+
+// ---------------- 3d：tgAdminStatus、tgAdminPause ----------------
+test('tgAdminStatus：POST {action:status}；只取认得的栏位', async () => {
+  const f = fake(() => res(200, { ok: true, webhook: 'ok', pending: 2, lastErrorAt: null, aiUsed24h: 5, extra: '<x>' }));
+  assert.deepEqual(await tgAdminStatus(f, TOKEN), { ok: true, data: { webhook: 'ok', pending: 2, lastErrorAt: null, aiUsed24h: 5 } });
+  assert.deepEqual(f.calls[0].body, { action: 'status' });
+  assert.equal(f.calls[0].url, TG_ADMIN_URL);
+});
+test('tgAdminStatus：webhook 值不认得、栏位型别不对 → 当失败；网络错 → 需要网络', async () => {
+  for (const body of [{ ok: true, webhook: 'weird', pending: 0, lastErrorAt: null, aiUsed24h: 0 },
+    { ok: true, webhook: 'ok', pending: '2', lastErrorAt: null, aiUsed24h: 0 }, { ok: false }]) {
+    const { r } = await quiet(() => tgAdminStatus(fake(() => res(200, body)), TOKEN));
+    assert.deepEqual(r, { ok: false, error: GENERIC }, JSON.stringify(body));
+  }
+  const { r } = await quiet(() => tgAdminStatus(async () => { throw new TypeError('x'); }, TOKEN));
+  assert.deepEqual(r, { ok: false, error: '需要网络' });
+});
+test('tgAdminPause：POST {action:pause}；{ok:true} 才算成功', async () => {
+  const f = fake(() => res(200, { ok: true }));
+  assert.deepEqual(await tgAdminPause(f, TOKEN), { ok: true });
+  assert.deepEqual(f.calls[0].body, { action: 'pause' });
+  const { r } = await quiet(() => tgAdminPause(fake(() => res(403, { error: '没有权限' })), TOKEN));
+  assert.deepEqual(r, { ok: false, error: '没有权限' });
 });

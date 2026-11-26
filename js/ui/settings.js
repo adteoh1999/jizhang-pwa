@@ -11,7 +11,7 @@ import { APP_VERSION } from '../version.js';
 import { onUpdateAvailable, applyUpdate } from '../update.js';
 import { forgetSession, getValidSession } from '../auth.js';
 import { readTgStatus, refreshTgStatus } from '../tg-status.js';
-import { tgAdminSetup } from '../tg-api.js';
+import { tgAdminSetup, tgAdminStatus, tgAdminPause } from '../tg-api.js';
 import { closeMiniApp } from '../telegram.js';
 import { runTgUnlinkPwa, runTgUnlinkMiniApp, TG_UNLINK_TEXT } from './tg-unlink.js';
 import { formatRM } from '../money.js';
@@ -134,9 +134,25 @@ export function accountRows(session, { platform = 'pwa', tg = null } = {}) {
   return rows;
 }
 
-/** 「管理」区的列（纯函数）：只有站主有「邀请码管理」「设定 Telegram bot」（快取只决定显不显示，权限由服务器判断）。 */
+/** 「管理」区的列（纯函数）：只有站主有（快取只决定显不显示，权限由服务器判断）。 */
 export function adminRows(isOwner) {
-  return isOwner ? [{ kind: 'invites', label: '邀请码管理' }, { kind: 'tg-setup', label: '设定 Telegram bot' }] : [];
+  return isOwner ? [
+    { kind: 'invites', label: '邀请码管理' }, { kind: 'tg-setup', label: '设定 Telegram bot' },
+    { kind: 'tg-status', label: '检查 Telegram bot' }, { kind: 'tg-pause', label: '暂停 Telegram bot' },
+  ] : [];
+}
+
+/** 「检查 Telegram bot」对话框的文字（纯函数，3d）。时间显示成马来西亚时间 YYYY-MM-DD HH:mm。 */
+export function tgStatusText({ webhook, pending, lastErrorAt, aiUsed24h }) {
+  let err = '没有';
+  if (lastErrorAt) {
+    const d = new Date(Date.parse(lastErrorAt) + 8 * 3600 * 1000).toISOString();
+    err = `${d.slice(0, 10)} ${d.slice(11, 16)}`;
+  }
+  return {
+    title: webhook === 'ok' ? '正常' : '没设好，请按「设定 Telegram bot」',
+    message: `待处理讯息：${pending} 则\n最近错误：${err}\n24 小时内 AI 用了：${aiUsed24h === null ? '—' : `${aiUsed24h} 次`}`,
+  };
 }
 
 /** 「关于 › 环境」（r1-S8）：Telegram 显示平台与版本；否则 PWA（加到主屏幕）或浏览器。 */
@@ -444,32 +460,58 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   };
 
   // ---------- 管理（只有站主）：先藏起来，读到快取才显示；enter()（启动、回前景、打开设置页）时需要才问服务器 ----------
-  // 设定 Telegram bot（3b-10）：选单按钮与简介；可以重按
-  let settingUp = false;
-  async function onTgSetup(btn, label, idle) {
-    if (settingUp) return;
-    settingUp = true;
-    label.textContent = '正在设定…';
+  // Telegram bot（3b-10 设定；3d 加检查、暂停）：三个按钮共用「一次只做一件、按钮显示进行中」
+  let tgAdminBusy = false;
+  async function runTgAdmin(btn, label, idle, busyText, call) {
+    if (tgAdminBusy) return null;
+    tgAdminBusy = true;
+    label.textContent = busyText;
     btn.setAttribute('aria-disabled', 'true');
-    let r;
     try {
       const got = await getValidSession(store, fetchFn);
-      r = got.session ? await tgAdminSetup(fetchFn, got.session.access_token) : { ok: false, error: '请重新登录后再试' };
+      return got.session ? await call(got.session.access_token) : { ok: false, error: '请重新登录后再试' };
     } catch (e) {
-      console.warn(`[settings] 设定 bot 出错：${e && e.name ? e.name : '未知'}`);
-      r = { ok: false, error: '暂时无法完成，请稍后再试' };
+      console.warn(`[settings] Telegram bot 管理出错：${e && e.name ? e.name : '未知'}`);
+      return { ok: false, error: '暂时无法完成，请稍后再试' };
     } finally {
       label.textContent = idle;
       btn.removeAttribute('aria-disabled');
-      settingUp = false;
+      tgAdminBusy = false;
     }
-    if (r.ok) showToast('已设定 Telegram bot');
-    else await messageDialog({ title: '没能设定 Telegram bot', message: r.error });
   }
-  const adminSection = section('管理', adminRows(true).map((r) => (r.kind === 'tg-setup'
+  const tgAdminClick = {
+    // 设定：选单按钮、简介、webhook、指令；可以重按
+    'tg-setup': async (btn, label, idle) => {
+      const r = await runTgAdmin(btn, label, idle, '正在设定…', (t) => tgAdminSetup(fetchFn, t));
+      if (!r) return;
+      if (r.ok) showToast('已设定 Telegram bot');
+      else await messageDialog({ title: '没能设定 Telegram bot', message: r.error });
+    },
+    'tg-status': async (btn, label, idle) => {
+      const r = await runTgAdmin(btn, label, idle, '正在检查…', (t) => tgAdminStatus(fetchFn, t));
+      if (!r) return;
+      if (r.ok) await messageDialog(tgStatusText(r.data));
+      else await messageDialog({ title: '没能检查 Telegram bot', message: r.error });
+    },
+    // 暂停（D5）：删掉 webhook、丢掉积压讯息；先确认
+    'tg-pause': async (btn, label, idle) => {
+      if (tgAdminBusy) return;
+      const yes = await confirmDialog({
+        title: '暂停 Telegram bot？',
+        message: '暂停期间传给 bot 的讯息不会补记。再按「设定 Telegram bot」就恢复。',
+        confirmLabel: '暂停', destructive: true,
+      });
+      if (!yes) return;
+      const r = await runTgAdmin(btn, label, idle, '正在暂停…', (t) => tgAdminPause(fetchFn, t));
+      if (!r) return;
+      if (r.ok) showToast('已暂停 Telegram bot');
+      else await messageDialog({ title: '没能暂停 Telegram bot', message: r.error });
+    },
+  };
+  const adminSection = section('管理', adminRows(true).map((r) => (tgAdminClick[r.kind]
     ? (() => {
       const label = h('span', { class: 'inset-row-label' }, r.label);
-      const btn = h('button', { type: 'button', class: 'inset-row is-action', on: { click: () => onTgSetup(btn, label, r.label) } }, label);
+      const btn = h('button', { type: 'button', class: 'inset-row is-action', on: { click: () => tgAdminClick[r.kind](btn, label, r.label) } }, label);
       return btn;
     })()
     : buttonRow(r.label, () => openInvitesPage(store, {

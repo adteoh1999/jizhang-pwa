@@ -8,7 +8,8 @@ const ORIGIN = 'https://jizhang.adteoh.com';
 const BASE = 'https://p.supabase.co';
 const KEY = 'sb_secret_test';
 const BOT = '123456:' + 'D'.repeat(35);
-const ENV_OBJ = { SUPABASE_URL: BASE, SUPABASE_SECRET_KEYS: `{"default":"${KEY}"}`, TELEGRAM_BOT_TOKEN: BOT };
+const SECRET = 'W'.repeat(40);
+const ENV_OBJ = { SUPABASE_URL: BASE, SUPABASE_SECRET_KEYS: `{"default":"${KEY}"}`, TELEGRAM_BOT_TOKEN: BOT, TELEGRAM_WEBHOOK_SECRET: SECRET };
 const ENV = envOf(ENV_OBJ);
 const UID = '11111111-1111-4111-8111-111111111111';
 const EMAIL = 'owner@example.invalid';
@@ -17,7 +18,7 @@ const TOKEN = 'eyJ.owner-access-token.sig';
 // 计划 Q4 的文字（用户已同意）
 const MENU_TEXT = '记账';
 const SHORT = '快速记账：点下方「记账」用邮箱登录（第一次需要邀请码）。';
-const DESC = '点下方「记账」按钮，用邮箱验证码登录并连接这个 Telegram，就能在这里记账、看统计，和手机上的记账 App 是同一本账。第一次使用需要邀请码。';
+const DESC = '点下方「记账」按钮，用邮箱验证码登录并连接这个 Telegram，就能在这里记账、看统计，和手机上的记账 App 是同一本账。第一次使用需要邀请码。连接后，也可以直接在这里传付款截图或打「午餐 12.50」记一笔。';
 
 const req = (body, { origin = ORIGIN, method = 'POST', token = TOKEN } = {}) => new Request(`${BASE}/functions/v1/tg-admin`, {
   method,
@@ -29,10 +30,12 @@ function routes({
   user = () => jsonRes(200, { id: UID, email: 'Owner@Example.invalid', app_metadata: { kind: 'email' } }),
   isOwner = () => jsonRes(200, true),
   tg = () => jsonRes(200, { ok: true, result: true }),
+  aiCount = () => jsonRes(200, 12),
 } = {}) {
   return fakeFetch([
     ['/auth/v1/user', user],
     ['/rpc/svc_is_owner', isOwner],
+    ['/rpc/svc_bot_ai_count', aiCount],
     ['api.telegram.org', tg],
   ]);
 }
@@ -69,7 +72,7 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.equal(f.calls.length, 0);
   });
 
-  test(`${label}：body 坏掉、action 不是 setup → 400，没叫任何服务器`, async () => {
+  test(`${label}：body 坏掉、action 不是 setup／status／pause → 400，没叫任何服务器`, async () => {
     for (const b of ['x', {}, { action: 'nuke' }, ['setup']]) {
       const f = routes();
       const r = await run(b, f);
@@ -79,7 +82,8 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
   });
 
   test(`${label}：缺设定、bot token 不合格 → 500，没叫任何服务器`, async () => {
-    for (const over of [{ SUPABASE_URL: undefined }, { SUPABASE_SECRET_KEYS: undefined }, { TELEGRAM_BOT_TOKEN: undefined }, { TELEGRAM_BOT_TOKEN: ' ' }, { TELEGRAM_BOT_TOKEN: '1:x' }]) {
+    for (const over of [{ SUPABASE_URL: undefined }, { SUPABASE_SECRET_KEYS: undefined }, { TELEGRAM_BOT_TOKEN: undefined }, { TELEGRAM_BOT_TOKEN: ' ' }, { TELEGRAM_BOT_TOKEN: '1:x' },
+      { TELEGRAM_WEBHOOK_SECRET: undefined }, { TELEGRAM_WEBHOOK_SECRET: 'short' }]) {
       const f = routes();
       const r = await run({ action: 'setup' }, f, { env: envOf({ ...ENV_OBJ, ...over }) });
       assert.equal(r.status, 500, JSON.stringify(over));
@@ -121,17 +125,62 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.equal(tgCalls(s).length, 0);
   });
 
-  test(`${label}：站主 → 依序 setChatMenuButton、setMyShortDescription、setMyDescription，body 精确 → 200`, async () => {
+  test(`${label}：站主 setup → 依序 5 个 method（含 webhook 与指令），body 精确 → 200`, async () => {
     const f = routes();
     const r = await run({ action: 'setup' }, f);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body, { ok: true });
     const c = tgCalls(f);
-    assert.deepEqual(c.map((x) => x.url), ['setChatMenuButton', 'setMyShortDescription', 'setMyDescription'].map((m) => `https://api.telegram.org/bot${BOT}/${m}`));
+    assert.deepEqual(c.map((x) => x.url), ['setChatMenuButton', 'setMyShortDescription', 'setMyDescription', 'setWebhook', 'setMyCommands']
+      .map((m) => `https://api.telegram.org/bot${BOT}/${m}`));
     assert.deepEqual(c[0].body, { menu_button: { type: 'web_app', text: MENU_TEXT, web_app: { url: 'https://jizhang.adteoh.com/' } } });
     assert.deepEqual(c[1].body, { short_description: SHORT });
     assert.deepEqual(c[2].body, { description: DESC });
+    assert.deepEqual(c[3].body, { url: `${BASE}/functions/v1/telegram-bot`, secret_token: SECRET,
+      allowed_updates: ['message', 'callback_query'], max_connections: 4 });
+    assert.deepEqual(c[4].body, { commands: [{ command: 'start', description: '开始／说明' }, { command: 'help', description: '怎么记账' }] });
     assert.deepEqual(r.logs, []);
+  });
+
+  test(`${label}：status → getWebhookInfo＋AI 次数；不回 Telegram 的错误文字与网址`, async () => {
+    const info = (o) => () => jsonRes(200, { ok: true, result: { url: `${BASE}/functions/v1/telegram-bot`, pending_update_count: 3,
+      last_error_date: 1764000000, last_error_message: 'Wrong response ' + SECRET, ...o } });
+    let f = routes({ tg: info() });
+    let r = await run({ action: 'status' }, f);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true, webhook: 'ok', pending: 3, lastErrorAt: new Date(1764000000 * 1000).toISOString(), aiUsed24h: 12 });
+    assert.deepEqual(tgCalls(f).map((x) => x.url), [`https://api.telegram.org/bot${BOT}/getWebhookInfo`]);
+    assert.ok(!JSON.stringify(r.body).includes('Wrong response'));
+    f = routes({ tg: info({ url: 'https://evil.example/hook', last_error_date: undefined }) });
+    r = await run({ action: 'status' }, f);
+    assert.equal(r.body.webhook, 'wrong_url');
+    assert.equal(r.body.lastErrorAt, null);
+    assert.ok(!JSON.stringify(r.body).includes('evil'));
+    f = routes({ tg: info({ url: '' }), aiCount: () => jsonRes(500, {}) });
+    r = await run({ action: 'status' }, f);
+    assert.equal(r.body.webhook, 'none');
+    assert.equal(r.body.aiUsed24h, null);
+  });
+
+  test(`${label}：status：Telegram 连不上 → 502`, async () => {
+    const r = await run({ action: 'status' }, routes({ tg: () => jsonRes(500, { ok: false }) }));
+    assert.equal(r.status, 502);
+  });
+
+  test(`${label}：pause → deleteWebhook（丢掉积压讯息）→ 200`, async () => {
+    const f = routes();
+    const r = await run({ action: 'pause' }, f);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { ok: true });
+    assert.deepEqual(tgCalls(f).map((x) => [x.url, x.body]), [[`https://api.telegram.org/bot${BOT}/deleteWebhook`, { drop_pending_updates: true }]]);
+  });
+
+  test(`${label}：status、pause 也只有站主`, async () => {
+    for (const action of ['status', 'pause']) {
+      const f = routes({ isOwner: () => jsonRes(200, false) });
+      assert.equal((await run({ action }, f)).status, 403);
+      assert.equal(tgCalls(f).length, 0);
+    }
   });
 
   // 这里量的是测试档的常数；它和函数送出去的文字相同，由上一条「body 精确比对」保证
@@ -181,18 +230,18 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     const clock = { t: 1_000_000 };
     const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f, nowMs: () => clock.t })));
     assert.equal(seen.length, f.calls.length);
-    assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000]);
+    assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000, 5000, 5000]);
   });
 
-  test(`${label}：总时限 8.5 秒：前面用掉的时间会让后面每一步缩短；时间用完就不再叫 Telegram、回 502`, async () => {
+  test(`${label}：总时限 18 秒：前面用掉的时间会让后面每一步缩短；时间用完就不再叫 Telegram、回 502`, async () => {
     const clock = { t: 1_000_000 };
     let n = 0;
-    const f = routes({ tg: () => { n += 1; clock.t += n === 1 ? 4000 : 3000; return jsonRes(200, { ok: true, result: true }); } });
+    const f = routes({ tg: () => { n += 1; clock.t += n === 1 ? 4000 : 4500; return jsonRes(200, { ok: true, result: true }); } });
     const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f, nowMs: () => clock.t })));
-    // 第 1 步开始时剩 8500 → 5000；第 2 步剩 4500 → 4500；第 3 步剩 1500 → 1500
-    assert.deepEqual(seen, [2000, 2000, 5000, 4500, 1500]);
+    // 剩 18000 → 5000；剩 14000 → 5000；剩 9500 → 5000；剩 5000 → 5000；剩 500 → 500
+    assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000, 5000, 500]);
     const clock2 = { t: 1_000_000 };
-    const g = routes({ tg: () => { clock2.t += 9000; return jsonRes(200, { ok: true, result: true }); } });
+    const g = routes({ tg: () => { clock2.t += 19000; return jsonRes(200, { ok: true, result: true }); } });
     const { r: res, logs } = await quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: g, nowMs: () => clock2.t }));
     assert.equal(res.status, 502);
     assert.equal(tgCalls(g).length, 1, '时间用完就不再叫');

@@ -137,5 +137,5 @@ test('readOwnerFlag：没有快取、value 不是 true → false', async () => {
 
 test('设置页：只有站主才有「管理」区的「邀请码管理」', () => {
   assert.deepEqual(adminRows(false), []);
-  assert.deepEqual(adminRows(true), [{ kind: 'invites', label: '邀请码管理' }, { kind: 'tg-setup', label: '设定 Telegram bot' }]);
+  assert.deepEqual(adminRows(true), [{ kind: 'invites', label: '邀请码管理' }, { kind: 'tg-setup', label: '设定 Telegram bot' }, { kind: 'tg-status', label: '检查 Telegram bot' }, { kind: 'tg-pause', label: '暂停 Telegram bot' }]);
 });

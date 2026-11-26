@@ -1,7 +1,7 @@
 // 3b-10：设置页的 Telegram 列（纯函数）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountRows, adminRows, envText, tgRowDetail } from '../js/ui/settings.js';
+import { accountRows, adminRows, envText, tgRowDetail, tgStatusText } from '../js/ui/settings.js';
 
 const S = { user_id: 'u-A', email: 'me@x.invalid' };
 const kinds = (rows) => rows.map((r) => r.kind);
@@ -38,7 +38,7 @@ test('tgRowDetail：有名字显示名字；名字空 → 「已连接」；没�
 });
 
 test('adminRows：站主多「设定 Telegram bot」', () => {
-  assert.deepEqual(adminRows(true).map((r) => r.kind), ['invites', 'tg-setup']);
+  assert.deepEqual(adminRows(true).map((r) => r.kind), ['invites', 'tg-setup', 'tg-status', 'tg-pause']);
   assert.equal(adminRows(true)[1].label, '设定 Telegram bot');
   assert.deepEqual(adminRows(false), []);
 });
@@ -48,4 +48,24 @@ test('envText：PWA／浏览器／Telegram · 平台 · 版本', () => {
   assert.equal(envText({ telegram: null, standalone: false }), '浏览器');
   assert.equal(envText({ telegram: { platform: 'ios', version: '8.0' }, standalone: false }), 'Telegram · ios · 8.0');
   assert.equal(envText({ telegram: { platform: '', version: '' } }), 'Telegram');
+});
+
+// 3d：「检查 Telegram bot」对话框的文字（纯函数）
+test('tgStatusText：正常、待处理、最近错误（马来西亚时间）、AI 次数', () => {
+  assert.deepEqual(tgStatusText({ webhook: 'ok', pending: 0, lastErrorAt: null, aiUsed24h: 5 }), {
+    title: '正常', message: '待处理讯息：0 则\n最近错误：没有\n24 小时内 AI 用了：5 次' });
+  assert.deepEqual(tgStatusText({ webhook: 'none', pending: 3, lastErrorAt: '2026-11-26T02:05:00.000Z', aiUsed24h: null }), {
+    title: '没设好，请按「设定 Telegram bot」', message: '待处理讯息：3 则\n最近错误：2026-11-26 10:05\n24 小时内 AI 用了：—' });
+  assert.equal(tgStatusText({ webhook: 'wrong_url', pending: 0, lastErrorAt: null, aiUsed24h: 0 }).title, '没设好，请按「设定 Telegram bot」');
+});
+
+// 3d 接线：设定页真的把两个新列接到 tg-admin 的 status／pause，暂停前先确认
+import { readFileSync } from 'node:fs';
+test('接线：检查／暂停 Telegram bot 接到 tgAdminStatus／tgAdminPause，暂停先确认', () => {
+  const src = readFileSync(new URL('../js/ui/settings.js', import.meta.url), 'utf8');
+  assert.match(src, /import \{[^}]*\btgAdminStatus\b[^}]*\btgAdminPause\b[^}]*\} from '\.\.\/tg-api\.js'/);
+  assert.match(src, /'tg-status'[\s\S]{0,400}tgAdminStatus/);
+  assert.match(src, /'tg-pause'[\s\S]{0,600}confirmDialog[\s\S]{0,600}tgAdminPause/);
+  assert.ok(src.includes('暂停期间传给 bot 的讯息不会补记。再按「设定 Telegram bot」就恢复。'));
+  assert.ok(src.includes('tgStatusText(r.data)'));
 });
