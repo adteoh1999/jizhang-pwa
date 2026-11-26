@@ -195,10 +195,11 @@
   --margin: 16px;       /* iPhone 版面边距 */
 
   --tabbar-total: calc(var(--tabbar-h) + var(--tabbar-gap) + var(--safe-bottom));
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
+  /* Telegram 全屏时 js/tg-chrome.js 才写 --jz-inset-*（系统＋Telegram 按钮的安全区）；PWA 永远没有 → 等于 env() */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--jz-inset-top, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--jz-inset-right, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--jz-inset-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--jz-inset-left, 0px));
 
   --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
   /* v2.3 弹簧：这里是后备（iOS < 17.2 不支援 linear()）；支援时由下面的 @supports 换成真的弹簧。

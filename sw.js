@@ -29,6 +29,7 @@ const ASSETS = [
   './js/store.js',
   './js/sync.js',
   './js/telegram.js',
+  './js/tg-chrome.js',
   './js/tg-api.js',
   './js/tg-boot.js',
   './js/tg-status.js',

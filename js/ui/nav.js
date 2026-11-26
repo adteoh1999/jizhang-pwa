@@ -58,9 +58,10 @@ export function trackExit({ timeout = 1000 } = {}) {
  * 推入一层；回传的 close() 只关闭这一层，已关闭再呼叫不做事。
  * element：这一层的根元素（遮罩），不在最上层时自动 inert。
  * onDismiss：popLayer（Esc 等）时改为呼叫它，由它决定要不要 close()（例如先确认放弃修改）。
+ * locked：这一层在最上面时 popLayer 完全不做事、canPop() 为 false（「正在…」遮罩；Telegram 返回键不出现）。
  */
-export function pushLayer({ onClose, onDismiss, element } = {}) {
-  const layer = { closed: false, onDismiss, element };
+export function pushLayer({ onClose, onDismiss, element, locked = false } = {}) {
+  const layer = { closed: false, onDismiss, element, locked: !!locked };
   layer.close = () => {
     if (layer.closed) return;
     layer.closed = true;
@@ -80,12 +81,14 @@ export function pushLayer({ onClose, onDismiss, element } = {}) {
 /** 关闭最上层（没有浮层时不做事）。 */
 export function popLayer() {
   const top = stack[stack.length - 1];
-  if (!top) return;
+  if (!top || top.locked) return;
   if (!top.onDismiss) { top.close(); return; }
   try { top.onDismiss(); } catch (e) { console.error(e); }
 }
 
 export const depth = () => stack.length;
+/** 有浮层、而且最上层不是 locked（popLayer 会做事）。 */
+export const canPop = () => stack.length > 0 && !stack[stack.length - 1].locked;
 /** 没有浮层、退场也播完（whenIdle 会马上执行）。 */
 export const isIdle = () => stack.length === 0 && exits === 0;
 

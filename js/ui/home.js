@@ -7,6 +7,7 @@
 import { h } from './dom.js';
 import { icon, rowIconAttr } from './icons.js';
 import { openEntrySheet } from './entry-sheet.js';
+import { haptic } from '../tg-chrome.js';
 import { openCategoriesPage } from './categories-page.js';
 import { showToast } from './toast.js';
 import { messageDialog } from './dialogs.js';
@@ -259,7 +260,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
 
   const addBtn = h('button', {
     type: 'button', class: 'home-add pressable',
-    on: { click: () => { closeOpenRow(); openEntrySheet(store, { onAddCategory }); } }, // 同步呼叫
+    on: { click: () => { closeOpenRow(); openEntrySheet(store, { onAddCategory }); haptic('light'); } }, // 同步呼叫；震动放在打开之后（Telegram）
   }, icon('plus', 20), '记一笔');
 
   const countEl = h('span', { class: 'home-drawer-count' });

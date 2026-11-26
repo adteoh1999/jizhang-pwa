@@ -10,6 +10,7 @@ import { animate, fade, reducedMotion, EASE_OUT } from './motion.js';
 import { announce } from './announce.js';
 import { onDepthChange } from './nav.js';
 import { createLoginFlow } from '../login-flow.js';
+import { setPageBack, clearPageBack } from '../tg-chrome.js';
 import { registerEmail, requestOtp, verifyOtp, logoutServer } from '../auth.js';
 import { announceLedgerReset } from '../ledger-channel.js';
 
@@ -215,8 +216,12 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     confirmReset: (info) => askReset(store, info, { exportable: !telegram }),
     onReset: announceLedgerReset,
     onSignedIn: (s) => { destroy(); onSignedIn(s); },
-    telegram,
+    // initData 过期的挡画面是终点：先拆掉自己（停计时器与监听、清 Telegram 返回键），再交给 app.js（审核 M2）
+    telegram: telegram && { ...telegram, onInitStale: () => { destroy(); telegram.onInitStale(); } },
   });
+  // Telegram 返回键（3c-2）：邮箱／验证码步骤才有，跟页面上的返回键做同一件事（PWA 里 setPageBack 不做事）
+  const tgBack = () => flow.back();
+  let backStep = null;
   const extras = loginExtras({ telegram, iosTab: isIosBrowserTab() });
 
   // ---------- 共用小件 ----------
@@ -424,6 +429,12 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
   let sentText = null;
   function render(s) {
     if (destroyed || !s.ready) return;
+    // 用原始的 s.step（done 不给返回）；步骤变了才呼叫（每输入一位验证码都会 render）
+    if (s.step !== backStep) {
+      backStep = s.step;
+      if (s.step === 'email' || s.step === 'code') setPageBack(tgBack);
+      else clearPageBack(tgBack);
+    }
     const step = s.step === 'done' ? (prevStep === 'link' ? 'link' : 'code') : s.step;
     const changed = step !== prevStep;
 
@@ -511,6 +522,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
   function destroy() {
     if (destroyed) return;
     destroyed = true;
+    clearPageBack(tgBack);
     if (timer) clearInterval(timer);
     for (const fn of cleanups) { try { fn(); } catch { /* 已移除 */ } }
     el.remove();

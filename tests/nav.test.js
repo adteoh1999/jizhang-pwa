@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { pushLayer, popLayer, depth, onDepthChange, whenIdle, trackExit, isIdle } from '../js/ui/nav.js';
+import { pushLayer, popLayer, depth, onDepthChange, whenIdle, trackExit, isIdle, canPop } from '../js/ui/nav.js';
 
 // nav.js 是模块级单例：每个测试后清空堆叠。
 // 有 onDismiss 的层 popLayer 不会关闭，所以设上限，避免无限循环（剩下的层由测试自己 close）
@@ -213,4 +213,33 @@ test('isIdle：没有浮层且退场都 release 才是 true', () => {
   assert.equal(isIdle(), false, '退场还没播完');
   release();
   assert.equal(isIdle(), true);
+});
+
+// ---------- 3c-2：locked 层（「正在…」遮罩）与 canPop（Telegram 返回键用） ----------
+test('canPop：空栈 false；一般层 true', () => {
+  assert.equal(canPop(), false);
+  const a = pushLayer({});
+  assert.equal(canPop(), true);
+  a.close();
+  assert.equal(canPop(), false);
+});
+
+test('canPop：最上层 locked → false（底下有 sheet 也一样）；locked 关掉后恢复', () => {
+  pushLayer({});
+  const lock = pushLayer({ locked: true, onDismiss: () => {} });
+  assert.equal(canPop(), false);
+  lock.close();
+  assert.equal(canPop(), true);
+});
+
+test('popLayer：最上层 locked → 不做事（连 onDismiss 也不叫）', () => {
+  let dismissed = 0;
+  let closed = 0;
+  pushLayer({ onClose: () => { closed += 1; } });
+  const lock = pushLayer({ locked: true, onDismiss: () => { dismissed += 1; } });
+  popLayer();
+  assert.equal(dismissed, 0);
+  assert.equal(closed, 0);
+  assert.equal(depth(), 2);
+  lock.close();
 });

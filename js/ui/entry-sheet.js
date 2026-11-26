@@ -9,6 +9,7 @@ import { kindSegmented, confirmDiscard } from './components.js';
 import { showToast } from './toast.js';
 import { announce } from './announce.js';
 import { whenIdle } from './nav.js';
+import { haptic } from '../tg-chrome.js';
 import { parseAmount, minorToDecimalString } from '../money.js';
 import { todayLocal, isValidDateString } from '../dates.js';
 import { ValidationError, NOTE_MAX } from '../model.js';
@@ -305,7 +306,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     clearAllErrors();
     const c = current();
     const bad = checkFields(c);
-    if (bad) { showError(bad.field, bad.message); return; }
+    if (bad) { showError(bad.field, bad.message); haptic('error'); return; }
     saving = true;
     sheet.rightButton.disabled = true;
     try {
@@ -318,6 +319,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       saving = false;
       sheet.rightButton.disabled = false;
       unmarkSaved(id); // 没存成：清掉标记（重试时会再标记）
+      haptic('error'); // Telegram 里：栏位不合格或储存失败（HIG error）；放在状态复位之后
       const missing = !!c.categoryId && !store.categoryById(c.categoryId);
       const msg = e instanceof ValidationError ? messageFor(e.field, c, missing) : null;
       if (msg) showError(e.field, msg);
@@ -327,6 +329,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
       }
       return;
     }
+    haptic('success'); // Telegram 里：存好了（HIG success；PWA 不做事）
     // 已经存好：马上关（v2.3.1 拿掉 ✓ 停留）。saving 维持 true，退场中不能再存或删除；面板内容不接受点按。
     sheet.panel.classList.add('is-saving');
     sheet.close();
@@ -353,6 +356,7 @@ export function openEntrySheet(store, { transaction, onAddCategory } = {}) {
     } catch (e) {
       console.error(e);
       saving = false;
+      haptic('error');
       messageDialog({ title: '删除失败', message: '请稍后再试一次。' });
       return;
     }

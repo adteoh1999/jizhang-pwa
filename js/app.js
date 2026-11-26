@@ -6,7 +6,7 @@ import { openDatabase } from './db.js';
 import { createStore } from './store.js';
 import { h } from './ui/dom.js';
 import { mountTabBar } from './ui/tabbar.js';
-import { onDepthChange } from './ui/nav.js';
+import { onDepthChange, depth, canPop, popLayer } from './ui/nav.js';
 import { maybeShowInstallHint } from './ui/install-hint.js';
 import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
@@ -15,6 +15,7 @@ import { onLedgerResetElsewhere, onPulledElsewhere, announcePulled } from './led
 import { mountLogin, askReset } from './ui/login.js';
 import { loadSession, bootTarget, getValidSession, replaceSessionIfSameUser, wipeLocalLocked, logoutServer } from './auth.js';
 import { detectTelegram, closeMiniApp } from './telegram.js';
+import { installTgChrome, setPageBack } from './tg-chrome.js';
 import { tgLogin, tgLink } from './tg-api.js';
 import { runTgBoot, runTgCheck, checkDue, TG_TEXT } from './tg-boot.js';
 import { runTgGone } from './ui/tg-gone.js';
@@ -258,9 +259,12 @@ function enterApp(root, store, s, opts) {
 
 /** Telegram Mini App 启动（3b-9）。 */
 async function bootTelegram(root, store, tg) {
-  const stale = () => renderFatal(root, {
-    title: TG_TEXT.invalidTitle, message: TG_TEXT.invalidMessage, buttonLabel: TG_TEXT.close, onClick: () => closeMiniApp(tg.webApp),
-  });
+  const stale = () => {
+    setPageBack(null); // 终点画面：左上不能还留着登录页的「返回」（审核 M2）
+    renderFatal(root, {
+      title: TG_TEXT.invalidTitle, message: TG_TEXT.invalidMessage, buttonLabel: TG_TEXT.close, onClick: () => closeMiniApp(tg.webApp),
+    });
+  };
   await runTgBoot({
     store, env: tg,
     online: () => navigator.onLine,
@@ -337,8 +341,12 @@ async function boot() {
     if (isDevHost() && new URLSearchParams(location.search).has('simulateDbError')) {
       throw new Error('（模拟）IndexedDB 已停用');
     }
-    // 开库与判断平台同时进行（判断平台最多等 SDK 8 秒；一般浏览器马上回 pwa）
-    const [db, tg] = await Promise.all([openDatabase(), detectTelegram()]);
+    // 开库与判断平台同时进行（判断平台最多等 SDK 8 秒；一般浏览器马上回 pwa）。
+    // Telegram：SDK 一载完就套主题、接返回键（3c-2），不等资料库，第一个画面就是 Telegram 的深浅色
+    const [db, tg] = await Promise.all([openDatabase(), detectTelegram().then((t) => {
+      if (t.mode === 'telegram') installTgChrome(t.webApp, { nav: { depth, canPop, popLayer, onDepthChange } });
+      return t;
+    })]);
     const store = createStore({ db });
     await store.init();
     // 别的分页换账号清除了账本：这个分页的画面与快取都旧了 → 阻挡画面、请重新整理（审核 M-2）

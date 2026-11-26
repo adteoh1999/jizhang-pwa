@@ -162,7 +162,7 @@ export function busyOverlay(text) {
   const panel = h('div', { class: 'alert alert-busy', role: 'dialog', 'aria-modal': 'true', 'aria-label': text },
     h('div', { class: 'alert-body' }, msg));
   const overlay = h('div', { class: 'overlay overlay-alert' }, panel);
-  const handle = pushLayer({ element: overlay, onDismiss: () => {} });
+  const handle = pushLayer({ element: overlay, onDismiss: () => {}, locked: true }); // locked：Telegram 返回键不出现
   document.body.append(overlay);
   msg.focus({ preventScroll: true });
   requestAnimationFrame(() => requestAnimationFrame(() => { if (overlay.isConnected) overlay.classList.add('is-visible'); }));

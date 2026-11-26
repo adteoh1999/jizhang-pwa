@@ -1,6 +1,7 @@
 // 共用小元件：支出/收入分段控件、「放弃这次修改？」确认。
 import { h } from './dom.js';
 import { actionSheet } from './dialogs.js';
+import { haptic } from '../tg-chrome.js';
 
 const KINDS = [
   { id: 'expense', label: '支出' },
@@ -43,6 +44,7 @@ export function kindSegmented({ value, onChange, label = '类型' }) {
     if (v === current) return;
     current = v;
     sync();
+    haptic('selection'); // Telegram 里：选择改变（HIG selection；PWA 不做事）
     onChange(v);
   }
   sync();
@@ -93,6 +95,7 @@ export function optionSegmented({ options, value, onChange, label }) {
     if (i === current) return;
     current = i;
     sync();
+    haptic('selection');
     onChange(options[i].id);
   }
   sync();
