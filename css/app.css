@@ -2047,7 +2047,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
    示例卡是装饰（aria-hidden），字级用 px、不跟 Dynamic Type 放大（放大会撑破叠层）；标题与按钮照常跟字级。
    光球是静态 radial-gradient，挂在 .wl-hero::before、z-index -1（在所有文字下面），左右伸到屏幕边（宽屏不切直边），
    纵向框以舞台中心为准、每个光球在 70% 半径淡完（不切横边，测试会算）；没有模糊、没有 CSS 动画。
-   .wl-hero / .wl-stage 本身不能建层叠上下文（否则光球会跑到标题上面）。
+   只有 .wl-hero 本身不能建层叠上下文（否则光球会困在里面、整层画到标题上面）；.wl-stage 可以（很矮屏会 scale），光球不在它里面。
    倾斜写在内层（.wl-card / .wl-tx），进场动画（js）只动外层 .wl-layer，两者不抢 transform。 */
 .wl-brand { display: flex; align-items: center; gap: 10px; min-height: var(--hit); margin-top: 10px; }
 .wl-badge {

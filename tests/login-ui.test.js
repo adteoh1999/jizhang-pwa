@@ -196,6 +196,14 @@ test('login.js：欢迎页旧插图已拿掉；render 照 entrancePlan 播；标
   assert.doesNotMatch(s, /welcomeTitle\.split/);
 });
 
+test('login.js：render 照 entrancePlan 真的播；进场目标正好 6 个、不含外层 hero（动外层会把光球带到文字上面）', () => {
+  const s = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
+  assert.match(s, /if \(entry !== 'none'\) playEntrance\(entry\);/);
+  const m = s.match(/\[([^\]]*)\]\.forEach\(\(node, i\) => animate\(node, entranceKeyframes\(\)/);
+  assert.ok(m, '找得到进场目标清单');
+  assert.deepEqual(m[1].split(',').map((x) => x.trim()), ['brand', 'hero.card', 'hero.tx1', 'hero.tx2', 'welcomeTitle', 'welcomeCta']);
+});
+
 test('CSS：旧插图样式与 token 已清掉', () => {
   assert.doesNotMatch(css, /\.la-|\.login-halo|\.login-art|--coin\b|--login-sheen|--login-halo|@keyframes rise/);
 });
