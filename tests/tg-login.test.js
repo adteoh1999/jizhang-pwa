@@ -6,6 +6,7 @@ import { loadBoth, fakeFetch, jsonRes, hang, envOf } from './helpers/edge-fn.js'
 import { signInitData } from './helpers/tg-init-data.js';
 import { tgLabel, TG_BIND_MAX_SEC } from '../supabase/functions/_shared/telegram.ts';
 import { NOTICE_TEXT, NOTICE_SUBJECT } from '../supabase/functions/_shared/notice.ts';
+import { createHash } from 'node:crypto';
 
 // 全是假的测试资料
 const ORIGIN = 'https://jizhang.adteoh.com';
@@ -387,6 +388,21 @@ for (const [label, mod] of await loadBoth('tg-login')) {
     const seen = await withTimeouts(() => run({ initData: FRESH }, f, { clock }));
     const at = (part) => seen[f.calls.findIndex((c) => c.url.includes(part))];
     assert.ok(at('/auth/v1/admin/users/') <= 1000, `查账号 ${at('/auth/v1/admin/users/')}`);
+    assert.ok(at('/rpc/svc_tg_link_get') <= 1000, `再查连接 ${at('/rpc/svc_tg_link_get')}`);
+  });
+
+  test(`${label}：查完账号时间已经用完 → 不叫 generate_link（免得作废用户等待中的验证码），回 500`, async () => {
+    const clock = makeClock();
+    const f = routes({ admin: () => { clock.t += 8000; return jsonRes(200, { id: UID, email: EMAIL, app_metadata: { kind: 'email' } }); } });
+    const r = await run({ initData: FRESH }, f, { clock });
+    assert.equal(r.status, 500);
+    assert.equal(f.callsTo('/auth/v1/admin/generate_link').length, 0);
+  });
+
+  test(`${label}：mintSession 内部作废（verify 回的人不对）也用 1500 毫秒`, async () => {
+    const f = routes({ verify: () => jsonRes(200, { access_token: AT, refresh_token: RT, expires_in: 3600, user: { id: OTHER, email: 'o@x.invalid' } }) });
+    const seen = await withTimeouts(() => run({ initData: FRESH }, f));
+    assert.equal(seen[f.calls.findIndex((c) => c.url.includes('/auth/v1/logout'))], 1500);
   });
 
   test(`${label}：铸好 session 时已经超过总时限 → 作废、回 500、不回 token、不再查连接`, async () => {
@@ -459,13 +475,51 @@ for (const [label, mod] of await loadBoth('tg-login')) {
     assert.equal(mailOf(b).length, 0);
   });
 
-  test(`${label}：剩下的时间不够寄信（< 3 秒）→ 不预约、不寄（下次打开再试），照样 linked`, async () => {
+  test(`${label}：剩下的时间不够寄信（< 5.5 秒）→ 不预约、不寄（下次打开再试），照样 linked`, async () => {
     const clock = makeClock();
     const f = routes({ linkGets: [() => { clock.t += 5000; return jsonRes(200, UID); }], reserve: () => jsonRes(200, { do: 'send', id: 7 }) });
     const r = await run({ initData: FRESH }, f, { clock });
     assert.equal(r.body.status, 'linked');
     assert.equal(f.callsTo('/rpc/svc_tg_notify_reserve').length, 0);
     assert.equal(mailOf(f).length, 0);
+  });
+
+  test(`${label}：剩 3.1 秒（够旧门槛、不够预约＋寄信＋撤回）→ 不预约`, async () => {
+    const clock = makeClock();
+    const f = routes({ linkGets: [() => { clock.t += 4400; return jsonRes(200, UID); }], reserve: () => jsonRes(200, { do: 'send', id: 7 }) });
+    const r = await run({ initData: FRESH }, f, { clock });
+    assert.equal(r.body.status, 'linked');
+    assert.equal(f.callsTo('/rpc/svc_tg_notify_reserve').length, 0);
+  });
+
+  test(`${label}：刚好过门槛、Resend 慢 2.5 秒又失败 → 撤回仍有 ≥ 1000 毫秒，照样 linked`, async () => {
+    const clock = makeClock();
+    const f = routes({
+      linkGets: [() => { clock.t += 1900; return jsonRes(200, UID); }],
+      reserve: () => jsonRes(200, { do: 'send', id: 7 }),
+      resend: () => { clock.t += 2500; return jsonRes(500, {}); },
+    });
+    let r;
+    const seen = await withTimeouts(async () => { r = await run({ initData: FRESH }, f, { clock }); });
+    assert.equal(r.body.status, 'linked');
+    const i = f.calls.findIndex((c) => c.url.includes('/rpc/svc_tg_notify_release'));
+    assert.ok(i >= 0 && seen[i] >= 1000, `撤回 ${seen[i]}`);
+  });
+
+  test(`${label}：寄信带 Idempotency-Key = sha256(连接)：同一次连接同一个键，重新连接（linked_at 不同）换键`, async () => {
+    const keyOf = async (linked_at) => {
+      const f = routes({ reserve: () => jsonRes(200, { do: 'send', id: 7, linked_at }) });
+      await run({ initData: FRESH }, f);
+      return f.callsTo('api.resend.com')[0].init.headers['Idempotency-Key'];
+    };
+    const a = await keyOf('2026-11-26T10:00:00.123456+00:00');
+    const want = createHash('sha256').update(`jizhang-link-notice:${TID}:${UID}:2026-11-26T10:00:00.123456+00:00`).digest('hex');
+    assert.equal(a, want);
+    assert.equal(await keyOf('2026-11-26T10:00:00.123456+00:00'), a);
+    assert.notEqual(await keyOf('2026-11-27T08:00:00+00:00'), a);
+    const f = routes({ reserve: () => jsonRes(200, { do: 'send', id: 7 }) });
+    await run({ initData: FRESH }, f);
+    assert.equal(f.callsTo('api.resend.com')[0].init.headers['Idempotency-Key'], undefined, '没有 linked_at 就不带');
   });
 
   test(`${label}：寄信后已经超过总时限 → 作废、回 500、不回 token`, async () => {

@@ -248,6 +248,19 @@ begin
   exception when others then fails := array_append(fails, ('13:' || sqlerrm));
   end;
 
+  -- 15. reserve 回 send 时带这次连接的 linked_at（给 Resend 幂等键用），而且 notified_at = 那一笔的 sent_at（release 靠它比对）
+  total := total + 1;
+  begin
+    update private.telegram_links set notified_at = null where telegram_id = tb;
+    j := svc.svc_tg_notify_reserve(tb, ub);
+    ok := j->>'do' = 'send'
+      and (j->>'linked_at')::timestamptz = (select linked_at from private.telegram_links where telegram_id = tb)
+      and (select notified_at from private.telegram_links where telegram_id = tb)
+          = (select sent_at from private.tg_notify_sends where id = (j->>'id')::bigint);
+    if ok then pass := pass + 1; else fails := array_append(fails, ('15 reserve 没带 linked_at 或时间不一致:' || coalesce(j::text, 'null'))); end if;
+  exception when others then fails := array_append(fails, ('15:' || sqlerrm));
+  end;
+
   -- 14. touch、reserve、release 都设了 lock_timeout = 3s（tg-link 的 bind rpc 等 4 秒、要比锁等待长）
   total := total + 1;
   begin

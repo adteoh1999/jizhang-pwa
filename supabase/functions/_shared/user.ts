@@ -124,8 +124,9 @@ export type MintedSession = { access_token: string; refresh_token: string; expir
 //   'mismatch'：generate_link 回的人不对（没叫 verify），或 verify 回来的人不对（已作废那个 session）
 //   'limited' ：任一步 429
 //   'error'   ：其他失败（内容不完整时若已拿到 access_token，先作废它）
+// timeoutMs：generate_link、verify 各自的超时；revokeMs：内部作废的超时
 export async function mintSession(
-  fetchFn: typeof fetch, baseUrl: string, key: string, email: string, expectedUserId: string, timeoutMs = 5000,
+  fetchFn: typeof fetch, baseUrl: string, key: string, email: string, expectedUserId: string, timeoutMs = 5000, revokeMs = 3000,
 ): Promise<MintedSession | 'limited' | 'mismatch' | 'error'> {
   let hashed: string;
   try {
@@ -164,11 +165,11 @@ export async function mintSession(
   const at = typeof s.access_token === 'string' && s.access_token !== '' ? s.access_token : null;
   if (!at) return 'error';
   if (s.user?.id !== expectedUserId) {
-    await revokeSession(fetchFn, baseUrl, key, at);
+    await revokeSession(fetchFn, baseUrl, key, at, revokeMs);
     return 'mismatch';
   }
   if (typeof s.refresh_token !== 'string' || s.refresh_token === '' || typeof s.expires_in !== 'number' || !Number.isFinite(s.expires_in)) {
-    await revokeSession(fetchFn, baseUrl, key, at);
+    await revokeSession(fetchFn, baseUrl, key, at, revokeMs);
     return 'error';
   }
   return {

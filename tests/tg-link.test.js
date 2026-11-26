@@ -347,13 +347,14 @@ for (const [label, mod] of await loadBoth('tg-link')) {
     assert.equal(mailOf(f).length, 0);
   });
 
-  test(`${label}：缺 RESEND_API_KEY 或 EMAIL_FROM → 不叫 Resend、撤回预约，bind 照样回 200`, async () => {
+  test(`${label}：缺 RESEND_API_KEY 或 EMAIL_FROM → 不预约、不叫 Resend，bind 照样回 200`, async () => {
     for (const k of ['RESEND_API_KEY', 'EMAIL_FROM']) {
       const f = routes();
       const r = await run({ action: 'bind', initData: FRESH }, f, { env: envOf({ ...ENV_OBJ, [k]: undefined }) });
       assert.deepEqual(r.body, { result: 'linked' });
       assert.equal(mailOf(f).length, 0);
-      assert.equal(f.callsTo('/rpc/svc_tg_notify_release').length, 1);
+      assert.equal(f.callsTo('/rpc/svc_tg_notify_reserve').length, 0);
+      assert.equal(f.callsTo('/rpc/svc_tg_notify_release').length, 0);
     }
   });
 

@@ -587,11 +587,14 @@ $$;
 -- tg-link bind 成功（linked 或 already）后用：要不要寄连接通知信。锁住这一笔连接，所以同时两个请求也只会寄一封。
 --   {"do":"skip"}           ：连接不在、连的不是这个账号、或这次连接已处理过
 --   {"do":"limited"}        ：这个账号 24 小时内已寄 3 封 → 记成已处理、不寄
---   {"do":"send","id":<n>}  ：先占位（记一笔、设 notified_at），寄信失败要叫 svc_tg_notify_release
+--   {"do":"send","id":<n>,"linked_at":…}：先占位（记一笔、设 notified_at），寄信失败要叫 svc_tg_notify_release；
+--                            linked_at 给 Resend 幂等键用（同一次连接同一个键）。notified_at 与那一笔的 sent_at 写同一个值（release 靠它比对）
 create or replace function svc.svc_tg_notify_reserve(p_telegram_id bigint, p_user_id uuid) returns jsonb
 language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 declare
+  v_now      timestamptz := now();
   v_notified timestamptz;
+  v_linked   timestamptz;
   n          integer;
   v_id       bigint;
 begin
@@ -601,26 +604,26 @@ begin
   if p_user_id is null then
     raise exception 'user_id 不能是 null';
   end if;
-  delete from private.tg_notify_sends where sent_at < now() - interval '2 days';
-  select l.notified_at into v_notified from private.telegram_links l
+  delete from private.tg_notify_sends where sent_at < v_now - interval '2 days';
+  select l.notified_at, l.linked_at into v_notified, v_linked from private.telegram_links l
    where l.telegram_id = p_telegram_id and l.user_id = p_user_id
      for update;
   if not found or v_notified is not null then
     return jsonb_build_object('do', 'skip');
   end if;
   select count(*) into n from private.tg_notify_sends s
-   where s.user_id = p_user_id and s.sent_at > now() - interval '24 hours';
-  update private.telegram_links set notified_at = now() where telegram_id = p_telegram_id;
+   where s.user_id = p_user_id and s.sent_at > v_now - interval '24 hours';
+  update private.telegram_links set notified_at = v_now where telegram_id = p_telegram_id;
   if n >= 3 then
     return jsonb_build_object('do', 'limited');
   end if;
-  insert into private.tg_notify_sends (user_id) values (p_user_id) returning id into v_id;
-  return jsonb_build_object('do', 'send', 'id', v_id);
+  insert into private.tg_notify_sends (user_id, sent_at) values (p_user_id, v_now) returning id into v_id;
+  return jsonb_build_object('do', 'send', 'id', v_id, 'linked_at', v_linked);
 end;
 $$;
 
 -- 通知信没寄出去：删掉占位的那一笔，并把这次连接改回「还没寄」。
--- 只在那一笔属于这个连接的账号、而且 notified_at 正是那次预约设的（同一个交易的 now() = 那一笔的 sent_at）时才改：
+-- 只在那一笔属于这个连接的账号、而且 notified_at 正是那次预约设的（reserve 把同一个值写进 notified_at 与 sent_at）时才改：
 -- 预约后连接被解除又重新连接，新连接的 notified_at 不会被旧请求清掉（3b 审核 S6）。
 create or replace function svc.svc_tg_notify_release(p_id bigint, p_telegram_id bigint) returns void
 language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$

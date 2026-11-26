@@ -211,3 +211,12 @@ test('mintSession：verify 回 200 有 token 但没有 user → 先作废再回 
   assert.equal(await mintSession(f, BASE, KEY, EMAIL, UID), 'mismatch');
   assert.equal(f.callsTo('/auth/v1/logout?scope=local').length, 1);
 });
+
+test('mintSession：第 7 个参数是内部作废的超时', async () => {
+  const orig = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+  const f = routes(glOk(), verifyOk({ user: { id: OTHER } }));
+  try { await mintSession(f, BASE, KEY, EMAIL, UID, 2500, 1500); } finally { AbortSignal.timeout = orig; }
+  assert.deepEqual(seen, [2500, 2500, 1500]);
+});

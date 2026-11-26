@@ -3,7 +3,8 @@
 //   1. 验签（300 秒内才算新鲜）；只是太旧 → 用 86400 再验一次（过了就是「不新鲜」，只能回 stale／unlinked）
 //   2. 新鲜：svc_tg_touch（顺便更新名字）；不新鲜：只读 svc_tg_link_get（旧资料不能改名字）
 //   3. 查账号 → mintSession → 再查一次连接（中途被解除就作废刚铸的 session）
-//   4. 连接时没寄成的通知信，在这里补寄（攻击者要拿 session 一定经过这里）
+//   4. 连接时没寄成的通知信，在这里补寄（攻击者要拿 session 一定经过这里；唯一的空档是 bind 正在寄信时同时打开，
+//      那次拿到 skip，若 bind 的信失败撤回，要等下次打开才补寄）
 // 规则：mintSession 成功之后，任何没把 token 回给前端的出口都先 revokeSession（包括意外错误）。
 // 总时限（审核 M1）：前端只等 10 秒，所以整个流程限 7.5 秒；铸好 session 后若已超时就作废、不回 token，
 //   免得 token 回给已经放弃的前端、没人作废。作废本身另给 1.5 秒。
@@ -29,7 +30,7 @@ const MINT_STEP_MS = 2500;      // generate_link、verify 各一次
 const REVOKE_MS = 1500;
 const NOTICE_RPC_MS = 1500;
 const NOTICE_MAIL_MS = 2500;
-const NOTICE_MIN_LEFT_MS = 3000; // 剩下不到这么多就不寄（下次打开再试）
+const NOTICE_MIN_LEFT_MS = NOTICE_RPC_MS + NOTICE_MAIL_MS + NOTICE_RPC_MS; // 预约＋寄信＋撤回都要放得下，不够就留到下次
 const FAIL_MSG = '暂时无法登录，请稍后再试';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -139,8 +140,12 @@ async function tgLoginFlow(
     return reply(500, { error: FAIL_MSG });
   }
 
-  // ---- 5. 铸 session ----
-  const s = await mintSession(deps.fetch, base, key, acct.email, uid, Math.max(1, Math.min(MINT_STEP_MS, Math.floor(left() / 2))));
+  // ---- 5. 铸 session（时间已用完就不叫：generate_link 会作废用户等待中的验证码） ----
+  if (left() <= 0) {
+    logFail('换 session', '超过总时限，没叫 generate_link');
+    return reply(500, { error: FAIL_MSG });
+  }
+  const s = await mintSession(deps.fetch, base, key, acct.email, uid, Math.max(1, Math.min(MINT_STEP_MS, Math.floor(left() / 2))), REVOKE_MS);
   if (s === 'limited') {
     logFail('换 session', 'limited');
     return reply(429, { error: '请 1 分钟后再试' });
@@ -177,11 +182,12 @@ async function tgLoginFlow(
   }
 
   // ---- 8. ----
-  minted.token = '';
-  return reply(200, {
+  const ok = reply(200, {
     status: 'linked', access_token: s.access_token, refresh_token: s.refresh_token, expires_in: s.expires_in,
     user: { id: s.user.id, email: s.user.email }, label,
   });
+  minted.token = '';
+  return ok;
 }
 
 function realDeps(): Deps {
