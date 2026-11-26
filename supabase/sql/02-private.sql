@@ -81,6 +81,18 @@ alter table private.telegram_links
   add column if not exists tg_label text not null default ''
   constraint telegram_links_tg_label_len check (char_length(tg_label) <= 64);
 
+-- 3b：连接通知信（Q9②；r2-M2-2 (b)、S2-6，用户 2026-11-26 选）。
+-- notified_at：这次连接的通知信「已处理」的时间（寄出、或因上限放弃）；null＝还没寄（bind 回 already 时会补寄）。
+alter table private.telegram_links add column if not exists notified_at timestamptz;
+-- 每寄一封通知信记一笔，给「同一账号 24 小时最多 3 封」用；只留 2 天。账号删掉时跟着删。
+create table if not exists private.tg_notify_sends (
+  id      bigserial   primary key,
+  user_id uuid        not null references auth.users (id) on delete cascade,
+  sent_at timestamptz not null default now()
+);
+create index if not exists tg_notify_sends_user_idx on private.tg_notify_sends (user_id, sent_at);
+create index if not exists tg_notify_sends_at_idx   on private.tg_notify_sends (sent_at);
+
 -- 多一层防线：开 RLS、不建 policy（definer 函数不受影响）
 alter table private.owner_emails      enable row level security;
 alter table private.otp_sends         enable row level security;
@@ -89,6 +101,7 @@ alter table private.invite_codes      enable row level security;
 alter table private.invite_uses       enable row level security;
 alter table private.register_attempts enable row level security;
 alter table private.telegram_links    enable row level security;
+alter table private.tg_notify_sends   enable row level security;
 
 revoke all on all tables in schema private from public, anon, authenticated;
 revoke all on all sequences in schema private from public, anon, authenticated;
@@ -430,6 +443,7 @@ begin
   delete from public.categories        where user_id = p_user_id;
   delete from public.category_keywords where user_id = p_user_id;
   delete from private.telegram_links   where user_id = p_user_id;
+  delete from private.tg_notify_sends  where user_id = p_user_id;
   update private.invite_uses set email = '', display_name = '', status = 'used'
    where user_id = p_user_id
       or (v_email is not null and v_email <> '' and user_id is null and email = v_email);
@@ -549,6 +563,79 @@ begin
 end;
 $$;
 
+-- ======================= Telegram 登录与通知信（3b） =======================
+
+-- tg-login 用：这个 Telegram 有连接 → 更新名字（去空白后是空的就不改；截 64 字）并回 user_id；没有连接 → null。
+-- 只 update、绝不 insert（新连接一律走 svc_tg_bind）。
+create or replace function svc.svc_tg_touch(p_telegram_id bigint, p_label text) returns uuid
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
+declare
+  v_label text := left(btrim(coalesce(p_label, '')), 64);
+  v_uid   uuid;
+begin
+  if p_telegram_id is null or p_telegram_id <= 0 then
+    raise exception 'telegram_id 不合格';
+  end if;
+  update private.telegram_links
+     set tg_label = case when v_label <> '' then v_label else tg_label end
+   where telegram_id = p_telegram_id
+  returning user_id into v_uid;
+  return v_uid;
+end;
+$$;
+
+-- tg-link bind 成功（linked 或 already）后用：要不要寄连接通知信。锁住这一笔连接，所以同时两个请求也只会寄一封。
+--   {"do":"skip"}           ：连接不在、连的不是这个账号、或这次连接已处理过
+--   {"do":"limited"}        ：这个账号 24 小时内已寄 3 封 → 记成已处理、不寄
+--   {"do":"send","id":<n>}  ：先占位（记一笔、设 notified_at），寄信失败要叫 svc_tg_notify_release
+create or replace function svc.svc_tg_notify_reserve(p_telegram_id bigint, p_user_id uuid) returns jsonb
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
+declare
+  v_notified timestamptz;
+  n          integer;
+  v_id       bigint;
+begin
+  if p_telegram_id is null or p_telegram_id <= 0 then
+    raise exception 'telegram_id 不合格';
+  end if;
+  if p_user_id is null then
+    raise exception 'user_id 不能是 null';
+  end if;
+  delete from private.tg_notify_sends where sent_at < now() - interval '2 days';
+  select l.notified_at into v_notified from private.telegram_links l
+   where l.telegram_id = p_telegram_id and l.user_id = p_user_id
+     for update;
+  if not found or v_notified is not null then
+    return jsonb_build_object('do', 'skip');
+  end if;
+  select count(*) into n from private.tg_notify_sends s
+   where s.user_id = p_user_id and s.sent_at > now() - interval '24 hours';
+  update private.telegram_links set notified_at = now() where telegram_id = p_telegram_id;
+  if n >= 3 then
+    return jsonb_build_object('do', 'limited');
+  end if;
+  insert into private.tg_notify_sends (user_id) values (p_user_id) returning id into v_id;
+  return jsonb_build_object('do', 'send', 'id', v_id);
+end;
+$$;
+
+-- 通知信没寄出去：删掉占位的那一笔，并把这次连接改回「还没寄」（只在那一笔属于这个连接的账号时才改）
+create or replace function svc.svc_tg_notify_release(p_id bigint, p_telegram_id bigint) returns void
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
+declare
+  v_uid uuid;
+begin
+  if p_id is null or p_telegram_id is null or p_telegram_id <= 0 then
+    raise exception '参数不合格';
+  end if;
+  delete from private.tg_notify_sends where id = p_id returning user_id into v_uid;
+  if v_uid is not null then
+    update private.telegram_links set notified_at = null
+     where telegram_id = p_telegram_id and user_id = v_uid;
+  end if;
+end;
+$$;
+
 -- 权限：只有 service_role 能执行
 revoke all on function svc.svc_otp_reserve(text)                        from public, anon, authenticated;
 revoke all on function svc.svc_otp_release(bigint)                      from public, anon, authenticated;
@@ -566,6 +653,9 @@ revoke all on function svc.svc_tg_link_get(bigint)                     from publ
 revoke all on function svc.svc_tg_bind(bigint, uuid, text)             from public, anon, authenticated;
 revoke all on function svc.svc_tg_unlink(uuid)                         from public, anon, authenticated;
 revoke all on function svc.svc_tg_status(uuid)                         from public, anon, authenticated;
+revoke all on function svc.svc_tg_touch(bigint, text)                  from public, anon, authenticated;
+revoke all on function svc.svc_tg_notify_reserve(bigint, uuid)         from public, anon, authenticated;
+revoke all on function svc.svc_tg_notify_release(bigint, bigint)       from public, anon, authenticated;
 grant execute on function svc.svc_otp_reserve(text)                       to service_role;
 grant execute on function svc.svc_otp_release(bigint)                     to service_role;
 grant execute on function svc.svc_register_check(text, text, boolean)     to service_role;
@@ -582,6 +672,9 @@ grant execute on function svc.svc_tg_link_get(bigint)                    to serv
 grant execute on function svc.svc_tg_bind(bigint, uuid, text)            to service_role;
 grant execute on function svc.svc_tg_unlink(uuid)                        to service_role;
 grant execute on function svc.svc_tg_status(uuid)                        to service_role;
+grant execute on function svc.svc_tg_touch(bigint, text)                 to service_role;
+grant execute on function svc.svc_tg_notify_reserve(bigint, uuid)        to service_role;
+grant execute on function svc.svc_tg_notify_release(bigint, bigint)      to service_role;
 
 -- 兜底：svc 里「所有」函数（包括以后新增、忘了写进上面名单的）一律只给 service_role
 do $$

@@ -4,7 +4,7 @@
 //   hash 要等于 hex(HMAC_SHA256(key=secret_key, msg=data_check_string))
 //   data_check_string：除了 hash 以外的「全部」栏位（含 signature），按 key 排序、key=value（解码后）、以 \n 连接
 // 打包规则：这个档不能 import 别档；顶层名字一律 tg 开头（不分大小写），免得和其他 _shared 档撞名。
-// 任何不合格一律回 null、不 throw；不记任何日志（呼叫端只记「验证失败」）。
+// 任何不合格都不 throw；不记任何日志（呼叫端只记失败原因种类）。
 
 export type TgUser = { telegramId: string; label: string };
 
@@ -40,23 +40,31 @@ async function tgHmacKey(raw: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, [usage]);
 }
 
-// 注意：maxAgeSec 内同一份 initData 可以重放（这里不管）；tg-login 的时效要取短（3b 定）
-export async function tgVerifyInitData(initData: string, botToken: string | undefined, nowSec: number, maxAgeSec: number): Promise<TgUser | null> {
+export type TgVerifyFail = 'token' | 'format' | 'length' | 'dup' | 'hash' | 'expired' | 'future' | 'user';
+
+// 注意：maxAgeSec 内同一份 initData 可以重放（这里不管）；呼叫端各自取短（3b：tg-login 300 秒、bind 600 秒）
+// 失败原因种类只给服务器日志用，不回前端：
+//   token 设定的 bot token 不合格｜format 参数或 auth_date 格式不对｜length 不是字串、空的或太长｜dup 同一栏位出现两次
+//   hash 缺 hash 或签名不符｜expired 太旧｜future 比服务器时间快 60 秒以上｜user user 栏位缺少或不合格（含 bot）
+export async function tgVerifyInitDataWhy(
+  initData: string, botToken: string | undefined, nowSec: number, maxAgeSec: number,
+): Promise<{ user: TgUser } | { fail: TgVerifyFail }> {
+  const no = (fail: TgVerifyFail) => ({ fail });
   try {
-    if (typeof nowSec !== 'number' || !Number.isFinite(nowSec) || nowSec <= 0) return null;
-    if (typeof maxAgeSec !== 'number' || !Number.isFinite(maxAgeSec) || maxAgeSec <= 0 || maxAgeSec > TG_MAX_AGE_LIMIT_SEC) return null;
-    if (!tgBotTokenOk(botToken)) return null;
+    if (typeof nowSec !== 'number' || !Number.isFinite(nowSec) || nowSec <= 0) return no('format');
+    if (typeof maxAgeSec !== 'number' || !Number.isFinite(maxAgeSec) || maxAgeSec <= 0 || maxAgeSec > TG_MAX_AGE_LIMIT_SEC) return no('format');
+    if (!tgBotTokenOk(botToken)) return no('token');
     const token = botToken.trim();
-    if (typeof initData !== 'string' || initData === '' || initData.length > TG_MAX_INIT_DATA) return null;
+    if (typeof initData !== 'string' || initData === '' || initData.length > TG_MAX_INIT_DATA) return no('length');
 
     const params = new URLSearchParams(initData);
     const fields = new Map<string, string>();
     for (const [k, v] of params) {
-      if (fields.has(k)) return null; // 同一个 key 出现两次（含 hash）
+      if (fields.has(k)) return no('dup'); // 同一个 key 出现两次（含 hash）
       fields.set(k, v);
     }
     const hash = fields.get('hash');
-    if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) return null;
+    if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) return no('hash');
 
     const dcs = [...fields.keys()].filter((k) => k !== 'hash').sort()
       .map((k) => `${k}=${fields.get(k)}`).join('\n');
@@ -64,23 +72,53 @@ export async function tgVerifyInitData(initData: string, botToken: string | unde
     const secretKey = await tgHmacKey(enc.encode('WebAppData'), 'sign');
     const secret = new Uint8Array(await crypto.subtle.sign('HMAC', secretKey, enc.encode(token)));
     const checkKey = await tgHmacKey(secret, 'verify');
-    if (!(await crypto.subtle.verify('HMAC', checkKey, tgHexBytes(hash), enc.encode(dcs)))) return null;
+    if (!(await crypto.subtle.verify('HMAC', checkKey, tgHexBytes(hash), enc.encode(dcs)))) return no('hash');
 
     const authDate = fields.get('auth_date');
-    if (!authDate || !/^\d{1,12}$/.test(authDate)) return null;
+    if (!authDate || !/^\d{1,12}$/.test(authDate)) return no('format');
     const t = Number(authDate);
-    if (!(t >= nowSec - maxAgeSec && t <= nowSec + TG_FUTURE_SKEW_SEC)) return null;
+    if (t < nowSec - maxAgeSec) return no('expired');
+    if (t > nowSec + TG_FUTURE_SKEW_SEC) return no('future');
 
     const userJson = fields.get('user');
-    if (!userJson) return null;
-    const user: unknown = JSON.parse(userJson);
-    if (!user || typeof user !== 'object' || Array.isArray(user)) return null;
+    if (!userJson) return no('user');
+    let user: unknown;
+    try { user = JSON.parse(userJson); } catch { return no('user'); }
+    if (!user || typeof user !== 'object' || Array.isArray(user)) return no('user');
     const u = user as Record<string, unknown>;
-    if (typeof u.id !== 'number' || !Number.isSafeInteger(u.id) || u.id <= 0) return null;
-    if (u.is_bot === true) return null;
+    if (typeof u.id !== 'number' || !Number.isSafeInteger(u.id) || u.id <= 0) return no('user');
+    if (u.is_bot === true) return no('user');
 
-    return { telegramId: String(u.id), label: tgLabel(u) };
+    return { user: { telegramId: String(u.id), label: tgLabel(u) } };
   } catch {
-    return null;
+    return no('format');
+  }
+}
+
+// 任何不合格一律回 null（行为与 3a-1 相同）
+export async function tgVerifyInitData(initData: string, botToken: string | undefined, nowSec: number, maxAgeSec: number): Promise<TgUser | null> {
+  const r = await tgVerifyInitDataWhy(initData, botToken, nowSec, maxAgeSec);
+  return 'user' in r ? r.user : null;
+}
+
+// 叫 Telegram Bot API（https://core.telegram.org/bots/api#making-requests：POST JSON，回 {ok, result}）。
+// 不 throw、不记日志、不回原始回应；网址含 token，所以连线错误的讯息也一律丢掉。
+export async function tgBotCall(
+  fetchFn: typeof fetch, token: string | undefined, method: string, payload: unknown, timeoutMs = 5000,
+): Promise<{ ok: true } | { ok: false; status: number }> {
+  if (!tgBotTokenOk(token) || typeof method !== 'string' || !/^[A-Za-z]{1,64}$/.test(method)) return { ok: false, status: 0 };
+  try {
+    const res = await fetchFn(`https://api.telegram.org/bot${token.trim()}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload ?? {}),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    let data: any = null;
+    try { data = await res.json(); } catch { data = null; }
+    if (res.ok && data && data.ok === true) return { ok: true };
+    return { ok: false, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
   }
 }

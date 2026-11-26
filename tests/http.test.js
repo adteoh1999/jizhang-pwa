@@ -90,3 +90,24 @@ test('rpc：2xx 但内容不是 JSON → 只抛固定讯息，不带回应原文
     return true;
   });
 });
+
+// ---------- 3b-2：rpc 失败带 Postgres 错误代码 ----------
+test('rpc：非 2xx 且回应有 5 码 code → Error 带 pgCode，讯息不带回应内容', async () => {
+  const f = async () => new Response('{"code":"55P03","message":"秘密"}', { status: 500 });
+  await assert.rejects(rpc(f, 'https://p', 'K', 'svc_tg_bind', {}), (e) => {
+    assert.equal(e.pgCode, '55P03');
+    assert.doesNotMatch(e.message, /秘密/);
+    assert.match(e.message, /svc_tg_bind/);
+    return true;
+  });
+});
+
+test('rpc：code 格式不对、或回应不是 JSON → 没有 pgCode', async () => {
+  for (const body of ['{"code":"x; drop"}', '{"code":"55p03"}', '{"code":12345}', 'not json', '']) {
+    const f = async () => new Response(body, { status: 500 });
+    await assert.rejects(rpc(f, 'https://p', 'K', 'svc_x', {}), (e) => {
+      assert.equal(e.pgCode, undefined, body);
+      return true;
+    });
+  }
+});

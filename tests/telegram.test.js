@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { tgBotTokenOk, tgLabel, tgVerifyInitData } from '../supabase/functions/_shared/telegram.ts';
+import { tgBotTokenOk, tgLabel, tgVerifyInitData, tgVerifyInitDataWhy, tgBotCall } from '../supabase/functions/_shared/telegram.ts';
 import { SHARED_IMPORT_FORBIDDEN } from '../scripts/build-functions.mjs';
 import { signInitData } from './helpers/tg-init-data.js';
+import { fakeFetch, jsonRes, hang } from './helpers/edge-fn.js';
 
 // 全是假的测试资料
 const TOKEN = '123456:' + 'A'.repeat(35);
@@ -215,4 +216,92 @@ test('telegram.ts 符合 _shared 打包规则：不 import 别档；顶层名字
   const names = [...src.matchAll(/^(?:export\s+)?(?:async\s+)?(?:const|let|var|function|class|type|interface)\s+([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
   assert.ok(names.length >= 4, '至少要找到 4 个顶层名字');
   for (const n of names) assert.match(n, /^tg/i, n);
+});
+
+// ---------- 3b-2：tgVerifyInitDataWhy（失败原因种类，只给服务器日志用） ----------
+const why = (s, token = TOKEN, now = NOW, age = AGE) => tgVerifyInitDataWhy(s, token, now, age);
+const WHY_CASES = {
+  token: [() => why(good(), ''), () => tgVerifyInitDataWhy(good(), undefined, NOW, AGE), () => why(good(), 'abc')],
+  format: [
+    () => tgVerifyInitDataWhy(good(), TOKEN, NOW, 86401), () => tgVerifyInitDataWhy(good(), TOKEN, NaN, AGE),
+    () => why(signInitData(base({ auth_date: '17640000e2' }), TOKEN)), () => why(signInitData(drop('auth_date')(base()), TOKEN)),
+  ],
+  length: [() => why(''), () => why(null), () => why('x'.repeat(4097))],
+  dup: [() => why(good() + '&auth_date=1764000000'), () => why(good() + '&hash=' + new URLSearchParams(good()).get('hash'))],
+  hash: [() => why(edit(good(), (p) => p.delete('hash'))), () => why(edit(good(), (p) => p.set('auth_date', '1764000001'))), () => why(edit(good(), (p) => p.set('hash', 'zz')))],
+  expired: [() => why(signInitData(base({ auth_date: String(NOW - AGE - 1) }), TOKEN))],
+  future: [() => why(signInitData(base({ auth_date: String(NOW + 61) }), TOKEN))],
+  user: [
+    () => why(signInitData(drop('user')(base()), TOKEN)), () => why(signInitData(base({ user: '{id:1' }), TOKEN)),
+    () => why(signInitData(base({ user: '[1]' }), TOKEN)), () => why(signInitData(base({ user: JSON.stringify({ ...USER, id: 0 }) }), TOKEN)),
+    () => why(signInitData(base({ user: JSON.stringify({ ...USER, is_bot: true }) }), TOKEN)),
+  ],
+};
+for (const [kind, cases] of Object.entries(WHY_CASES)) {
+  test(`tgVerifyInitDataWhy：失败原因 ${kind}`, async () => {
+    for (const [i, c] of cases.entries()) assert.deepEqual(await c(), { fail: kind }, `${kind} #${i}`);
+  });
+}
+
+test('tgVerifyInitDataWhy：通过 → {user:{telegramId, label}}；tgVerifyInitData 回同一个 user', async () => {
+  assert.deepEqual(await why(good()), { user: OK });
+  assert.deepEqual(await verify(good()), OK);
+});
+
+test('tgVerifyInitDataWhy：失败时的回传不含 initData、token、名字', async () => {
+  const r = await why(signInitData(base({ auth_date: String(NOW - AGE - 1) }), TOKEN));
+  assert.deepEqual(Object.keys(r), ['fail']);
+});
+
+// ---------- 3b-2：tgBotCall（叫 Bot API；不 throw、不记日志、不回原始回应） ----------
+const quiet = async (fn) => {
+  const logs = [];
+  const orig = { log: console.log, warn: console.warn, error: console.error, info: console.info };
+  for (const k of Object.keys(orig)) console[k] = (...a) => logs.push(a.map(String).join(' '));
+  try { return { r: await fn(), logs }; } finally { Object.assign(console, orig); }
+};
+
+test('tgBotCall：POST https://api.telegram.org/bot<token>/<method>，body 是 JSON；ok:true → {ok:true}', async () => {
+  const f = fakeFetch([['https://api.telegram.org/', () => jsonRes(200, { ok: true, result: true })]]);
+  const { r, logs } = await quiet(() => tgBotCall(f, TOKEN + '\n', 'setChatMenuButton', { a: 1 }));
+  assert.deepEqual(r, { ok: true });
+  assert.deepEqual(logs, []);
+  const c = f.calls[0];
+  assert.equal(c.url, `https://api.telegram.org/bot${TOKEN}/setChatMenuButton`);
+  assert.equal(c.init.method, 'POST');
+  assert.match(new Headers(c.init.headers).get('content-type'), /application\/json/);
+  assert.deepEqual(c.body, { a: 1 });
+});
+
+test('tgBotCall：HTTP 错误、200 但 ok:false、内容坏掉 → {ok:false, status}，不含 token、不记日志', async () => {
+  const cases = [
+    [() => jsonRes(400, { ok: false, description: 'Bad Request: ' + TOKEN }), 400],
+    [() => jsonRes(200, { ok: false }), 200],
+    [() => new Response('not json', { status: 200 }), 200],
+  ];
+  for (const [h, status] of cases) {
+    const f = fakeFetch([['https://api.telegram.org/', h]]);
+    const { r, logs } = await quiet(() => tgBotCall(f, TOKEN, 'setMyDescription', {}));
+    assert.deepEqual(r, { ok: false, status });
+    assert.deepEqual(logs, []);
+  }
+});
+
+test('tgBotCall：连线错（讯息含网址与 token）、超时 → {ok:false, status:0}，不 throw、不记日志', async () => {
+  for (const h of [() => { throw new TypeError(`fetch failed https://api.telegram.org/bot${TOKEN}/x`); }, hang]) {
+    const f = fakeFetch([['https://api.telegram.org/', h]]);
+    const t0 = Date.now();
+    const { r, logs } = await quiet(() => tgBotCall(f, TOKEN, 'getMe', {}, 50));
+    assert.deepEqual(r, { ok: false, status: 0 });
+    assert.deepEqual(logs, []);
+    assert.ok(Date.now() - t0 < 1000);
+  }
+});
+
+test('tgBotCall：token 不合格、method 不合格 → {ok:false, status:0}，没有叫 fetch', async () => {
+  for (const [tok, m] of [['', 'getMe'], [undefined, 'getMe'], ['abc', 'getMe'], [TOKEN, ''], [TOKEN, 'get/Me'], [TOKEN, '../x']]) {
+    const f = fakeFetch([]);
+    assert.deepEqual(await tgBotCall(f, tok, m, {}), { ok: false, status: 0 }, `${tok} ${m}`);
+    assert.equal(f.calls.length, 0);
+  }
 });

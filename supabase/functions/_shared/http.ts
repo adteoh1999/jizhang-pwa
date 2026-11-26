@@ -62,7 +62,15 @@ export async function rpc(
   } catch (e) {
     throw new Error(`rpc ${name} 失败：${e instanceof Error ? e.name : '连线错误'}`);
   }
-  if (!res.ok) throw new Error(`rpc ${name} 失败：HTTP ${res.status}`);
+  if (!res.ok) {
+    // 讯息只有函数名＋状态码；Postgres 错误代码（5 码，例如 55P03 等锁超时）另放 pgCode，给呼叫端分辨用
+    const err: Error & { pgCode?: string } = new Error(`rpc ${name} 失败：HTTP ${res.status}`);
+    try {
+      const c = JSON.parse(text)?.code;
+      if (typeof c === 'string' && /^[0-9A-Z]{5}$/.test(c)) err.pgCode = c;
+    } catch { /* 不是 JSON 就不带 */ }
+    throw err;
+  }
   if (text === '') return null;
   try {
     return JSON.parse(text);
