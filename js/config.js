@@ -3,3 +3,6 @@
 export const SUPABASE_URL = 'https://xzsjdqtrdfbiotypooet.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_fDAq67NruV3kBXPcdebKaA_ujun8vU5';
 export const REGISTER_URL = `${SUPABASE_URL}/functions/v1/register`;
+export const TG_LOGIN_URL = `${SUPABASE_URL}/functions/v1/tg-login`;
+export const TG_LINK_URL = `${SUPABASE_URL}/functions/v1/tg-link`;
+export const TG_ADMIN_URL = `${SUPABASE_URL}/functions/v1/tg-admin`;

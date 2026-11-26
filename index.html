@@ -15,6 +15,29 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="css/app.css">
+  <!-- Telegram Mini App（3b-6）：只有 Telegram 桥接物件存在才载 SDK；一般浏览器打开带 #tgWebAppData 的链接也不载。
+       hash 有 tgWebAppData 就记在 sessionStorage，重新整理后还认得。ES5、整段 try，不印东西。 -->
+  <script>
+  (function () {
+    try {
+      var w = window;
+      try {
+        if (String(w.location.hash || '').indexOf('tgWebAppData=') !== -1) w.sessionStorage.setItem('jz_tg', '1');
+      } catch (e1) { /* 无痕模式等 */ }
+      if (w.TelegramWebviewProxy) {
+        w.__tgSdk = new Promise(function (resolve) {
+          try {
+            var s = w.document.createElement('script');
+            s.src = 'https://telegram.org/js/telegram-web-app.js?65';
+            s.onload = function () { resolve(!!(w.Telegram && w.Telegram.WebApp)); };
+            s.onerror = function () { resolve(false); };
+            w.document.head.appendChild(s);
+          } catch (e2) { resolve(false); }
+        });
+      }
+    } catch (e) { /* 忽略：交给 js/telegram.js 后备 */ }
+  })();
+  </script>
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
