@@ -13,13 +13,16 @@ import { tgBotTokenOk, tgBotCall } from '../_shared/telegram.ts';
 type Deps = {
   env: (k: string) => string | undefined;
   fetch: typeof fetch;
+  nowMs?: () => number;
 };
 
 const ADMIN_FAIL_MSG = '暂时无法完成，请稍后再试';
-// 超时（审核 M1）：前端等 10 秒 → 查身份 2 + 查站主 2 + Bot API 3×1.5 = 8.5 秒
+// 超时：前端等 10 秒 → 整个流程总时限 8.5 秒（查身份 2、查站主 2，Bot API 每步最多 5 秒、缩到剩下的时间）。
+// 实测（2026-11-26）：第一次连 api.telegram.org 超过 1.5 秒（Telegram 其实已设好），所以不再每步固定 1.5 秒。
+const ADMIN_BUDGET_MS = 8500;
 const ADMIN_USER_MS = 2000;
 const ADMIN_RPC_MS = 2000;
-const ADMIN_BOT_MS = 1500;
+const ADMIN_BOT_MS = 5000;
 const APP_URL = 'https://jizhang.adteoh.com/';
 // 计划 Q4（用户同意）
 const MENU_TEXT = '记账';
@@ -43,6 +46,9 @@ export async function handleTgAdmin(req: Request, deps: Deps): Promise<Response>
 
 async function tgAdminFlow(req: Request, deps: Deps, reply: (status: number, obj: unknown) => Response): Promise<Response> {
   if (req.method !== 'POST') return reply(405, { error: '只接受 POST' });
+  const clock = deps.nowMs ?? (() => Date.now());
+  const deadline = clock() + ADMIN_BUDGET_MS;
+  const left = () => deadline - clock();
 
   const token = bearer(req);
   if (!token) return reply(401, { error: '请重新登录后再试' });
@@ -93,7 +99,11 @@ async function tgAdminFlow(req: Request, deps: Deps, reply: (status: number, obj
     ['setMyDescription', { description: LONG_DESC }],
   ];
   for (const [method, payload] of steps) {
-    const r = await tgBotCall(deps.fetch, bot, method, payload, ADMIN_BOT_MS);
+    if (left() <= 0) {
+      logFail(method, '超过总时限，没送');
+      return reply(502, { error: 'Telegram 暂时连不上，请稍后再试' });
+    }
+    const r = await tgBotCall(deps.fetch, bot, method, payload, Math.max(1, Math.min(ADMIN_BOT_MS, left())));
     if (!r.ok) {
       logFail(method, `HTTP ${r.status}`);
       return reply(502, { error: 'Telegram 暂时连不上，请稍后再试' });

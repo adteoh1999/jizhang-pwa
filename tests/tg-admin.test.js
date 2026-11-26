@@ -175,11 +175,28 @@ async function withTimeouts(fn) {
 }
 
 for (const [label, mod] of await loadBoth('tg-admin')) {
-  test(`${label}：超时：查身份 2000、svc_is_owner 2000、每个 Bot API 1500（合计 8.5 秒 < 前端 10 秒）`, async () => {
+  // 实测（2026-11-26）：第一次连 api.telegram.org 超过 1.5 秒（Telegram 其实已设好）→ 改成总时限 8.5 秒、每步最多 5 秒
+  test(`${label}：超时：查身份 2000、svc_is_owner 2000、Bot API 每步最多 5000（时间充裕时）`, async () => {
     const f = routes();
-    const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f })));
+    const clock = { t: 1_000_000 };
+    const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f, nowMs: () => clock.t })));
     assert.equal(seen.length, f.calls.length);
-    assert.deepEqual(seen, [2000, 2000, 1500, 1500, 1500]);
+    assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000]);
+  });
+
+  test(`${label}：总时限 8.5 秒：前面用掉的时间会让后面每一步缩短；时间用完就不再叫 Telegram、回 502`, async () => {
+    const clock = { t: 1_000_000 };
+    let n = 0;
+    const f = routes({ tg: () => { n += 1; clock.t += n === 1 ? 4000 : 3000; return jsonRes(200, { ok: true, result: true }); } });
+    const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f, nowMs: () => clock.t })));
+    // 第 1 步开始时剩 8500 → 5000；第 2 步剩 4500 → 4500；第 3 步剩 1500 → 1500
+    assert.deepEqual(seen, [2000, 2000, 5000, 4500, 1500]);
+    const clock2 = { t: 1_000_000 };
+    const g = routes({ tg: () => { clock2.t += 9000; return jsonRes(200, { ok: true, result: true }); } });
+    const { r: res, logs } = await quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: g, nowMs: () => clock2.t }));
+    assert.equal(res.status, 502);
+    assert.equal(tgCalls(g).length, 1, '时间用完就不再叫');
+    assert.ok(!logs.join('\n').includes(BOT));
   });
 
   test(`${label}：意外的错误 → 500 固定句子，带 CORS，日志不含错误原文`, async () => {
