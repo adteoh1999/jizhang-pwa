@@ -3,7 +3,10 @@
 // 规则（3d 计划 r2）：
 //   - AI 的文字不直接回给用户：回复全由 bot-reply.ts 的固定句子组成；店名已在 bot-extract 清理。
 //   - 「今天」= Telegram 讯息时间（马来西亚日期），不用执行时间。
-//   - 回应码：处理完或永久无法处理 → 200；只有数据库暂时失败（claim、record）或「已记账但回复没送出」→ 5xx 让 Telegram 重送。
+//   - 回应码：处理完或永久无法处理 → 200；claim 失败、record 失败、「已记账／已问但回复没送出」→ 5xx 让 Telegram 重送。
+//     注意（D1）：重送若在 2 分钟内到，claim 回 busy → 这则静默结束（不会重复记账）；只有「其实已写入、回应丢了」时，
+//     重送会走 resend 补发回复。
+//   - 按钮（callback）不去重：Telegram 重送同一个按钮时会重放一次，undo → 已删除、confirm／consent 幂等、discard → 过期，都无害。
 //   - 截图只在记忆体；送给 Anthropic 的只有说明、今天日期、分类清单、文字或截图。
 //   - 日志只记「步骤＋状态码／错误种类」，绝不记讯息文字、截图、AI 回应、file_path、网址、telegram_id。
 // 打包规则：这个档自己的顶层名字一律 tb／TB_ 开头（BOT_ 是 bot-reply.ts 的）。
@@ -33,7 +36,8 @@ const TB_TYPING_MS = 1500;
 const TB_SEND_MS = 5000;
 const TB_DOWNLOAD_MS = 8000;
 const TB_AI_MS = 20000;
-const TB_AI_MIN_LEFT_MS = 3000;       // 剩下的时间不够叫 AI 就不叫
+const TB_AI_MIN_LEFT_MS = 9000;       // 剩下的时间不够叫 AI 就不叫（逾时不退次数，宁可先退次数说记不了）
+const TB_AFTER_AI_MS = 6000;          // AI 之后要留给记账（4 秒）与回复的时间
 
 const tbLog = (step: string, detail: string) => console.error(`[telegram-bot] ${step}: ${detail}`);
 // rpc 抛的讯息是自己写的固定文字（函数名＋状态码），可以记；其他错误一律只记「失败」
@@ -166,9 +170,9 @@ async function tbRefund(ctx: TbCtx, useId: unknown): Promise<void> {
   }
 }
 
-// 没记账的结尾：回一句（送不成也照样 200，不让 Telegram 重送）＋ finish
+// 没记账的结尾：回一句（送成就记 replied，与 SQL claim「已回复的处理中不再重领」一致；送不成也照样 200）＋ finish
 async function tbEnd(ctx: TbCtx, text: string, markup?: unknown): Promise<Response> {
-  await tbSend(ctx, text, markup);
+  if (await tbSend(ctx, text, markup)) await tbReplied(ctx);
   await tbFinish(ctx);
   return tbStatus(200);
 }
@@ -182,11 +186,26 @@ async function tbCategories(ctx: TbCtx): Promise<ReturnType<typeof botMergeCateg
 
 const tbCatName = (cats: { id: string; name: string }[], id: string) => cats.find((c) => c.id === id)?.name ?? '未分类';
 
+// 写入已经成功之后才读分类（只为了显示名字）：失败就用空清单（显示「未分类」），绝不让成功变成「现在记不了」
+async function tbCategoriesAfterWrite(ctx: TbCtx): Promise<{ id: string; name: string }[]> {
+  try {
+    return (await tbCategories(ctx)) ?? [];
+  } catch (e) {
+    tbLog('categories', tbErr(e));
+    return [];
+  }
+}
+
+const tbTxOk = (t: any): t is TbTx => !!t && typeof t === 'object' && typeof t.id === 'string' && Number.isSafeInteger(t.amount_minor)
+  && typeof t.category_id === 'string' && typeof t.occurred_on === 'string' && typeof t.note === 'string';
+
 // record／claim 补发共用：把结果组成回复
+// 形状不对（资料坏掉）一律回 null：不 throw，免得 500 一直被 Telegram 重送
 function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }[]): { text: string; markup: unknown } | null {
+  if (!out || typeof out !== 'object') return null;
   if (out.status === 'recorded') {
     const tx = out.tx;
-    if (!tx || tx.deleted) return null;
+    if (!tbTxOk(tx) || tx.deleted) return null;
     return {
       text: botRecordedText({ amountMinor: tx.amount_minor, categoryName: tbCatName(cats, tx.category_id), note: tx.note,
         occurredOn: tx.occurred_on, today: ctx.today }),
@@ -194,6 +213,8 @@ function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }
     };
   }
   if (out.status === 'asked') {
+    if (!tbTxOk(out.pending) || (out.reason !== 'big' && out.reason !== 'similar')) return null;
+    if (out.similar !== null && out.similar !== undefined && !tbTxOk(out.similar)) return null;
     const text = out.reason === 'big'
       ? botBigText(out.pending, tbCatName(cats, out.pending.category_id))
       : botSimilarText(out.similar, out.similar ? tbCatName(cats, out.similar.category_id) : '', ctx.today);
@@ -276,18 +297,20 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
   // ---- 第一次用 AI 先同意（D4）----
   if (claim.ai_ok !== true) return await tbEnd(ctx, BOT_CONSENT, botConsentKeyboard());
 
-  // ---- 截图：下载、认格式（还没扣次数）----
-  let image: { mediaType: 'image/jpeg' | 'image/png' | 'image/webp'; base64: string } | undefined;
-  await tbTyping(ctx);
+  // ---- 截图：下载、认格式（还没扣次数）；「输入中」同时送、失败不管 ----
+  const typing = tbTyping(ctx);
+  let photo: { bytes: Uint8Array; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null = null;
   if (source === 'photo') {
     const bytes = await tgDownload(ctx.deps.fetch, ctx.bot, fileId, TB_IMAGE_MAX, tbMs(ctx, TB_DOWNLOAD_MS));
     const mediaType = bytes ? tgSniffImage(bytes) : null;
     if (!bytes || !mediaType) {
+      await typing;
       tbLog('下载截图', bytes ? '不是图片' : '失败');
       return await tbEnd(ctx, BOT_IMAGE_BAD);
     }
-    image = { mediaType, base64: tgBase64(bytes) };
+    photo = { bytes, mediaType };
   }
+  await typing;
 
   // ---- 扣次数 ----
   let reserve: any;
@@ -327,10 +350,11 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     await tbRefund(ctx, useId);
     return await tbEnd(ctx, BOT_DOWN);
   }
-  const body = aiBuildRequest(source === 'text'
-    ? { today: ctx.today, cats, text: text as string }
-    : { today: ctx.today, cats, caption, image });
-  const aiMs = Math.min(ctx.deps.aiMs ?? TB_AI_MS, ctx.left() - 2000);
+  // base64 放在扣次数、读分类都成功之后才做（次数用完的人不白花 CPU；每次只有 2 秒 CPU）
+  const body = aiBuildRequest(photo
+    ? { today: ctx.today, cats, caption, image: { mediaType: photo.mediaType, base64: tgBase64(photo.bytes) } }
+    : { today: ctx.today, cats, text: text as string });
+  const aiMs = Math.min(ctx.deps.aiMs ?? TB_AI_MS, ctx.left() - TB_AFTER_AI_MS);
   const ai = await aiExtract(ctx.deps.fetch, aiKey, body, Math.max(1, aiMs));
   if (!ai.ok) {
     if (ai.why === 'http') {
@@ -359,7 +383,10 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     tbLog('record', tbErr(e));
     return tbStatus(503);
   }
-  if (!out || out.status === 'gone') return tbStatus(200);
+  if (!out || out.status === 'gone') {
+    if (!out) tbLog('record', '没有回传');
+    return tbStatus(200);
+  }
   return await tbDeliver(ctx, out, cats);
 }
 
@@ -435,7 +462,7 @@ async function tbCallbackOp(ctx: TbCtx, cb: ReturnType<typeof botParseCallback>)
     if (r?.status === 'already') return BOT_ANS_DELETED;
     if (r?.status === 'busy') return BOT_DOWN;
     if (r?.status !== 'done' || !r.tx) return BOT_ANS_EXPIRED;
-    const cats = (await tbCategories(ctx)) ?? [];
+    const cats = await tbCategoriesAfterWrite(ctx);
     return (await tbEditText(ctx, botUndoneText(tbLineOf(ctx, r.tx, cats)))) ? '' : BOT_ANS_UNDONE;
   }
 
@@ -472,7 +499,7 @@ async function tbCallbackOp(ctx: TbCtx, cb: ReturnType<typeof botParseCallback>)
     const r = await tbRpc(ctx, 'svc_bot_confirm', { p_telegram_id: tg, p_pending_id: cb.id }, TB_RPC_WRITE_MS);
     if (r?.status !== 'recorded' || !r.tx) return BOT_ANS_EXPIRED;
     if (r.tx.deleted) return BOT_ANS_DELETED;
-    const cats = (await tbCategories(ctx)) ?? [];
+    const cats = await tbCategoriesAfterWrite(ctx);
     const ok = await tbEditText(ctx, botRecordedText(tbLineOf(ctx, r.tx, cats)), botRecordedKeyboard(r.tx.id));
     return ok ? '' : BOT_ANS_RECORDED;
   }

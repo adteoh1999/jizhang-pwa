@@ -220,3 +220,59 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     assert.equal(answers(f)[0].text, R.BOT_DOWN);
   });
 }
+
+
+// ======================= 审核（Task 7–8）补测 =======================
+for (const [label, mod] of await loadBoth('telegram-bot')) {
+  const go = async (body, f) => {
+    const { r: res } = await quiet(() => mod.handleTelegramBot(req(body), { env: (k) => ENV_OBJ[k], fetch: f, nowMs: () => NOW }));
+    return res.status;
+  };
+
+  test(`${label}：审核 M1：撤销成功但读分类失败 → 仍说已撤销（绝不说现在记不了）`, async () => {
+    const f = routes({ svc_bot_categories: () => jsonRes(500, {}) });
+    await go(cbUpdate(`u:${TX}`), f);
+    const a = answers(f);
+    assert.equal(a.length, 1);
+    assert.notEqual(a[0].text, R.BOT_DOWN);
+    assert.ok(edits(f).length === 1 ? (a[0].text ?? '') === '' : a[0].text === R.BOT_ANS_UNDONE);
+  });
+
+  test(`${label}：审核 M1：还要记成功但读分类失败 → 仍说已记（绝不说现在记不了）`, async () => {
+    const f = routes({ svc_bot_categories: () => jsonRes(500, {}) });
+    await go(cbUpdate(`y:${PEND}`), f);
+    const a = answers(f);
+    assert.notEqual(a[0].text, R.BOT_DOWN);
+  });
+
+  test(`${label}：审核：编辑失败改用短字（选分类、还要记、同意、不用）`, async () => {
+    const h = await R.botCatHash('salary');
+    for (const [data, want] of [[`s:${TX}:6:${h}`, '已改成 工资'], [`y:${PEND}`, R.BOT_ANS_RECORDED], ['a:1', R.BOT_CONSENT_OK], [`n:${PEND}`, R.BOT_SKIPPED]]) {
+      const f = routes({ editText: () => jsonRes(400, { ok: false }) });
+      await go(cbUpdate(data), f);
+      assert.equal(answers(f)[0].text, want, data);
+    }
+  });
+
+  test(`${label}：审核：超过 30 个分类 → 提示加一句；c／s 读到分类 null → 过期`, async () => {
+    const many = Array.from({ length: 35 }, (_, i) => ({ id: 'c' + i, kind: 'expense', name: 'N' + i, sort: 100 + i, deleted: false }));
+    let f = routes({ svc_bot_categories: () => jsonRes(200, many) });
+    await go(cbUpdate(`c:${TX}`), f);
+    assert.equal(answers(f)[0].text, R.botCategoryPrompt(true));
+    for (const data of [`c:${TX}`, `s:${TX}:0:${await R.botCatHash('food')}`]) {
+      f = routes({ svc_bot_categories: () => jsonRes(200, null) });
+      await go(cbUpdate(data), f);
+      assert.equal(answers(f)[0].text, R.BOT_ANS_EXPIRED, data);
+    }
+  });
+
+  test(`${label}：审核：callback 没有 id → 200、不 answer；answer 自己失败仍 200`, async () => {
+    let f = routes();
+    const u = cbUpdate(`u:${TX}`);
+    delete u.callback_query.id;
+    assert.equal(await go(u, f), 200);
+    assert.equal(answers(f).length, 0);
+    f = routes({ answer: () => jsonRes(400, { ok: false }) });
+    assert.equal(await go(cbUpdate(`u:${TX}`), f), 200);
+  });
+}
