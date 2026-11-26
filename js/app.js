@@ -1,4 +1,6 @@
 // 进入点：开 DB → 建 store → init → 读登录状态：没登录 → 登录页（2d）；有 → 挂载 Tab Bar 与三个分页 → 安装提示。
+// Telegram Mini App（3b-9）：同时判断平台；在 Telegram 里改走 runTgBoot（凭 initData 问服务器），
+// 进 App 后在线就确认一次连接，回前景最多 30 分钟一次；服务器说已解除连接 → runTgGone。
 // 最后注册 Service Worker（离线 + 更新提示）。
 import { openDatabase } from './db.js';
 import { createStore } from './store.js';
@@ -10,15 +12,23 @@ import { mountHome } from './ui/home.js';
 import { mountStats } from './ui/stats-view.js';
 import { mountSettings } from './ui/settings.js';
 import { onLedgerResetElsewhere, onPulledElsewhere, announcePulled } from './ledger-channel.js';
-import { mountLogin } from './ui/login.js';
-import { loadSession, bootTarget, getValidSession } from './auth.js';
+import { mountLogin, askReset } from './ui/login.js';
+import { loadSession, bootTarget, getValidSession, replaceSessionIfSameUser, wipeLocalLocked, logoutServer } from './auth.js';
+import { detectTelegram, closeMiniApp } from './telegram.js';
+import { tgLogin, tgLink } from './tg-api.js';
+import { runTgBoot, runTgCheck, shouldRecheck, TG_TEXT } from './tg-boot.js';
+import { runTgGone } from './ui/tg-gone.js';
+import { renderFatal, renderDbError, renderLoading } from './ui/fatal.js';
+import { createExporter } from './ui/export-csv.js';
+import { HIDE_KEY } from './ui/home.js';
+import { announceLedgerReset } from './ledger-channel.js';
 import { createRealtime } from './realtime.js';
 import { showToast, whenToastIdle } from './ui/toast.js';
 import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 import { createSync, ensureClaimed, createClaimRunner } from './sync.js';
 import { askSyncStart } from './ui/sync-prompt.js';
-import { messageDialog } from './ui/dialogs.js';
+import { messageDialog, choiceDialog } from './ui/dialogs.js';
 import { APP_VERSION } from './version.js';
 import { animate, fade, cancelAnims, reducedMotion, clipSupported, DUR, EASE_OUT } from './ui/motion.js';
 
@@ -33,14 +43,22 @@ const REALTIME_BLOCKED = new Set(['signed-out', 'stale', 'other-owner', 'unclaim
 
 const isDevHost = () => location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
-/** 开库失败的全屏画面。 */
-export function renderDbError(root, err) {
-  root.replaceChildren(h('div', { class: 'fatal', role: 'alert' },
-    h('h1', { class: 'fatal-title' }, '无法开启资料库'),
-    h('p', { class: 'fatal-message' }, (err && err.message) || String(err || '未知错误')),
-    h('button', {
-      type: 'button', class: 'fatal-button pressable', on: { click: () => location.reload() },
-    }, '重新整理')));
+const fetchFn = (url, init) => fetch(url, init);
+
+/** 清掉这台设备的账本＋隐藏金额设定（登出、删号、Telegram 已解除连接共用的做法）。回 true／false。 */
+async function wipeDevice(store) {
+  const ok = await wipeLocalLocked(store);
+  if (ok) { try { localStorage.removeItem(HIDE_KEY); } catch { /* 隐私模式等 */ } }
+  return ok;
+}
+
+/** 「Telegram 已解除连接」流程（启动时、App 开着检查到时共用）。stop：停同步与即时连线。 */
+function tgGone(store, tg, stop = () => {}) {
+  return runTgGone({
+    store, stop, wipe: () => wipeDevice(store), reload: () => location.reload(),
+    choice: choiceDialog, message: messageDialog, exportCsv: createExporter(store),
+    closeMiniApp: () => closeMiniApp(tg.webApp), announceReset: announceLedgerReset,
+  });
 }
 
 /** 资料库被其他分页升级 / 删除：连线已关闭，写入会失败 → 不可关闭的阻挡画面（不入 nav 栈，Esc 关不掉）。 */
@@ -74,7 +92,7 @@ function showBlockingNotice(head, tail) {
   btn.focus({ preventScroll: true });
 }
 
-function mountShell(root, store, session) {
+function mountShell(root, store, session, { telegram = null } = {}) {
   const hintSlot = h('div', { class: 'hint-slot' });
   const screens = new Map();
   const scrollPos = new Map(); // 每个分页各自记住滚动位置（只在记忆体）
@@ -175,7 +193,7 @@ function mountShell(root, store, session) {
     document.documentElement.classList.toggle('has-layer', d > 0);
   });
 
-  maybeShowInstallHint(hintSlot, store).catch((e) => console.error(e));
+  if (!telegram) maybeShowInstallHint(hintSlot, store).catch((e) => console.error(e)); // Telegram 里没有「加到主屏幕」
 
   // 画面都挂好了才开始同步、才问认领（前面任何一步丢错，就不会在错误画面上跑）
   sync.start();
@@ -183,6 +201,81 @@ function mountShell(root, store, session) {
   runClaim(false);
   settings.enter(); // 站主判断：启动时、回前景时（S16）
   document.addEventListener('visibilitychange', () => { if (!document.hidden) settings.enter(); });
+
+  // Telegram：确认这个 Telegram 还连着这个账号（启动后一次；回前景最多 30 分钟一次，r1-S11）。
+  // initData 过 24 小时后 check 会回 init_stale → skip（要关掉重开才会再检查）。
+  if (telegram) {
+    let lastCheck = 0;
+    let running = false;
+    const check = async () => {
+      if (running || !navigator.onLine) return;
+      running = true;
+      lastCheck = Date.now();
+      try {
+        const r = await runTgCheck({
+          env: telegram, userId: session.user_id,
+          getSession: () => getValidSession(store, fetchFn),
+          tgLink: (token, action, opts) => tgLink(fetchFn, token, action, opts),
+          tgLogin: (initData) => tgLogin(fetchFn, initData, Date.now()),
+          saveSession: (s) => replaceSessionIfSameUser(store, s, session.user_id),
+          discard: (s) => { logoutServer(fetchFn, s.access_token).catch(() => {}); },
+        });
+        if (r === 'gone') await tgGone(store, telegram, () => { realtime.stop(); sync.stop(); });
+      } catch (e) {
+        console.warn(`[tg] 检查连接失败：${e && e.name ? e.name : '未知'}`);
+      } finally {
+        running = false;
+      }
+    };
+    check();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && shouldRecheck(lastCheck, Date.now())) check(); });
+  }
+}
+
+/** 登录成功后进 App（PWA 与 Telegram 共用）：挂好画面、焦点移到首页大标题。 */
+function enterApp(root, store, s, opts) {
+  window.scrollTo(0, 0); // 键盘曾让页面滚动过：首页从顶端开始
+  try {
+    mountShell(root, store, s, opts);
+  } catch (err) {
+    console.error(err);
+    renderDbError(root, err); // 不要留白屏：显示「重新整理」
+    return;
+  }
+  const title = root.querySelector('.large-title');
+  if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
+}
+
+/** Telegram Mini App 启动（3b-9）。 */
+async function bootTelegram(root, store, tg) {
+  const stale = () => renderFatal(root, {
+    title: TG_TEXT.invalidTitle, message: TG_TEXT.invalidMessage, buttonLabel: TG_TEXT.close, onClick: () => closeMiniApp(tg.webApp),
+  });
+  await runTgBoot({
+    store, env: tg,
+    online: () => navigator.onLine,
+    tgLogin: (initData) => tgLogin(fetchFn, initData, Date.now()),
+    logoutServer: (s) => { logoutServer(fetchFn, s.access_token).catch(() => {}); },
+    choice: choiceDialog,
+    askReset: (info) => askReset(store, info),
+    wipe: () => wipeDevice(store),
+    showScreen: (o) => renderFatal(root, o),
+    showLoading: () => renderLoading(root, '正在载入…'),
+    mountShell: (s) => enterApp(root, store, s, { telegram: tg }),
+    mountLogin: (r) => mountLogin(root, {
+      store, fetchFn,
+      telegram: {
+        tgId: tg.tgId, label: r.label, authDate: tg.authDate, bindDeadline: r.bindDeadline,
+        link: (s) => tgLink(fetchFn, s.access_token, 'bind', { initData: tg.initData }),
+        onInitStale: stale,
+      },
+      onSignedIn: (s) => enterApp(root, store, s, { telegram: tg }),
+    }),
+    closeMiniApp: () => closeMiniApp(tg.webApp),
+    toast: (text) => showToast(text),
+    announceReset: announceLedgerReset,
+    runTgGone: () => tgGone(store, tg),
+  });
 }
 
 /** 注册 Service Worker；本机网址默认不注册（方便开发），加 ?sw=1 才注册。失败只 warn，不影响 App。 */
@@ -229,7 +322,8 @@ async function boot() {
     if (isDevHost() && new URLSearchParams(location.search).has('simulateDbError')) {
       throw new Error('（模拟）IndexedDB 已停用');
     }
-    const db = await openDatabase();
+    // 开库与判断平台同时进行（判断平台最多等 SDK 8 秒；一般浏览器马上回 pwa）
+    const [db, tg] = await Promise.all([openDatabase(), detectTelegram()]);
     const store = createStore({ db });
     await store.init();
     // 别的分页换账号清除了账本：这个分页的画面与快取都旧了 → 阻挡画面、请重新整理（审核 M-2）
@@ -239,24 +333,20 @@ async function boot() {
     store.onLocalWrite(announcePulled); // 这个分页自己记账：其他分页也重新载入（游标会被这边推过去，复审 S5）
     onPulledElsewhere(() => { store.reloadFromDb().catch((e) => console.warn(`[sync] 重新载入失败：${e && e.name ? e.name : '未知'}`)); });
     if (isDevHost()) window.__store = store;
+    if (tg.mode === 'tg-broken') {
+      renderFatal(root, tg.reason === 'offline'
+        ? { title: TG_TEXT.netTitle, message: TG_TEXT.netMessage, buttonLabel: TG_TEXT.retry, onClick: () => location.reload() }
+        : { title: TG_TEXT.invalidTitle, message: TG_TEXT.invalidMessage, buttonLabel: TG_TEXT.close, onClick: () => closeMiniApp(globalThis.Telegram && globalThis.Telegram.WebApp) });
+      return;
+    }
+    if (tg.mode === 'telegram') { await bootTelegram(root, store, tg); return; }
     const session = await loadSession(store);
     if (bootTarget(session) === 'login') {
       mountLogin(root, {
         store,
-        fetchFn: (url, init) => fetch(url, init),
-        onSignedIn: (s) => {
-          window.scrollTo(0, 0); // 键盘曾让页面滚动过：首页从顶端开始
-          try {
-            mountShell(root, store, s);
-          } catch (err) {
-            console.error(err);
-            renderDbError(root, err); // 不要留白屏：显示「重新整理」
-            return;
-          }
-          // 登录成功：焦点移到首页大标题（读屏从这里开始念）
-          const title = root.querySelector('.large-title');
-          if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
-        },
+        fetchFn,
+        // 登录成功：焦点移到首页大标题（读屏从这里开始念）
+        onSignedIn: (s) => enterApp(root, store, s),
       });
     } else {
       mountShell(root, store, session);

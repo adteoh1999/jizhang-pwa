@@ -295,6 +295,25 @@ export async function getValidSession(store, fetchFn, { now = Date.now, locks, f
   }
 }
 
+/**
+ * Telegram 回前景检查换到新 session（3b-9 runTgCheck 的 renewed，r2-S2-7）：在 jizhang-auth 锁内、带账本代号写，
+ * 写前再读一次：本机 session 还是 userId 这个账号才换（途中登出或换了账号 → 不写）。回 true（换了）／false，不会 reject。
+ */
+export async function replaceSessionIfSameUser(store, next, userId, { locks, waitMs = LOCK_WAIT_MS } = {}) {
+  if (!next || next.user_id !== userId) return false;
+  try {
+    return await withLock(AUTH_LOCK, async () => {
+      const ledger = (await store.getMeta('ledgerId')) ?? null;
+      const cur = await loadSession(store);
+      if (!cur || cur.user_id !== userId) return false;
+      return (await store.setMeta('session', next, { ledger })) === true;
+    }, locks, { waitMs });
+  } catch (e) {
+    console.warn(`[auth] 换新登录状态失败：${errName(e)}`);
+    return false;
+  }
+}
+
 /** 「重新登录」：只清本机 session（已失效，不通知服务器），走同一把锁，之后呼叫者重载到登录页。 */
 export function forgetSession(store, { locks, waitMs } = {}) {
   return withLock(AUTH_LOCK, () => clearSession(store), locks, { waitMs });
