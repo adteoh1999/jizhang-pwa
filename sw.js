@@ -29,6 +29,7 @@ const ASSETS = [
   './js/store.js',
   './js/sync.js',
   './js/telegram.js',
+  './js/tg-api.js',
   './js/timefmt.js',
   './js/ui/announce.js',
   './js/ui/categories-page.js',
