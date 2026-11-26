@@ -420,3 +420,12 @@ test('app.js 接线：Telegram 进 App 都带 telegram；renewed 后叫同步；
   assert.match(app, /addEventListener\('online'/);
   assert.match(app, /exportable: false/);
 });
+
+test('实测 7：没有身份资料（no-init，例如 Telegram 内建浏览器）→ 「请从选单按钮打开」、请按左上角 ✕、没有按钮', () => {
+  assert.equal(TG_TEXT.noInitTitle, '请从选单按钮打开');
+  assert.equal(TG_TEXT.noInitMessage, '这个链接要在 Telegram 里从 @adjizhangbot 的「记账」按钮打开。请按左上角 ✕ 关掉。');
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  const broken = app.slice(app.indexOf("if (tg.mode === 'tg-broken')"), app.indexOf("if (tg.mode === 'telegram')"));
+  assert.match(broken, /\{ title: TG_TEXT\.noInitTitle, message: TG_TEXT\.noInitMessage \}/);
+  assert.doesNotMatch(broken, /invalidTitle/);
+});

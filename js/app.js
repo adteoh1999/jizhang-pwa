@@ -351,7 +351,7 @@ async function boot() {
     if (tg.mode === 'tg-broken') {
       renderFatal(root, tg.reason === 'offline'
         ? { title: TG_TEXT.netTitle, message: TG_TEXT.netMessage, buttonLabel: TG_TEXT.retry, onClick: () => location.reload() }
-        : { title: TG_TEXT.invalidTitle, message: TG_TEXT.invalidMessage, buttonLabel: TG_TEXT.close, onClick: () => closeMiniApp(globalThis.Telegram && globalThis.Telegram.WebApp) });
+        : { title: TG_TEXT.noInitTitle, message: TG_TEXT.noInitMessage }); // 内建浏览器里 close() 没作用：不放按钮（实测 7）
       return;
     }
     if (tg.mode === 'telegram') { await bootTelegram(root, store, tg); return; }

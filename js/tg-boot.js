@@ -16,6 +16,9 @@ export const TG_TEXT = Object.freeze({
   limitedMessage: '刚才尝试太多次了。',
   invalidTitle: '无法确认 Telegram 身份',
   invalidMessage: '请关掉后，从 @adjizhangbot 的选单按钮重新打开。',
+  // 没有身份资料（实测 7：Telegram 内建浏览器点网址就是这样）；那里 close() 没作用，所以不放按钮
+  noInitTitle: '请从选单按钮打开',
+  noInitMessage: '这个链接要在 Telegram 里从 @adjizhangbot 的「记账」按钮打开。请按左上角 ✕ 关掉。',
   notSavedTitle: '登录资料没存好，请再试一次',
   notSavedMessage: '这台设备的资料没有改动。',
   retry: '再试一次',

@@ -144,3 +144,21 @@ test('fatal.js：「正在载入…」用 announce 念（role=status 跟内容�
   const src = readFileSync(new URL('../js/ui/fatal.js', import.meta.url), 'utf8');
   assert.match(src, /announce\(text\)/);
 });
+
+test('renderFatal：没给 buttonLabel → 不放按钮（Telegram 内建浏览器里「关闭」没作用，实测 7）', async () => {
+  const prevDoc = globalThis.document;
+  const prevNode = globalThis.Node;
+  globalThis.document = fakeDocument();
+  globalThis.Node = FakeNode;
+  try {
+    const { renderFatal } = await import('../js/ui/fatal.js');
+    const root = globalThis.document.createElement('div');
+    renderFatal(root, { title: 'T', message: 'M' });
+    const box = root.children[0];
+    assert.equal(box.children.length, 2);
+    assert.deepEqual(box.children.map((c) => c.tagName), ['H1', 'P']);
+  } finally {
+    globalThis.document = prevDoc;
+    globalThis.Node = prevNode;
+  }
+});
