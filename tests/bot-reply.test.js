@@ -131,3 +131,13 @@ test('botParseCallback：不合格一律 null', () => {
     assert.equal(R.botParseCallback(d), null, String(d));
   }
 });
+
+test('审核：botFormatRM 0 与负数与 App 相同；大额按钮完整', () => {
+  for (const m of [0, -690, -300000]) assert.equal(R.botFormatRM(m), formatRM(m), String(m));
+  assert.deepEqual(R.botAskKeyboard(TX, 'big'), { inline_keyboard: [[
+    { text: '要记', callback_data: `y:${TX}` }, { text: '不用', callback_data: `n:${TX}` }]] });
+});
+test('审核：选分类序号不许前导零', () => {
+  assert.equal(R.botParseCallback(`s:${TX}:07:0a1b2c3d`), null);
+  assert.deepEqual(R.botParseCallback(`s:${TX}:0:0a1b2c3d`), { op: 's', id: TX, idx: 0, h: '0a1b2c3d' });
+});

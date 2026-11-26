@@ -90,7 +90,14 @@ export async function aiExtract(fetchFn: typeof fetch, key: string, body: unknow
     return name === 'TimeoutError' || name === 'AbortError' ? { ok: false, why: 'timeout' } : { ok: false, why: 'http', status: 0 };
   }
   let data: any = null;
-  try { data = await res.json(); } catch { data = null; }
+  try {
+    data = await res.json();
+  } catch (e) {
+    // 读内容时逾时也算逾时（用户看到「现在记不了」，不是「没看懂」）
+    const name = e && typeof e === 'object' ? (e as { name?: unknown }).name : '';
+    if (name === 'TimeoutError' || name === 'AbortError') return { ok: false, why: 'timeout' };
+    data = null;
+  }
   if (!res.ok) {
     const t = data?.error?.type;
     return typeof t === 'string' && /^[a-z_]{1,40}$/.test(t)

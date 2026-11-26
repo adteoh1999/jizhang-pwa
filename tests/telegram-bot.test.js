@@ -109,7 +109,7 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
   test(`${label}：群组、chat.id ≠ from.id、bot 自己、message.date 坏 → 200、没叫任何服务器`, async () => {
     for (const msg of [
       { chat: { id: -100, type: 'group' } }, { chat: { id: 123, type: 'private' } },
-      { from: { ...FROM, is_bot: true } }, { date: 'x' }, { date: -5 },
+      { from: { ...FROM, is_bot: true } }, { date: 'x' }, { date: -5 }, { date: 1e12 },
     ]) {
       const f = routes();
       assert.equal((await run(update({ text: '早餐 6.9', ...msg }), f)).status, 200);

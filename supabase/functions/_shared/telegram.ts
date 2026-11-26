@@ -153,7 +153,8 @@ export async function tgSecretEqual(a: unknown, b: unknown): Promise<boolean> {
   return diff === 0;
 }
 
-const TG_IMG_EDGE = 2576;            // Claude 4.7 以后的模型长边上限，更大会被缩小（vision 文件）
+// 长边上限：https://platform.claude.com/docs/en/build-with-claude/vision 「Resolution and token cost」表（2026-11-26 查证）
+const TG_IMG_EDGE = 2576;
 const TG_IMG_BYTES = 5 * 1024 * 1024;
 const TG_FILE_ID = /^[A-Za-z0-9_-]{1,256}$/;
 
@@ -169,7 +170,8 @@ export function tgPickPhoto(sizes: unknown): { fileId: string } | null {
     if (!p || typeof p !== 'object') continue;
     const { file_id, width, height, file_size } = p as Record<string, unknown>;
     if (typeof file_id !== 'string' || !TG_FILE_ID.test(file_id)) continue;
-    if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) continue;
+    if (typeof width !== 'number' || typeof height !== 'number' || !Number.isFinite(width) || !Number.isFinite(height)
+        || width <= 0 || height <= 0) continue;
     if (Math.max(width, height) > TG_IMG_EDGE || !tgSizeOk(file_size)) continue;
     if (!best || width * height > best.area) best = { fileId: file_id, area: width * height };
   }
@@ -211,7 +213,7 @@ export async function tgDownload(
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > maxBytes) {
+      if (total > maxBytes || Date.now() > deadline) {   // 不只靠执行环境的 AbortSignal：自己也看时间
         try { await reader.cancel(); } catch { /* 不管 */ }
         return null;
       }

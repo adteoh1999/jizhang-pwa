@@ -133,3 +133,37 @@ test('tgBase64：5 MB 在 200 毫秒内', () => {
   tgBase64(b);
   assert.ok(performance.now() - t < 200, `花了 ${Math.round(performance.now() - t)} 毫秒`);
 });
+
+// ---------- 审核（Task 2–6）补测 ----------
+test('审核：content-length 先就超过上限 → 不读内容、回 null', async () => {
+  let pulled = 0;
+  const body = new ReadableStream({ pull(c) { pulled += 1; c.enqueue(new Uint8Array(10)); } });
+  const f = routes({ file: () => new Response(body, { headers: { 'content-length': '2000' } }) });
+  assert.equal(await tgDownload(f, TOKEN, 'id', 1000, 2000), null);
+  assert.ok(pulled <= 1, `读了 ${pulled} 块`);
+});
+test('审核：没有 content-length、分块超过上限 → 中止（cancel 被叫到）、后面的块没读', async () => {
+  let pulled = 0;
+  let cancelled = false;
+  const body = new ReadableStream({
+    pull(c) { pulled += 1; c.enqueue(new Uint8Array(400)); },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 });
+  const f = routes({ file: () => new Response(body) });
+  assert.equal(await tgDownload(f, TOKEN, 'id', 1000, 2000), null);
+  assert.equal(cancelled, true);
+  assert.ok(pulled <= 4, `读了 ${pulled} 块`);
+});
+test('审核：getFile 卡住 → 预算内回 null；getFile 用掉时间后下载只剩下余下的预算', async () => {
+  let f = routes({ getFile: hang });
+  let t = Date.now();
+  assert.equal(await tgDownload(f, TOKEN, 'id', 1000, 80), null);
+  assert.ok(Date.now() - t < 1000);
+  f = routes({ getFile: () => new Promise((ok) => setTimeout(() => ok(jsonRes(200, { ok: true, result: { file_path: 'a.jpg' } })), 60)), file: hang });
+  t = Date.now();
+  assert.equal(await tgDownload(f, TOKEN, 'id', 1000, 120), null);
+  assert.ok(Date.now() - t < 1000);
+});
+test('审核：宽高是 Infinity／NaN 的尺寸不选', () => {
+  assert.equal(tgPickPhoto([{ file_id: 'a', width: Infinity, height: 10 }, { file_id: 'b', width: NaN, height: 10 }]), null);
+});

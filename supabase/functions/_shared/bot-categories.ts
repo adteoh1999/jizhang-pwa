@@ -23,10 +23,14 @@ export function botMergeCategories(server: unknown): BotCat[] {
       if (!r || typeof r !== 'object') continue;
       const { id, kind, name, sort, deleted } = r as Record<string, unknown>;
       if (typeof id !== 'string' || id.length < 1 || id.length > 64) continue;
+      if (deleted === true) {      // 删除标记先看：其他栏位不齐也照样拿掉
+        map.set(id, null);
+        continue;
+      }
       if (kind !== 'expense' && kind !== 'income') continue;
       if (typeof name !== 'string' || name.trim() === '') continue;
       if (typeof sort !== 'number' || !Number.isFinite(sort)) continue;
-      map.set(id, deleted === true ? null : { id, kind, name, sort });
+      map.set(id, { id, kind, name, sort });
     }
   }
   const out = [...map.values()].filter((c): c is BotCat => c !== null);

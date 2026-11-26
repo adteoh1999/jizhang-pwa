@@ -61,3 +61,12 @@ test('回传的是新物件：改它不会改到内建清单', () => {
   got[0].name = '乱改';
   assert.equal(BOT_DEFAULT_CATEGORIES[0].name, '餐饮');
 });
+
+test('审核：删除标记的列就算 name／sort 不齐，也会拿掉内建分类', () => {
+  const got = botMergeCategories([{ id: 'fun', kind: 'expense', deleted: true }]);
+  assert.equal(got.some((c) => c.id === 'fun'), false);
+});
+test('审核：服务器改了内建分类的 kind／sort → 排序跟着变', () => {
+  const got = botMergeCategories([{ id: 'other', kind: 'expense', name: '其他', sort: -1, deleted: false }]);
+  assert.equal(got[0].id, 'other');
+});

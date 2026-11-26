@@ -136,3 +136,20 @@ test('逾时 → timeout；连线错误 → http 0；都不 throw', async () => 
   f = fakeFetch([[API, () => { throw new TypeError('网络坏了 ' + KEY); }]]);
   assert.deepEqual(await aiExtract(f, KEY, {}, 1000), { ok: false, why: 'http', status: 0 });
 });
+
+test('审核：读回应内容时逾时 → timeout（不是 format）', async () => {
+  const body = new ReadableStream({ start(c) { c.error(new DOMException('逾时', 'TimeoutError')); } });
+  const f = fakeFetch([[API, () => new Response(body, { status: 200 })]]);
+  assert.deepEqual(await aiExtract(f, KEY, {}, 1000), { ok: false, why: 'timeout' });
+});
+test('审核：key 头尾空白 → header 是去空白后的值；aiKeyOk 39／40 字边界', async () => {
+  const f = fakeFetch([[API, () => jsonRes(200, reply())]]);
+  await aiExtract(f, '  ' + KEY + '\n', {}, 1000);
+  assert.equal(f.calls[0].init.headers['x-api-key'], KEY);
+  assert.equal(aiKeyOk('sk-ant-' + 'k'.repeat(32)), false);
+  assert.equal(aiKeyOk('sk-ant-' + 'k'.repeat(33)), true);
+});
+test('审核：分类清单带多余栏位（例如 user_id）不会进请求', () => {
+  const b = aiBuildRequest({ today: '2026-11-26', cats: [{ id: 'food', name: '餐饮', kind: 'expense', user_id: 'uid-secret-123' }], text: 'x 1' });
+  assert.ok(!JSON.stringify(b).includes('uid-secret-123'));
+});

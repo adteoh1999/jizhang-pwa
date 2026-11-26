@@ -108,7 +108,8 @@ async function tbFlow(req: Request, deps: TbDeps): Promise<Response> {
   const chat = msg.chat;
   if (!from || !chat || from.is_bot === true || chat.type !== 'private') return tbStatus(200);
   if (!Number.isSafeInteger(from.id) || from.id <= 0 || chat.id !== from.id) return tbStatus(200);
-  if (!Number.isSafeInteger(msg.date) || msg.date <= 0 || !Number.isSafeInteger(msg.message_id)) return tbStatus(200);
+  // 讯息时间：正的整数秒、不超过 1e11（botToday 的前提）
+  if (!Number.isSafeInteger(msg.date) || msg.date <= 0 || msg.date > 1e11 || !Number.isSafeInteger(msg.message_id)) return tbStatus(200);
 
   const ctx: TbCtx = {
     deps, base, key, bot: bot as string, left, chatId: from.id, messageId: msg.message_id, updateId: upd.update_id,

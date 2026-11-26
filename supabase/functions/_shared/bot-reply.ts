@@ -114,7 +114,7 @@ export async function botCategoryKeyboard(tx: string, cats: { id: string; name: 
 
 const BOT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const BOT_CB_ID = new RegExp(`^([ucbyn]):(${BOT_UUID})$`);
-const BOT_CB_SEL = new RegExp(`^s:(${BOT_UUID}):(\\d{1,2}):([0-9a-f]{8})$`);
+const BOT_CB_SEL = new RegExp(`^s:(${BOT_UUID}):(0|[1-9]\\d?):([0-9a-f]{8})$`);
 
 export type BotCallback =
   | { op: 'u' | 'c' | 'b' | 'y' | 'n'; id: string }
