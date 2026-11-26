@@ -12,7 +12,7 @@ import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, 
 import { botMergeCategories } from '../_shared/bot-categories.ts';
 import { botToday, botCheckExtraction } from '../_shared/bot-extract.ts';
 import { aiKeyOk, aiBuildRequest, aiExtract } from '../_shared/ai-extract.ts';
-import { BOT_NOT_UNDERSTOOD, BOT_FOREIGN, BOT_QUOTA, BOT_DOWN, BOT_IMAGE_BAD, BOT_UNLINKED_START, BOT_HELP, BOT_CONSENT, botRecordedText, botSimilarText, botBigText, botRecordedKeyboard, botAskKeyboard, botConsentKeyboard, botUnlinkedKeyboard } from '../_shared/bot-reply.ts';
+import { BOT_NOT_UNDERSTOOD, BOT_FOREIGN, BOT_QUOTA, BOT_DOWN, BOT_IMAGE_BAD, BOT_UNLINKED_START, BOT_HELP, BOT_CONSENT, BOT_CONSENT_OK, BOT_SKIPPED, BOT_ANS_EXPIRED, BOT_ANS_DELETED, BOT_ANS_CAT_CHANGED, BOT_ANS_UNDONE, BOT_ANS_RECORDED, botAnsCategory, botRecordedText, botUndoneText, botSimilarText, botBigText, botCategoryPrompt, botRecordedKeyboard, botAskKeyboard, botConsentKeyboard, botUnlinkedKeyboard, botCategoryKeyboard, botCatHash, botParseCallback } from '../_shared/bot-reply.ts';
 
 type TbDeps = {
   env: (k: string) => string | undefined;
@@ -100,7 +100,7 @@ async function tbFlow(req: Request, deps: TbDeps): Promise<Response> {
   const deadline = clock() + TB_BUDGET_MS;
   const left = () => deadline - clock();
 
-  if (upd.callback_query) return tbStatus(200);   // 按钮流程（Task 8）
+  if (upd.callback_query) return await tbCallback(deps, base, key, bot as string, left, upd.update_id, upd.callback_query, clock);
 
   const msg = upd.message;
   if (!msg || typeof msg !== 'object') return tbStatus(200);
@@ -360,6 +360,126 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
   }
   if (!out || out.status === 'gone') return tbStatus(200);
   return await tbDeliver(ctx, out, cats);
+}
+
+// ======================= 按钮流程 =======================
+// 每条路都正好 answerCallbackQuery 一次（不然对方画面一直转圈）；按钮资料当不可信输入（botParseCallback 严格格式）。
+// 按钮所在讯息太旧或被删时，Telegram 给 InaccessibleMessage（date 一律 0，但 chat、message_id 还在）：照样处理，
+// 编辑讯息失败就改用短字说明（账已经改好了）。rpc 失败 → 回「现在记不了」、200（按钮不会重送，用户再按就好）。
+async function tbCallback(
+  deps: TbDeps, base: string, key: string, bot: string, left: () => number, updateId: number, cq: any, clock: () => number,
+): Promise<Response> {
+  if (!cq || typeof cq !== 'object' || typeof cq.id !== 'string' || cq.id === '') return tbStatus(200);
+  const answer = async (text: string) => {
+    const r = await tgBotCallResult(deps.fetch, bot, 'answerCallbackQuery',
+      text ? { callback_query_id: cq.id, text } : { callback_query_id: cq.id }, Math.max(1, Math.min(TB_SEND_MS, left())));
+    if (!r.ok) tbLog('answerCallbackQuery', `HTTP ${r.status}`);
+  };
+  const from = cq.from;
+  const m = cq.message;
+  if (!from || from.is_bot === true || !Number.isSafeInteger(from.id) || from.id <= 0
+      || !m || !m.chat || m.chat.type !== 'private' || m.chat.id !== from.id || !Number.isSafeInteger(m.message_id)) {
+    await answer(BOT_ANS_EXPIRED);
+    return tbStatus(200);
+  }
+  const ctx: TbCtx = {
+    deps, base, key, bot, left, chatId: from.id, messageId: m.message_id, updateId,
+    today: botToday(Math.floor(clock() / 1000)),
+  };
+  let text: string;
+  try {
+    text = await tbCallbackOp(ctx, botParseCallback(cq.data));
+  } catch (e) {
+    tbLog('按钮', tbErr(e));
+    text = BOT_DOWN;
+  }
+  await answer(text);
+  return tbStatus(200);
+}
+
+async function tbEditText(ctx: TbCtx, text: string, markup?: unknown): Promise<boolean> {
+  const payload: Record<string, unknown> = {
+    chat_id: ctx.chatId, message_id: ctx.messageId, text, link_preview_options: { is_disabled: true },
+  };
+  if (markup) payload.reply_markup = markup;
+  const r = await tgBotCallResult(ctx.deps.fetch, ctx.bot, 'editMessageText', payload, tbMs(ctx, TB_SEND_MS));
+  if (!r.ok) tbLog('editMessageText', `HTTP ${r.status}`);
+  return r.ok;
+}
+
+async function tbEditMarkup(ctx: TbCtx, markup: unknown): Promise<boolean> {
+  const r = await tgBotCallResult(ctx.deps.fetch, ctx.bot, 'editMessageReplyMarkup',
+    { chat_id: ctx.chatId, message_id: ctx.messageId, reply_markup: markup }, tbMs(ctx, TB_SEND_MS));
+  if (!r.ok) tbLog('editMessageReplyMarkup', `HTTP ${r.status}`);
+  return r.ok;
+}
+
+const tbLineOf = (ctx: TbCtx, tx: TbTx, cats: { id: string; name: string }[]) => ({
+  amountMinor: tx.amount_minor, categoryName: tbCatName(cats, tx.category_id), note: tx.note, occurredOn: tx.occurred_on, today: ctx.today,
+});
+
+// 回传要 answer 的短字（'' ＝ 不显示）
+async function tbCallbackOp(ctx: TbCtx, cb: ReturnType<typeof botParseCallback>): Promise<string> {
+  if (!cb) return BOT_ANS_EXPIRED;
+  const tg = ctx.chatId;
+
+  if (cb.op === 'a') {
+    const ok = await tbRpc(ctx, 'svc_bot_ai_consent', { p_telegram_id: tg }, TB_RPC_WRITE_MS);
+    if (ok !== true) return BOT_ANS_EXPIRED;
+    return (await tbEditText(ctx, BOT_CONSENT_OK)) ? '' : BOT_CONSENT_OK;
+  }
+
+  if (cb.op === 'u') {
+    const r = await tbRpc(ctx, 'svc_bot_undo', { p_telegram_id: tg, p_tx_id: cb.id }, TB_RPC_WRITE_MS);
+    if (r?.status === 'already') return BOT_ANS_DELETED;
+    if (r?.status === 'busy') return BOT_DOWN;
+    if (r?.status !== 'done' || !r.tx) return BOT_ANS_EXPIRED;
+    const cats = (await tbCategories(ctx)) ?? [];
+    return (await tbEditText(ctx, botUndoneText(tbLineOf(ctx, r.tx, cats)))) ? '' : BOT_ANS_UNDONE;
+  }
+
+  if (cb.op === 'c' || cb.op === 'b') {
+    const tx = await tbRpc(ctx, 'svc_bot_tx', { p_telegram_id: tg, p_tx_id: cb.id });
+    if (!tx) return BOT_ANS_EXPIRED;
+    if (tx.deleted) return BOT_ANS_DELETED;
+    if (cb.op === 'b') {
+      await tbEditMarkup(ctx, botRecordedKeyboard(cb.id));
+      return '';
+    }
+    const cats = await tbCategories(ctx);
+    if (!cats) return BOT_ANS_EXPIRED;
+    const { markup, truncated } = await botCategoryKeyboard(cb.id, cats);
+    await tbEditMarkup(ctx, markup);
+    return botCategoryPrompt(truncated);
+  }
+
+  if (cb.op === 's') {
+    const cats = await tbCategories(ctx);
+    if (!cats) return BOT_ANS_EXPIRED;
+    const cat = cb.idx < Math.min(cats.length, 30) ? cats[cb.idx] : null;
+    if (!cat || (await botCatHash(cat.id)) !== cb.h) return BOT_ANS_CAT_CHANGED;
+    const r = await tbRpc(ctx, 'svc_bot_set_category',
+      { p_telegram_id: tg, p_tx_id: cb.id, p_category_id: cat.id, p_kind: cat.kind }, TB_RPC_WRITE_MS);
+    if (r?.status === 'deleted') return BOT_ANS_DELETED;
+    if (r?.status === 'busy') return BOT_DOWN;
+    if (r?.status !== 'done' || !r.tx) return BOT_ANS_EXPIRED;
+    const ok = await tbEditText(ctx, botRecordedText(tbLineOf(ctx, r.tx, cats)), botRecordedKeyboard(cb.id));
+    return ok ? '' : botAnsCategory(cat.name);
+  }
+
+  if (cb.op === 'y') {
+    const r = await tbRpc(ctx, 'svc_bot_confirm', { p_telegram_id: tg, p_pending_id: cb.id }, TB_RPC_WRITE_MS);
+    if (r?.status !== 'recorded' || !r.tx) return BOT_ANS_EXPIRED;
+    if (r.tx.deleted) return BOT_ANS_DELETED;
+    const cats = (await tbCategories(ctx)) ?? [];
+    const ok = await tbEditText(ctx, botRecordedText(tbLineOf(ctx, r.tx, cats)), botRecordedKeyboard(r.tx.id));
+    return ok ? '' : BOT_ANS_RECORDED;
+  }
+
+  // cb.op === 'n'
+  const gone = (await tbRpc(ctx, 'svc_bot_discard', { p_telegram_id: tg, p_pending_id: cb.id }, TB_RPC_WRITE_MS)) !== true;
+  if (gone) return BOT_ANS_EXPIRED;
+  return (await tbEditText(ctx, BOT_SKIPPED)) ? '' : BOT_SKIPPED;
 }
 
 function tbRealDeps(): TbDeps {
