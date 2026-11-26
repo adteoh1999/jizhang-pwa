@@ -11,6 +11,7 @@ declare
   ua uuid := '00000000-0000-4000-8000-0000000003d1';  -- 主角
   ub uuid := '00000000-0000-4000-8000-0000000003d2';  -- 别人
   uc uuid := '00000000-0000-4000-8000-0000000003d3';  -- 删号连带
+  ud uuid := '00000000-0000-4000-8000-0000000003d4';  -- 换连接（最后一项）
   ta bigint := 5000000411;
   tb bigint := 5000000412;
   tc bigint := 5000000413;
@@ -37,17 +38,21 @@ declare
     'svc.svc_bot_discard(bigint,uuid)', 'svc.svc_bot_tx(bigint,uuid)', 'svc.svc_bot_undo(bigint,uuid)',
     'svc.svc_bot_set_category(bigint,uuid,text,text)'];
   locked text[] := array[
-    'svc.svc_bot_claim(bigint,bigint)', 'svc.svc_bot_ai_reserve(bigint,integer,integer)',
+    'svc.svc_bot_claim(bigint,bigint)', 'svc.svc_bot_replied(bigint,bigint)', 'svc.svc_bot_finish(bigint,bigint)',
+    'svc.svc_bot_ai_consent(bigint)', 'svc.svc_bot_ai_reserve(bigint,integer,integer)', 'svc.svc_bot_ai_refund(bigint,bigint)',
     'svc.svc_bot_record(bigint,bigint,text,bigint,text,date,text,boolean)', 'svc.svc_bot_confirm(bigint,uuid)',
-    'svc.svc_bot_undo(bigint,uuid)', 'svc.svc_bot_set_category(bigint,uuid,text,text)'];
+    'svc.svc_bot_discard(bigint,uuid)', 'svc.svc_bot_undo(bigint,uuid)', 'svc.svc_bot_set_category(bigint,uuid,text,text)'];
+  helpers text[] := array['private.bot_tx_json(uuid,uuid)', 'private.bot_outcome(uuid,text,uuid,uuid)', 'private.bot_lock_user(uuid)'];
 begin
   insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data)
   values ('00000000-0000-0000-0000-000000000000', ua, 'authenticated', 'authenticated', 'ua3d@test.invalid', '{"kind":"email"}'),
          ('00000000-0000-0000-0000-000000000000', ub, 'authenticated', 'authenticated', 'ub3d@test.invalid', '{"kind":"email"}'),
-         ('00000000-0000-0000-0000-000000000000', uc, 'authenticated', 'authenticated', 'uc3d@test.invalid', '{"kind":"email"}');
+         ('00000000-0000-0000-0000-000000000000', uc, 'authenticated', 'authenticated', 'uc3d@test.invalid', '{"kind":"email"}'),
+         ('00000000-0000-0000-0000-000000000000', ud, 'authenticated', 'authenticated', 'ud3d@test.invalid', '{"kind":"email"}');
   insert into private.telegram_links (telegram_id, user_id, kind) values (ta, ua, 'email'), (tb, ub, 'email'), (tc, uc, 'email');
 
-  -- 1. 14 个函数都在、definer、search_path = ''；写入类有 lock_timeout = 3s；anon／authenticated 不能执行；
+  -- 1. 14 个函数都在、definer、search_path = ''；写入类有 lock_timeout = 3s；anon／authenticated 不能执行、service_role 能；
+  --    private 3 个小工具在、anon／authenticated 不能执行；
   --    3 张表开 RLS、anon／authenticated 不能读；telegram_links 有 ai_ok_at
   total := total + 1;
   begin
@@ -58,6 +63,13 @@ begin
         v := v || f || ' ';
       elsif has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute') then
         v := v || f || '(开放) ';
+      elsif not has_function_privilege('service_role', f, 'execute') then
+        v := v || f || '(service_role 不能用) ';
+      end if;
+    end loop;
+    foreach f in array helpers loop
+      if to_regprocedure(f) is null or has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute') then
+        v := v || f || '(小工具) ';
       end if;
     end loop;
     foreach f in array locked loop
@@ -269,7 +281,9 @@ begin
   begin
     perform svc.svc_bot_claim(9000000050, tb);
     u := (svc.svc_bot_record(9000000050, tb, 'expense', 500, 'food', d, '', false)->'pending'->>'id')::uuid;
-    select id into u2 from public.transactions where user_id = ub and source = 'bot' limit 1;
+    u2 := gen_random_uuid();
+    insert into public.transactions (user_id, id, kind, amount_minor, category_id, occurred_on, note, created_at, updated_at, source)
+    values (ub, u2, 'expense', 8888, 'food', d, '', now(), now(), 'bot');
     perform svc.svc_bot_ai_consent(tb);
     ok := svc.svc_tg_unlink(ub) = true;
     ok := ok and svc.svc_bot_claim(9000000051, tb)->>'do' = 'unlinked'
@@ -292,6 +306,55 @@ begin
     ok := n = 0 and n2 = 0 and not exists (select 1 from private.bot_pending where user_id = uc);
     if ok then pass := pass + 1; else fails := array_append(fails, ('12 删号没清干净:' || n || '/' || n2)); end if;
   exception when others then fails := array_append(fails, ('12:' || sqlerrm));
+  end;
+
+  -- 13. 已问过、pending 已按掉（confirm）→ claim 回 dup（不再补发问句）；同一 update_id 换另一个 telegram → dup
+  total := total + 1;
+  begin
+    perform svc.svc_bot_claim(9000000080, ta);
+    j := svc.svc_bot_record(9000000080, ta, 'expense', 1234, 'food', d, 'E', false);
+    ok := j->>'status' = 'asked';
+    perform svc.svc_bot_confirm(ta, (j->'pending'->>'id')::uuid);
+    ok := ok and svc.svc_bot_claim(9000000080, ta)->>'do' = 'dup';
+    perform svc.svc_bot_claim(9000000081, ta);
+    ok := ok and svc.svc_bot_claim(9000000081, tb)->>'do' = 'dup';
+    if ok then pass := pass + 1; else fails := array_append(fails, ('13 pending 按掉后／换 telegram 不对:' || coalesce(j::text, 'null'))); end if;
+  exception when others then fails := array_append(fails, ('13:' || sqlerrm));
+  end;
+
+  -- 14. 处理中但已回复过（看不懂、finish 没成功）超过 2 分钟 → dup（不再叫 AI）
+  total := total + 1;
+  begin
+    perform svc.svc_bot_claim(9000000082, ta);
+    perform svc.svc_bot_replied(9000000082, ta);
+    update private.bot_updates set claimed_at = now() - interval '3 minutes' where update_id = 9000000082;
+    j := svc.svc_bot_claim(9000000082, ta);
+    ok := j->>'do' = 'dup';
+    if ok then pass := pass + 1; else fails := array_append(fails, ('14 已回复的处理中被重领:' || coalesce(j::text, 'null'))); end if;
+  exception when others then fails := array_append(fails, ('14:' || sqlerrm));
+  end;
+
+  -- 15. refund 超过 5 分钟的不退
+  total := total + 1;
+  begin
+    j := svc.svc_bot_ai_reserve(ta, 1000, 1000);
+    update private.bot_ai_uses set at = now() - interval '6 minutes' where id = (j->>'use_id')::bigint;
+    perform svc.svc_bot_ai_refund(ta, (j->>'use_id')::bigint);
+    ok := exists (select 1 from private.bot_ai_uses where id = (j->>'use_id')::bigint);
+    if ok then pass := pass + 1; else fails := array_append(fails, '15 超过 5 分钟还退次数'::text); end if;
+  exception when others then fails := array_append(fails, ('15:' || sqlerrm));
+  end;
+
+  -- 16.（放最后，会改 ta 的连接）领取后换了连接的账号 → record 回 gone、没写账（M4）
+  total := total + 1;
+  begin
+    perform svc.svc_bot_claim(9000000090, ta);
+    delete from private.telegram_links where telegram_id = ta;
+    insert into private.telegram_links (telegram_id, user_id, kind) values (ta, ud, 'email');
+    j := svc.svc_bot_record(9000000090, ta, 'expense', 7777, 'food', d, '', false);
+    ok := j->>'status' = 'gone' and not exists (select 1 from public.transactions where amount_minor = 7777 and user_id in (ua, ud));
+    if ok then pass := pass + 1; else fails := array_append(fails, ('16 换账号后还记账:' || coalesce(j::text, 'null'))); end if;
+  exception when others then fails := array_append(fails, ('16:' || sqlerrm));
   end;
 
   raise exception 'VERIFY 3d: % / % PASS。失败: %', pass, total,

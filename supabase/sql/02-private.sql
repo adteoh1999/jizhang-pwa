@@ -742,7 +742,7 @@ revoke all on function private.bot_lock_user(uuid)                     from publ
 
 -- 领取一则讯息（去重）。回传：
 --   {"do":"unlinked"}               没连接（不写表）
---   {"do":"go","ai_ok":bool}        新的，或「处理中」超过 2 分钟（上次当掉）→ 重新领
+--   {"do":"go","ai_ok":bool}        新的，或「处理中」超过 2 分钟、还没回复过（上次当掉）→ 重新领
 --   {"do":"busy"}                   2 分钟内另一个执行正在处理
 --   {"do":"resend", …bot_outcome}   已记账／已问过但还没回复成功 → 补发
 --   {"do":"dup"}                    其他（已回复、没记账、pending 已不在）
@@ -761,9 +761,13 @@ begin
   if p_telegram_id is null or p_telegram_id <= 0 then
     raise exception 'telegram_id 不合格';
   end if;
-  delete from private.bot_updates where claimed_at < now() - interval '2 days';
-  delete from private.bot_ai_uses where at < now() - interval '2 days';
-  delete from private.bot_pending where created_at < now() - interval '24 hours';
+  -- 清旧资料时跳过别人正锁着的列（两个 claim 同时清同一批不会互等）
+  delete from private.bot_updates where update_id in
+    (select update_id from private.bot_updates where claimed_at < now() - interval '2 days' for update skip locked);
+  delete from private.bot_ai_uses where id in
+    (select id from private.bot_ai_uses where at < now() - interval '2 days' for update skip locked);
+  delete from private.bot_pending where id in
+    (select id from private.bot_pending where created_at < now() - interval '24 hours' for update skip locked);
 
   select l.user_id, l.ai_ok_at into v_user, v_ai from private.telegram_links l where l.telegram_id = p_telegram_id;
   if not found then
@@ -782,6 +786,9 @@ begin
     return jsonb_build_object('do', 'dup');
   end if;
   if r.status = 'working' then
+    if r.replied_at is not null then
+      return jsonb_build_object('do', 'dup');   -- 已回复过（例如看不懂、finish 没成功）：不再叫 AI
+    end if;
     if r.claimed_at > now() - interval '2 minutes' then
       return jsonb_build_object('do', 'busy');
     end if;
@@ -800,7 +807,7 @@ $$;
 
 -- 回复成功送出后记下来（之后重送不再补发）
 create or replace function svc.svc_bot_replied(p_update_id bigint, p_telegram_id bigint) returns void
-language plpgsql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 begin
   if p_update_id is null or p_update_id <= 0 or p_telegram_id is null or p_telegram_id <= 0 then
     raise exception '参数不合格';
@@ -811,7 +818,7 @@ $$;
 
 -- 这则讯息没记账（看不懂、次数用完、AI 失败…）：处理中 → skipped
 create or replace function svc.svc_bot_finish(p_update_id bigint, p_telegram_id bigint) returns void
-language plpgsql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 begin
   if p_update_id is null or p_update_id <= 0 or p_telegram_id is null or p_telegram_id <= 0 then
     raise exception '参数不合格';
@@ -823,7 +830,7 @@ $$;
 
 -- 按了［同意并开始］（D4）：记下同意时间（已有就不改）。回传连接在不在。
 create or replace function svc.svc_bot_ai_consent(p_telegram_id bigint) returns boolean
-language plpgsql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 begin
   if p_telegram_id is null or p_telegram_id <= 0 then
     raise exception 'telegram_id 不合格';
@@ -867,7 +874,7 @@ $$;
 
 -- AI 那边出错（没算钱）：退回这一次。只退这个人的、5 分钟内的那一笔。
 create or replace function svc.svc_bot_ai_refund(p_telegram_id bigint, p_use_id bigint) returns void
-language plpgsql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 begin
   if p_telegram_id is null or p_telegram_id <= 0 or p_use_id is null then
     raise exception '参数不合格';
@@ -989,7 +996,7 @@ $$;
 
 -- 按了［不用］：丢掉 pending。回传有没有丢到。
 create or replace function svc.svc_bot_discard(p_telegram_id bigint, p_pending_id uuid) returns boolean
-language plpgsql security definer set search_path = '' as $$
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 begin
   if p_telegram_id is null or p_telegram_id <= 0 or p_pending_id is null then
     raise exception '参数不合格';
@@ -1168,6 +1175,18 @@ begin
   loop
     execute format('revoke all on function %s from public, anon, authenticated', f);
     execute format('grant execute on function %s to service_role', f);
+  end loop;
+end
+$$;
+-- 兜底：private 里的函数（bot 小工具等）一律不给 public／anon／authenticated（private 本来就不开放，多一层）
+do $$
+declare
+  f regprocedure;
+begin
+  for f in select p.oid::regprocedure from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'private' and p.prokind = 'f'
+  loop
+    execute format('revoke all on function %s from public, anon, authenticated', f);
   end loop;
 end
 $$;
