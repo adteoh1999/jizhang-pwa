@@ -46,11 +46,8 @@
   --btn-fg: #FFFFFF;
   --on-red: #FFFFFF;                /* 红底上的字（滑动删除等），各主题都是白 */
   --red-text: #D70015;              /* 红字专用（底色为抽屉 / ink-tint 时 ≥4.5:1） */
-  /* 登录页（2d）：输入框底、插图硬币、钱包反光、光晕浓度、错误字（直接压在晨雾上，--red-text 只有 4.07，另设较深的红） */
+  /* 登录页（2d）：输入框底、错误字（直接压在晨雾上，--red-text 只有 4.07，另设较深的红） */
   --field: rgba(255, 255, 255, 0.72);
-  --coin: rgba(255, 255, 255, 0.72);
-  --login-sheen: 0.55;
-  --login-halo: 0.9;
   --login-error: #B4000F;
   /* 欢迎页（3c-1）：示例账单小卡（实心、不模糊）的底、内框线、投影 */
   --chip-bg: rgba(255, 255, 255, 0.86);
@@ -119,7 +116,7 @@
     --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
     --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #4CD07A; --red: rgb(255, 66, 69);
-    --field: rgba(255, 255, 255, 0.07); --coin: rgba(30, 36, 46, 0.85); --login-sheen: 0.12; --login-halo: 0.5; --login-error: #FF6B6F;
+    --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
     --chip-bg: rgba(30, 34, 42, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
     --track: rgba(255, 255, 255, 0.14);
     --glass-sheen: rgba(255, 255, 255, 0.18);
@@ -152,7 +149,7 @@
   --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
   --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #4CD07A; --red: rgb(255, 66, 69);
-  --field: rgba(255, 255, 255, 0.07); --coin: rgba(30, 36, 46, 0.85); --login-sheen: 0.12; --login-halo: 0.5; --login-error: #FF6B6F;
+  --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
   --chip-bg: rgba(30, 34, 42, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
   --track: rgba(255, 255, 255, 0.14);
   --glass-sheen: rgba(255, 255, 255, 0.18);
@@ -2030,7 +2027,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 
 /* ---------- 登录页（2d，js/ui/login.js） ----------
    照登录页预览：底色由 .sky（整页晨雾）提供，.login 自己不设底色、不 fixed（状态栏方案 B）。
-   光晕是静态 radial-gradient，没有模糊、没有动画；增加对比度 / 降低透明度时关掉。
+   欢迎页（3c-1）的光球是静态 radial-gradient，没有模糊、没有 CSS 动画；增加对比度 / 降低透明度时关掉（细节见下方欢迎页段）。
    键盘挡住时 js 只对 .login-body 加 translateY（不改排版）。 */
 .login {
   min-height: 100vh;
@@ -2044,44 +2041,135 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 }
 .login-step { flex: 1 0 auto; display: flex; flex-direction: column; min-width: 0; }
 .login-hint { margin: 8px 0 4px; padding-right: 14px; }   /* 没有关闭键，右边留和左边一样的内距 */
-.login-welcome { padding-bottom: calc(var(--safe-bottom) + 24px); }
-.login-hero {
+.login-welcome { padding-bottom: calc(var(--safe-bottom) + 20px); isolation: isolate; }   /* 隔离层叠：光球（z-index -1）在晨雾上、所有文字下 */
+
+/* ---------- 欢迎页（3c-1）：「账」徽章、示例卡（结余卡＋两张账单卡）、单行大标题 ----------
+   示例卡是装饰（aria-hidden），字级用 px、不跟 Dynamic Type 放大（放大会撑破叠层）；标题与按钮照常跟字级。
+   光球是静态 radial-gradient，挂在 .wl-hero::before、z-index -1（在所有文字下面），左右伸到屏幕边（宽屏不切直边），
+   纵向框以舞台中心为准、每个光球在 70% 半径淡完（不切横边，测试会算）；没有模糊、没有 CSS 动画。
+   .wl-hero / .wl-stage 本身不能建层叠上下文（否则光球会跑到标题上面）。
+   倾斜写在内层（.wl-card / .wl-tx），进场动画（js）只动外层 .wl-layer，两者不抢 transform。 */
+.wl-brand { display: flex; align-items: center; gap: 10px; min-height: var(--hit); margin-top: 10px; }
+.wl-badge {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font: 800 19px/1 var(--font-family);
+  box-shadow: 0 6px 14px -8px rgba(10, 12, 18, 0.5);
+}
+.wl-badge::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: #5ED3A6; }
+.wl-name { font: 700 0.9412rem/1.2 var(--font-family); letter-spacing: 0.08em; }
+.wl-hero {
   flex: 1 1 auto;
-  min-height: 220px;
+  min-height: 300px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  padding: 8px 0 12px;
 }
-.login-halo {
+.wl-hero::before {
+  content: "";
   position: absolute;
-  width: min(340px, 100%);
-  height: 300px;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -54%);
-  opacity: var(--login-halo);
+  z-index: -1;
   pointer-events: none;
+  left: calc(-1 * (24px + var(--safe-left)));
+  right: calc(-1 * (24px + var(--safe-right)));
+  top: calc(50% - 219px);
+  height: 438px;
   background:
-    radial-gradient(26% 30% at 34% 52%, rgba(110, 185, 255, 0.85), transparent),
-    radial-gradient(24% 28% at 58% 28%, rgba(100, 220, 180, 0.8), transparent),
-    radial-gradient(22% 24% at 42% 18%, rgba(175, 165, 250, 0.7), transparent),
-    radial-gradient(28% 32% at 68% 60%, rgba(90, 205, 215, 0.7), transparent),
-    radial-gradient(24% 26% at 40% 76%, rgba(165, 155, 245, 0.6), transparent),
-    radial-gradient(20% 22% at 60% 44%, rgba(150, 200, 250, 0.6), transparent);
+    radial-gradient(190px 150px at 88% 120px, var(--orb-1), transparent 70%),
+    radial-gradient(210px 170px at 10% 260px, var(--orb-2), transparent 70%),
+    radial-gradient(170px 140px at 94% 320px, var(--orb-3), transparent 70%),
+    radial-gradient(170px 130px at 16% 110px, var(--orb-4), transparent 70%);
 }
-.login-art { position: relative; max-width: 100%; height: auto; }
-.la-coin { fill: var(--coin); stroke: var(--glass-edge); stroke-width: 2; }
-.la-ring { fill: none; stroke: var(--ink-3); stroke-width: 2; }
-.la-ink { fill: var(--ink); font-family: var(--font-family); }
-.la-arrow { fill: none; stroke: var(--ink); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
-.la-wallet { fill: var(--glass); stroke: var(--glass-edge); stroke-width: 2; }
-.la-edge { fill: none; stroke: var(--glass-edge); stroke-width: 2; }
-.la-fill { fill: var(--btn-bg); }
-.la-clasp { fill: var(--btn-fg); }
-.la-sheen-top { stop-color: #FFFFFF; stop-opacity: var(--login-sheen); }
-.la-sheen-end { stop-color: #FFFFFF; stop-opacity: 0; }
-.login-welcome-text { display: flex; flex-direction: column; gap: 12px; padding-bottom: 36px; }
+.wl-stage { position: relative; width: min(100%, 342px); height: 318px; }
+.wl-layer { position: absolute; left: 0; right: 0; }
+.wl-layer-card { top: 6px; z-index: 3; padding: 0 6px; }
+.wl-layer-tx1 { top: 186px; z-index: 2; padding: 0 2px 0 22px; }
+.wl-layer-tx2 { top: 246px; z-index: 1; padding: 0 30px 0 8px; }
+.wl-card {
+  position: relative;
+  isolation: isolate;
+  padding: 20px 22px 18px;
+  border-radius: 30px;
+  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
+  box-shadow: var(--card-shadow);
+  transform: rotate(-4deg);
+}
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .wl-card::before {   /* 渐层反光边（同首页结余卡） */
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    padding: 1.3px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  }
+}
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .wl-card { border: 1px solid var(--card-rim-2); }
+}
+.wl-card > * { position: relative; z-index: 1; }
+.wl-card-label { font: 400 15px/1.33 var(--font-family); color: var(--card-ink-2); }
+.wl-amt { margin-top: 4px; display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl-amt-cur { font: 700 20px/1 var(--font-family); }
+.wl-amt-int { font: 750 44px/1.05 var(--font-family); letter-spacing: -0.03em; }
+.wl-amt-dec { margin-left: -5px; font: 700 22px/1 var(--font-family); }
+.wl-flow { display: flex; gap: 12px; margin-top: 14px; }
+.wl-flow-item { flex: 1; display: grid; gap: 2px; }
+.wl-flow-k { display: flex; align-items: center; gap: 4px; font: 400 13px/1.38 var(--font-family); color: var(--card-ink-2); }
+.wl-flow-v { font: 700 16px/1.29 var(--font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl-bar { margin-top: 12px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--ink); }
+.wl-tx {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 9px 16px 9px 12px;
+  border-radius: 22px;
+  background: var(--chip-bg);
+  box-shadow: inset 0 0 0 1px var(--chip-edge), var(--chip-shadow);
+}
+.wl-layer-tx1 .wl-tx { transform: rotate(2deg); }
+.wl-layer-tx2 .wl-tx { transform: rotate(-1.5deg) scale(0.96); opacity: 0.92; }
+.wl-tx-ic { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--cat-bg, var(--ink-tint)); color: var(--cat-fg, var(--ink)); }
+.wl-tx-t { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.wl-tx-name { font: 500 16px/1.25 var(--font-family); white-space: nowrap; }
+.wl-tx-note { font: 400 13px/1.38 var(--font-family); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wl-tx-amt { font: 600 16px/1 var(--font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl-tx-amt.is-income { color: var(--income); }
+/* 单行大标题：一种粗细、负字距；窄屏按宽度缩（7.4 字宽，最长 7 字也放得下一行） */
+.login-title.login-title-welcome {
+  padding: 8px 0 32px;
+  font-size: min(2.75rem, calc((100vw - 48px) / 7.4));
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+/* 矮屏（iPhone SE、Safari 分页、Telegram 较矮的视窗）：收起后面那张账单卡、舞台变矮（光球框以舞台中心为准，不用另调） */
+@media (max-height: 700px) {
+  .wl-hero { min-height: 250px; }
+  .wl-stage { height: 250px; }
+  .wl-layer-tx2 { display: none; }
+  .login-title.login-title-welcome { padding-bottom: 20px; }
+}
+/* 很矮的屏（Safari 分页＋「加到主屏幕」提示的 SE 约 553 高）：示例卡整组缩到 0.82（静态，没有动画），
+   负的上下边距把省下的约 44px 还给版面，按钮与脚注才不会被挤出屏幕 */
+@media (max-height: 600px) {
+  .wl-hero { min-height: 0; padding: 0; }
+  .wl-stage { transform: scale(0.82); margin: -22px 0; }
+}
 .login-title { font: 800 2rem/1.18 var(--font-family); letter-spacing: 0.01em; }
 .login-title:focus,
 .large-title:focus { outline: none; }             /* 程式移焦点（读屏用；登录成功后移到首页大标题），不显示外框 */
@@ -2174,8 +2262,14 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .login-resend { min-height: var(--hit); display: flex; align-items: center; font: var(--font-subhead); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .login-link { min-height: var(--hit); padding: 0; font: var(--font-subhead); font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  .login-halo { display: none; }
+  .wl-hero::before,
+  .wl-card::before { display: none; }
+  .wl-card, .wl-tx { background: var(--drawer); border: 1px solid var(--glass-edge); }
+  .wl-layer-tx2 .wl-tx { opacity: 1; }
   .login-input, .login-cell { border-color: var(--ink-2); }
+}
+@media (prefers-contrast: more) {
+  .wl-card, .wl-tx { border-color: var(--ink-2); }
 }
 @media (prefers-reduced-motion: reduce) {
   .login-body { transition: none; }

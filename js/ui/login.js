@@ -1,4 +1,4 @@
-// 登录画面：欢迎 → 邮箱（＋邀请码）→ 6 位数验证码 →（Telegram 模式）确认连接。照登录页预览（晨雾背景、静态光晕、钱包硬币插图、按钮紧跟输入框）。
+// 登录画面：欢迎 → 邮箱（＋邀请码）→ 6 位数验证码 →（Telegram 模式）确认连接。欢迎页（3c-1）：倾斜的示例结余卡＋两张账单卡、左上「账」徽章、单行标题；其余照登录页预览（晨雾背景、按钮紧跟输入框）。
 // 流程逻辑都在 js/login-flow.js；这里只负责画、绑事件、键盘、倒数。
 // 规则：DOM 一次建好，状态变化只改文字与属性，不重建输入框（内容、焦点、键盘不丢）。
 import { h } from './dom.js';
@@ -6,7 +6,7 @@ import { icon } from './icons.js';
 import { isIosBrowserTab } from './install-hint.js';
 import { confirmDialog, choiceDialog } from './dialogs.js';
 import { createExporter } from './export-csv.js';
-import { fade, reducedMotion } from './motion.js';
+import { animate, fade, reducedMotion, EASE_OUT } from './motion.js';
 import { announce } from './announce.js';
 import { onDepthChange } from './nav.js';
 import { createLoginFlow } from '../login-flow.js';
@@ -14,9 +14,8 @@ import { registerEmail, requestOtp, verifyOtp, logoutServer } from '../auth.js';
 import { announceLedgerReset } from '../ledger-channel.js';
 
 export const LOGIN_TEXT = Object.freeze({
-  welcomeTitle: '每一笔钱，都记得清清楚楚',
-  welcomeSub: '手机和 Telegram 共用同一本账，换设备也不会丢。',
-  welcomeSubTail: '换设备也不会丢。', // 换行时整组移到下一行，不留「会丢。」落单、不拆开「换设备」
+  welcomeTitle: '我的小账本',   // 3c-1 用户定稿：短、像真人说的话，没有副标题
+  brandName: '记账',
   welcomeButton: '用邮箱登录',
   welcomeFoot: '第一次使用需要邀请码',
   emailTitle: '登录',
@@ -122,35 +121,47 @@ export function codeCells(code) {
   return Array.from({ length: 6 }, (_, i) => ({ v: s[i] || '', active: i === s.length }));
 }
 
-// 原创插图：毛玻璃钱包＋两枚硬币（照预览；静态 SVG，没有动画）。逐个 createElementNS，不用 HTML 字串。
-const SVG_NS = 'http://www.w3.org/2000/svg';
-const HERO_PARTS = [
-  ['circle', { class: 'la-coin', cx: 98, cy: 70, r: 40 }],
-  ['circle', { class: 'la-ring', cx: 98, cy: 70, r: 29 }],
-  ['text', { class: 'la-ink', x: 98, y: 77, 'text-anchor': 'middle', 'font-size': 20, 'font-weight': 800 }, 'RM'],
-  ['circle', { class: 'la-coin', cx: 160, cy: 54, r: 32 }],
-  ['circle', { class: 'la-ring', cx: 160, cy: 54, r: 22 }],
-  ['path', { class: 'la-arrow', d: 'M160 42 v24 M152 48 l8 -6 l8 6' }],
-  ['rect', { class: 'la-wallet', x: 34, y: 92, width: 192, height: 124, rx: 28 }],
-  ['rect', { class: 'la-sheen', x: 34, y: 92, width: 192, height: 124, rx: 28, fill: 'url(#login-sheen)' }],
-  ['path', { class: 'la-edge', d: 'M34 132 h132 a22 22 0 0 1 22 22 v0 a22 22 0 0 1 -22 22 h-132' }],
-  ['rect', { class: 'la-fill', x: 150, y: 136, width: 60, height: 36, rx: 18 }],
-  ['circle', { class: 'la-clasp', cx: 170, cy: 154, r: 7 }],
-];
-function svgEl(tag, attrs, text) {
-  const n = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
-  if (text) n.textContent = text;
-  return n;
+// 欢迎页进场（3c-1）：品牌、结余卡、两张账单卡、标题、按钮区依序升起；只动 opacity / transform，只播一次
+export const ENTRANCE = Object.freeze({ duration: 220, delays: Object.freeze([0, 40, 80, 120, 150, 180]) });
+/**
+ * 欢迎页进场怎么播：只在登录画面一挂上、第一个显示的就是欢迎页时播（登出后重新挂上会再播一次）；
+ * 从邮箱页／连接页返回、或开机恢复到邮箱／验证码页 → 'none'（返回照旧整页淡入）。减少动态 → 'fade'。
+ */
+export function entrancePlan({ prevStep, step, reduced }) {
+  if (prevStep || step !== 'welcome') return 'none';
+  return reduced ? 'fade' : 'stagger';
 }
-function heroArt() {
-  const svg = svgEl('svg', { class: 'login-art', 'aria-hidden': 'true', width: 260, height: 230, viewBox: '0 0 260 230' });
-  const grad = svgEl('linearGradient', { id: 'login-sheen', x1: 0, y1: 0, x2: 0, y2: 1 });
-  grad.append(svgEl('stop', { class: 'la-sheen-top', offset: 0 }), svgEl('stop', { class: 'la-sheen-end', offset: 0.5 }));
-  const defs = svgEl('defs', {});
-  defs.append(grad);
-  svg.append(defs, ...HERO_PARTS.map(([tag, attrs, text]) => svgEl(tag, attrs, text)));
-  return svg;
+export function entranceKeyframes() {
+  return [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }];
+}
+
+// 欢迎页示例卡：App 自己的晨雾结余卡＋两张账单卡（假资料，整块对读屏隐藏）。
+// 外层 .wl-layer 给进场动画用，内层 .wl-card / .wl-tx 负责倾斜，两者不抢 transform。
+const SAMPLE = Object.freeze({
+  label: '本月结余', cur: 'RM', int: '2,486', dec: '.50',
+  income: ['收入', 'RM 3,000.00'], expense: ['支出', 'RM 513.50'],
+  tx1: ['food', '餐饮', '午餐 椰浆饭', '\u2212RM 12.50', false],
+  tx2: ['salary', '工资', '十一月', '+RM 3,000.00', true],
+});
+function welcomeHero() {
+  const flow = (name, [k, v]) => h('div', { class: 'wl-flow-item' },
+    h('span', { class: 'wl-flow-k' }, icon(name, 12), k), h('span', { class: 'wl-flow-v' }, v));
+  const tx = (layer, [ic, name, note, amt, income]) => h('div', { class: `wl-layer ${layer}` },
+    h('div', { class: 'wl-tx' },
+      h('span', { class: 'wl-tx-ic', 'data-icon': ic }, icon(ic, 22)),
+      h('span', { class: 'wl-tx-t' }, h('span', { class: 'wl-tx-name' }, name), h('span', { class: 'wl-tx-note' }, note)),
+      h('span', { class: income ? 'wl-tx-amt is-income' : 'wl-tx-amt' }, amt)));
+  const card = h('div', { class: 'wl-layer wl-layer-card' },
+    h('div', { class: 'wl-card' },
+      h('div', { class: 'wl-card-label' }, SAMPLE.label),
+      h('div', { class: 'wl-amt' },
+        h('span', { class: 'wl-amt-cur' }, SAMPLE.cur), h('span', { class: 'wl-amt-int' }, SAMPLE.int), h('span', { class: 'wl-amt-dec' }, SAMPLE.dec)),
+      h('div', { class: 'wl-flow' }, flow('arrow-up', SAMPLE.income), flow('arrow-down', SAMPLE.expense)),
+      h('div', { class: 'wl-bar' }, h('i'))));
+  const tx1 = tx('wl-layer-tx1', SAMPLE.tx1);
+  const tx2 = tx('wl-layer-tx2', SAMPLE.tx2);
+  const el = h('div', { class: 'wl-hero', 'aria-hidden': 'true' }, h('div', { class: 'wl-stage' }, tx2, tx1, card));
+  return { el, card, tx1, tx2 };
 }
 
 /**
@@ -227,15 +238,20 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     : null);
 
   // ---------- 1. 欢迎 ----------
-  const hero = h('div', { class: 'login-hero' }, h('div', { class: 'login-halo', 'aria-hidden': 'true' }), heroArt());
-  const [t1, t2] = T.welcomeTitle.split('，');
-  const welcomeTitle = h('h1', { class: 'login-title login-title-welcome', id: 'login-title-welcome', tabindex: '-1' }, `${t1}，`, h('br'), t2);
-  const welcome = h('section', { class: 'login-step login-welcome', 'data-step': 'welcome', 'aria-labelledby': 'login-title-welcome' },
-    safariHint(),
-    hero,
-    h('div', { class: 'login-welcome-text' }, welcomeTitle, h('p', { class: 'login-sub' }, withTail(T.welcomeSub, T.welcomeSubTail))),
+  const brand = h('div', { class: 'wl-brand' }, h('span', { class: 'wl-badge', 'aria-hidden': 'true' }, '账'), h('span', { class: 'wl-name' }, T.brandName));
+  const hero = welcomeHero();
+  const welcomeTitle = h('h1', { class: 'login-title login-title-welcome', id: 'login-title-welcome', tabindex: '-1' }, T.welcomeTitle);
+  const welcomeCta = h('div', { class: 'wl-cta' },
     primary(T.welcomeButton, { type: 'button', on: { click: () => flow.goEmail() } }),
     h('p', { class: 'login-footnote' }, T.welcomeFoot));
+  const welcome = h('section', { class: 'login-step login-welcome', 'data-step': 'welcome', 'aria-labelledby': 'login-title-welcome' },
+    brand, safariHint(), hero.el, welcomeTitle, welcomeCta);
+  // 照 entrancePlan 播（必须和 hidden = false 在同一次 render 里同步呼叫，否则会先闪出完整画面）
+  const playEntrance = (plan) => {
+    if (plan === 'fade') { fade(welcome, 'in', { id: 'login' }); return; }
+    [brand, hero.card, hero.tx1, hero.tx2, welcomeTitle, welcomeCta].forEach((node, i) => animate(node, entranceKeyframes(),
+      { duration: ENTRANCE.duration, delay: ENTRANCE.delays[i], easing: EASE_OUT, id: 'login' }));
+  };
 
   // ---------- 2. 邮箱 ----------
   const emailInput = h('input', {
@@ -434,7 +450,9 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
       next.hidden = false;
       for (const b of [emailBody, codeBody, linkBody]) b.style.transform = '';
       lift = 0;
-      if (prevStep && !reducedMotion()) fade(next, 'in', { id: 'login' });
+      const entry = entrancePlan({ prevStep, step, reduced: reducedMotion() });
+      if (entry !== 'none') playEntrance(entry);
+      else if (prevStep && !reducedMotion()) fade(next, 'in', { id: 'login' });
       if (step === 'code') {
         startTimer();
         codeInput.focus({ preventScroll: true });
