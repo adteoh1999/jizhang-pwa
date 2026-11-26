@@ -105,9 +105,9 @@ export async function tgVerifyInitData(initData: string, botToken: string | unde
 
 // 叫 Telegram Bot API（https://core.telegram.org/bots/api#making-requests：POST JSON，回 {ok, result}）。
 // 不 throw、不记日志、不回原始回应；网址含 token，所以连线错误的讯息也一律丢掉。
-export async function tgBotCall(
+export async function tgBotCallResult(
   fetchFn: typeof fetch, token: string | undefined, method: string, payload: unknown, timeoutMs = 5000,
-): Promise<{ ok: true } | { ok: false; status: number }> {
+): Promise<{ ok: true; result: unknown } | { ok: false; status: number }> {
   if (!tgBotTokenOk(token) || typeof method !== 'string' || !/^[A-Za-z]{1,64}$/.test(method)) return { ok: false, status: 0 };
   try {
     const res = await fetchFn(`https://api.telegram.org/bot${token.trim()}/${method}`, {
@@ -118,9 +118,130 @@ export async function tgBotCall(
     });
     let data: any = null;
     try { data = await res.json(); } catch { data = null; }
-    if (res.ok && data && data.ok === true) return { ok: true };
+    if (res.ok && data && data.ok === true) return { ok: true, result: data.result };
     return { ok: false, status: res.status };
   } catch {
     return { ok: false, status: 0 };
   }
+}
+
+export async function tgBotCall(
+  fetchFn: typeof fetch, token: string | undefined, method: string, payload: unknown, timeoutMs = 5000,
+): Promise<{ ok: true } | { ok: false; status: number }> {
+  const r = await tgBotCallResult(fetchFn, token, method, payload, timeoutMs);
+  return r.ok ? { ok: true } : r;
+}
+
+// ---------- 3d：webhook 密钥、照片、下载、图片格式、base64 ----------
+
+// webhook 的 secret_token：1–256 字、只能英数 _ -（我们要求至少 32 字）
+export function tgSecretOk(s: unknown): s is string {
+  return typeof s === 'string' && /^[A-Za-z0-9_-]{32,256}$/.test(s);
+}
+
+// 固定时间比较：两边各做 SHA-256 再逐位元组比，长度不同也不提早返回
+export async function tgSecretEqual(a: unknown, b: unknown): Promise<boolean> {
+  if (typeof a !== 'string' || typeof b !== 'string' || a === '' || b === '') return false;
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)), crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  const x = new Uint8Array(ha);
+  const y = new Uint8Array(hb);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
+const TG_IMG_EDGE = 2576;            // Claude 4.7 以后的模型长边上限，更大会被缩小（vision 文件）
+const TG_IMG_BYTES = 5 * 1024 * 1024;
+const TG_FILE_ID = /^[A-Za-z0-9_-]{1,256}$/;
+
+function tgSizeOk(v: unknown): boolean {
+  return v === undefined || (typeof v === 'number' && v >= 0 && v <= TG_IMG_BYTES);
+}
+
+// Message.photo（PhotoSize[]，官方没写排序）：挑长边 ≤ 2576、大小没写或 ≤ 5 MB 里面积最大的
+export function tgPickPhoto(sizes: unknown): { fileId: string } | null {
+  if (!Array.isArray(sizes)) return null;
+  let best: { fileId: string; area: number } | null = null;
+  for (const p of sizes) {
+    if (!p || typeof p !== 'object') continue;
+    const { file_id, width, height, file_size } = p as Record<string, unknown>;
+    if (typeof file_id !== 'string' || !TG_FILE_ID.test(file_id)) continue;
+    if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) continue;
+    if (Math.max(width, height) > TG_IMG_EDGE || !tgSizeOk(file_size)) continue;
+    if (!best || width * height > best.area) best = { fileId: file_id, area: width * height };
+  }
+  return best ? { fileId: best.fileId } : null;
+}
+
+// 当「档案」传的图片：mime_type 只用来先筛（传的人自己说的），真正格式看档头
+export function tgImageDoc(doc: unknown): { fileId: string } | null {
+  if (!doc || typeof doc !== 'object') return null;
+  const { file_id, mime_type, file_size } = doc as Record<string, unknown>;
+  if (typeof file_id !== 'string' || !TG_FILE_ID.test(file_id)) return null;
+  if (mime_type !== 'image/jpeg' && mime_type !== 'image/png' && mime_type !== 'image/webp') return null;
+  return tgSizeOk(file_size) ? { fileId: file_id } : null;
+}
+
+// getFile → 下载（网址含 token：任何错误都吞掉、不回讯息；不跟转址；边读边算，超过上限就中止）
+export async function tgDownload(
+  fetchFn: typeof fetch, token: string | undefined, fileId: string, maxBytes: number, timeoutMs: number,
+): Promise<Uint8Array | null> {
+  if (!tgBotTokenOk(token) || typeof fileId !== 'string' || !TG_FILE_ID.test(fileId)) return null;
+  const deadline = Date.now() + timeoutMs;
+  const meta = await tgBotCallResult(fetchFn, token, 'getFile', { file_id: fileId }, Math.max(1, Math.min(5000, timeoutMs)));
+  if (!meta.ok) return null;
+  const path = (meta.result as any)?.file_path;
+  if (typeof path !== 'string' || !/^[A-Za-z0-9_./-]{1,256}$/.test(path) || path.includes('..')) return null;
+  const left = deadline - Date.now();
+  if (left <= 0) return null;
+  try {
+    const res = await fetchFn(`https://api.telegram.org/file/bot${token.trim()}/${path}`, {
+      method: 'GET', redirect: 'error', signal: AbortSignal.timeout(left),
+    });
+    if (!res.ok || !res.body) return null;
+    const len = Number(res.headers.get('content-length'));
+    if (Number.isFinite(len) && len > maxBytes) return null;
+    const reader = res.body.getReader();
+    const parts: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch { /* 不管 */ }
+        return null;
+      }
+      parts.push(value);
+    }
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) { out.set(p, off); off += p.byteLength; }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+// 看档头认图片格式（不信副档名与 mime_type）
+export function tgSniffImage(b: Uint8Array): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+      && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'image/png';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+      && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  return null;
+}
+
+// base64：每块 32766 bytes（3 的倍数，块与块之间才不会多出 =），省 CPU（Edge Function 每次只有 2 秒 CPU）
+export function tgBase64(b: Uint8Array): string {
+  const CHUNK = 32766;
+  let out = '';
+  for (let i = 0; i < b.length; i += CHUNK) {
+    out += btoa(String.fromCharCode.apply(null, b.subarray(i, i + CHUNK) as unknown as number[]));
+  }
+  return out;
 }
