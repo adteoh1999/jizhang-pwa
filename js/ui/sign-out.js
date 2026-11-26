@@ -4,7 +4,7 @@
 // 「先同步」：还没归属先认领（审核 S12；按了就当同意、不再问），再跑一轮同步，之后重新判断（审核 S13：失败说明原因）。
 // 登录已过期、只剩无法同步、账本属于别的账号、离线时不提供「先同步」，改在内文说明。
 import { choiceDialog, confirmDialog, messageDialog, busyOverlay } from './dialogs.js';
-import { createExporter } from './export-csv.js';
+import { createExporter, TG_EXPORT_SIGNOUT_TEXT } from './export-csv.js';
 import { HIDE_KEY } from './home.js';
 import { signOut, loadSession } from '../auth.js';
 import { announceLedgerReset } from '../ledger-channel.js';
@@ -87,13 +87,13 @@ async function flow({
   dialogs = { choiceDialog, confirmDialog, messageDialog },
   storage = globalThis.localStorage,
   announce = announceLedgerReset,
-  exportCsv = createExporter(store),
+  exportCsv = createExporter(store, { tgFallback: TG_EXPORT_SIGNOUT_TEXT }), // 有没上传的记录才问：Telegram 里不叫人去浏览器导出
   locks,
   block = (text) => busyOverlay(text),
   syncWaitMs = 25_000, // 「正在同步…」最多挡这么久（审核 S-6：一轮上限 120 秒，不能挡那么久）
   text = null,
   beforeWipe = null,
-  exportable = true, // false：不提供「导出 CSV」（Telegram 里暂不支援，3c 再处理）
+  exportable = true, // false：不提供「导出 CSV」（Mini App 解除连接：手机不能分享 CSV 时）
 }) {
   const T = text ? { ...SIGNOUT_TEXT, ...text } : SIGNOUT_TEXT;
   for (;;) {

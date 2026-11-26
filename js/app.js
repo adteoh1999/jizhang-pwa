@@ -28,6 +28,7 @@ import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 import { createSync, ensureClaimed, createClaimRunner } from './sync.js';
 import { askSyncStart } from './ui/sync-prompt.js';
+import { canShareCsv } from './ui/export-csv.js';
 import { messageDialog, choiceDialog } from './ui/dialogs.js';
 import { APP_VERSION } from './version.js';
 import { animate, fade, cancelAnims, reducedMotion, clipSupported, DUR, EASE_OUT } from './ui/motion.js';
@@ -271,7 +272,7 @@ async function bootTelegram(root, store, tg) {
     tgLogin: (initData) => tgLogin(fetchFn, initData, Date.now()),
     logoutServer: (s) => { logoutServer(fetchFn, s.access_token).catch(() => {}); },
     choice: choiceDialog,
-    askReset: (info) => askReset(store, info, { exportable: false }), // Telegram 里暂不提供导出（3c）
+    askReset: (info) => askReset(store, info, { exportable: canShareCsv() }), // Telegram：能分享 CSV 才给「先导出」（3c-2）
     wipe: () => wipeDevice(store),
     showScreen: (o) => renderFatal(root, o),
     showLoading: () => renderLoading(root, '正在载入…'),

@@ -4,6 +4,7 @@
 // 依赖可注入，方便测试。名字等文字一律当文字（对话框用 text node）。
 import { confirmDialog, choiceDialog, messageDialog, busyOverlay } from './dialogs.js';
 import { runSignOut } from './sign-out.js';
+import { canShareCsv } from './export-csv.js';
 import { getValidSession, logoutServer } from '../auth.js';
 import { tgLink, tgLogin } from '../tg-api.js';
 
@@ -156,6 +157,6 @@ export function runTgUnlinkMiniApp(deps) {
     ...deps, dialogs, isOnline,
     text: { ...U.mini, plainTitle: U.miniTitle, plainMessage: U.miniMessage, confirmLabel: U.confirmLabel, forceLabel: U.miniForce, busyLabel: U.busy },
     beforeWipe,
-    exportable: false,
+    exportable: canShareCsv(), // Telegram：能分享 CSV 才给「导出」（3c-2）
   });
 }

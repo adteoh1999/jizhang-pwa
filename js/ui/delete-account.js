@@ -95,7 +95,7 @@ async function flow({
   dialogs = { choiceDialog, confirmDialog, messageDialog },
   storage = globalThis.localStorage,
   announce = announceLedgerReset,
-  exportCsv = createExporter(store),
+  exportCsv = createExporter(store), // Telegram 不能分享时提示去浏览器导出（删号前可以先取消去导出云端资料；3c-2 有意保留按钮）
   locks,
   block = () => busyOverlay(T.busyLabel),
   deleteTimeoutMs,

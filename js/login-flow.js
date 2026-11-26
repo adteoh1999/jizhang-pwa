@@ -217,6 +217,8 @@ export function createLoginFlow({ api, store, now = () => Date.now(), onSignedIn
     },
 
     resend() {
+      // 验证中（或其他动作进行中）不做事：不然剩不到 120 秒时会进过期画面，验证回来的 session 没人作废（3c-2 审核）
+      if (state.busy) return Promise.resolve();
       if (state.step !== 'code' || flow.resendLeft() > 0) return Promise.resolve();
       if (tgTooLate()) return Promise.resolve();
       return guarded('resend', async () => {

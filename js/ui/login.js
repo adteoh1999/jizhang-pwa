@@ -5,7 +5,7 @@ import { h } from './dom.js';
 import { icon } from './icons.js';
 import { isIosBrowserTab } from './install-hint.js';
 import { confirmDialog, choiceDialog } from './dialogs.js';
-import { createExporter } from './export-csv.js';
+import { createExporter, canShareCsv, TG_EXPORT_SWITCH_TEXT } from './export-csv.js';
 import { animate, fade, reducedMotion, EASE_OUT } from './motion.js';
 import { announce } from './announce.js';
 import { onDepthChange } from './nav.js';
@@ -169,10 +169,10 @@ function welcomeHero() {
  * 换账号、本地还有没上传的记录（审核 M5）：先「导出 CSV」（在点击里直接导出、不关窗），
  * 再「清除并登录」→ 第二个破坏性确认；第二个按取消 → 回到第一个。回 true = 清除。
  */
-// exportable：false → 不提供「导出 CSV」（Telegram 里暂不支援导出，用户 2026-11-26 决定，3c 再处理）
+// exportable：false → 不提供「导出 CSV」（Telegram 里只有能分享 CSV 时才提供，3c-2）
 export async function askReset(store, { txCount }, { choice = choiceDialog, confirm = confirmDialog, exporter = createExporter, exportable = true } = {}) {
   const T = LOGIN_TEXT;
-  const exportCsv = exportable ? exporter(store) : null;
+  const exportCsv = exportable ? exporter(store, { tgFallback: TG_EXPORT_SWITCH_TEXT }) : null; // 记录还没上传：不叫人去浏览器导出
   // 先收起键盘：关对话框时焦点回到验证码栏，iOS 会在两个对话框之间弹一下键盘（审核 S-6）
   if (globalThis.document && document.activeElement && document.activeElement.blur) document.activeElement.blur();
   for (;;) {
@@ -213,7 +213,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     },
     store,
     now,
-    confirmReset: (info) => askReset(store, info, { exportable: !telegram }),
+    confirmReset: (info) => askReset(store, info, { exportable: !telegram || canShareCsv() }), // Telegram：能分享才给「先导出」（3c-2）
     onReset: announceLedgerReset,
     onSignedIn: (s) => { destroy(); onSignedIn(s); },
     // initData 过期的挡画面是终点：先拆掉自己（停计时器与监听、清 Telegram 返回键），再交给 app.js（审核 M2）

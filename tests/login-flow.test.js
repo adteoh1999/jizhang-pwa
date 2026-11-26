@@ -1095,3 +1095,22 @@ test('审核：PWA 存登录资料（setMetas）失败 → 也尽力作废这次
   await flush();
   assert.equal(calls.discardSession.length, 1);
 });
+
+// ---------- 3c-2（代码审核 r1 建议 5）：验证中按「重新发送」不做事 ----------
+test('Telegram：验证中按重新发送（又刚好快过期）→ 不叫 onInitStale、不寄信；验证照常完成', async () => {
+  const d = deferred();
+  const { telegram, tc } = tg();
+  const { flow, calls, nowRef } = setup({ telegram, handlers: { verifyOtp: () => d.p } });
+  flow.goEmail();
+  await flow.submitEmail('me@x.com', '');
+  nowRef.t = T0 + 61_000;
+  const v = flow.inputCode('123456');
+  assert.equal(flow.state.busy, 'verify');
+  nowRef.t = T0 + 430_000; // initData 只剩不到 120 秒，而且已经可以重发
+  await flow.resend();
+  assert.equal(tc.stale, 0);
+  assert.equal(calls.requestOtp.length, 1);
+  d.resolve({ ok: true, session: session() });
+  await v;
+  assert.equal(flow.state.step, 'link');
+});

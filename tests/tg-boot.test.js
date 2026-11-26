@@ -418,7 +418,7 @@ test('app.js 接线：Telegram 进 App 都带 telegram；renewed 后叫同步；
   assert.match(app, /r === 'renewed'[^\n]*sync\.schedule\(\{ force: true \}\)/);
   assert.match(app, /checkDue\(/);
   assert.match(app, /addEventListener\('online'/);
-  assert.match(app, /exportable: false/);
+  assert.match(app, /exportable: canShareCsv\(\)/); // 3c-2 用户决定：Telegram 里能分享 CSV 才给「先导出」
 });
 
 test('实测 7：没有身份资料（no-init，例如 Telegram 内建浏览器）→ 「请从选单按钮打开」、请按左上角 ✕、没有按钮', () => {

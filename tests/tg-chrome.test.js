@@ -2,7 +2,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  installTgChrome, setPageBack, clearPageBack, haptic, themeOf, insetPx, TG_SKY_TOP, _resetTgChrome,
+  installTgChrome, setPageBack, clearPageBack, haptic, themeOf, insetPx, TG_SKY_TOP, _resetTgChrome, tgActive,
 } from '../js/tg-chrome.js';
 import { pushLayer, popLayer, depth, canPop, onDepthChange } from '../js/ui/nav.js';
 import { light, mediaDark, attrDark } from './helpers/css-tokens.js';
@@ -465,4 +465,12 @@ test('登录页给的返回自己丢错：不外泄', () => {
   const orig = console.error;
   console.error = () => {};
   try { assert.doesNotThrow(() => s.clickBack()); } finally { console.error = orig; }
+});
+
+test('tgActive：装上前 false、装上后 true、reset 后 false', () => {
+  assert.equal(tgActive(), false);
+  setup();
+  assert.equal(tgActive(), true);
+  _resetTgChrome();
+  assert.equal(tgActive(), false);
 });

@@ -14,7 +14,7 @@ export const SYNC_PROMPT_TEXT = Object.freeze({
 /** 回 'start' | 'dismiss'。 */
 export async function askSyncStart(store, n) {
   const T = SYNC_PROMPT_TEXT;
-  const exportCsv = createExporter(store);
+  const exportCsv = createExporter(store); // Telegram 不能分享时提示去浏览器导出（开始同步后记录就会在那里；3c-2 有意保留按钮）
   const v = await choiceDialog({
     title: T.title,
     message: T.message(n),

@@ -137,6 +137,12 @@ function wireUp(webApp, win, on) {
   }
 }
 
+/**
+ * 现在是不是 Telegram 模式（已装上）。export-csv.js 靠它决定「绝不走下载」：
+ * Telegram 模式下 installTgChrome 一定要设好 st（不能因为某个条件回 false 而没装）。
+ */
+export const tgActive = () => st !== null;
+
 /** 登录页（邮箱／验证码步骤）给 Telegram 返回键用的处理函数。 */
 export function setPageBack(fn) {
   pageBack = typeof fn === 'function' ? fn : null;

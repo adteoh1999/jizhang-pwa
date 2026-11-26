@@ -120,8 +120,9 @@ test('导出抽到 export-csv.js：设置页与提醒共用，share 在点击里
   assert.match(read('../js/ui/sync-prompt.js'), /createExporter\(store\)/);
   const ex = read('../js/ui/export-csv.js');
   const body = ex.slice(ex.indexOf('return function exportCsv'));
-  assert.ok(body.indexOf('navigator.share(') > 0);
-  assert.doesNotMatch(body.slice(0, body.indexOf('navigator.share(')), /await /);
+  assert.ok(body.indexOf('nav.share(') > 0); // 3c-2：navigator 改成可注入的 nav（预设就是 navigator）
+  assert.doesNotMatch(body.slice(0, body.indexOf('nav.share(')), /await /);
+  assert.match(ex, /nav = globalThis\.navigator/);
 });
 
 test('ensureClaimed：claim 失败 → reject，owner 与 dismissed 都没写，下次照样问', async () => {
