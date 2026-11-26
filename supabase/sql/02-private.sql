@@ -66,7 +66,8 @@ create table if not exists private.register_attempts (
 create index if not exists register_attempts_key_idx on private.register_attempts (key, at);
 create index if not exists register_attempts_at_idx on private.register_attempts (at);  -- 清理旧纪录、全站总数用
 
--- 第 3 阶段 Telegram 用（先建，栏位未定案）
+-- Telegram 连接（第 3 阶段）。D1（2026-11-26）：只连接邮箱账号，kind 一律 'email'，previous_user_id 不用（保留）。
+-- 一个 Telegram 只连一个账号、一个账号只连一个 Telegram；账号删掉时连接跟着删。
 create table if not exists private.telegram_links (
   telegram_id      bigint      primary key,
   user_id          uuid        not null unique references auth.users (id) on delete cascade,
@@ -74,6 +75,11 @@ create table if not exists private.telegram_links (
   previous_user_id uuid,
   linked_at        timestamptz not null default now()
 );
+-- tg_label：连接时的 Telegram 显示名（@username 或名字，最多 64 字），给账号本人在设置页看（3a）。
+-- 注意：栏位已存在时整句跳过——以后要改 64 这个上限，得另写 alter table … drop/add constraint。
+alter table private.telegram_links
+  add column if not exists tg_label text not null default ''
+  constraint telegram_links_tg_label_len check (char_length(tg_label) <= 64);
 
 -- 多一层防线：开 RLS、不建 policy（definer 函数不受影响）
 alter table private.owner_emails      enable row level security;
@@ -430,6 +436,118 @@ begin
 end;
 $$;
 
+-- ======================= Telegram 连接（3a） =======================
+-- 参数不合格一律 raise exception（那是程式错误，不是使用者情况）。
+
+-- 这个 Telegram 连着哪个账号；没有回 null
+create or replace function svc.svc_tg_link_get(p_telegram_id bigint) returns uuid
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if p_telegram_id is null or p_telegram_id <= 0 then
+    raise exception 'telegram_id 不合格';
+  end if;
+  return (select l.user_id from private.telegram_links l where l.telegram_id = p_telegram_id);
+end;
+$$;
+
+-- 连接一个 Telegram 与一个邮箱账号。回传 linked / already / telegram_taken / user_taken / no_user / not_email。
+-- 判断顺序固定（verify-3a 第 6、7 项会检查）：参数 → 账号 → 这个 Telegram → 这个账号 → 插入。
+-- 全站一把锁，所以正常不会撞唯一约束；撞到时重判一次（保险），重判后仍查不到就往外报错。
+create or replace function svc.svc_tg_bind(p_telegram_id bigint, p_user_id uuid, p_label text) returns text
+language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
+declare
+  v_label   text    := left(btrim(coalesce(p_label, '')), 64);
+  v_kind    text;
+  v_email   text;
+  v_owner   uuid;
+  v_retried boolean := false;
+begin
+  if p_telegram_id is null or p_telegram_id <= 0 then
+    raise exception 'telegram_id 不合格';
+  end if;
+  if p_user_id is null then
+    raise exception 'user_id 不能是 null';
+  end if;
+
+  -- 全站只有一把锁：同一时间只处理一个连接请求（量很小，最简单也最稳）
+  perform pg_advisory_xact_lock(hashtext('jizhang:tg-bind'));
+
+  -- 账号：要存在、是邮箱账号（register 建号时写的 app_metadata.kind，用户自己改不了），而且邮箱还在（删号做到一半会清空）
+  select u.raw_app_meta_data->>'kind', u.email into v_kind, v_email from auth.users u where u.id = p_user_id;
+  if not found then
+    return 'no_user';
+  end if;
+  if v_kind is distinct from 'email' or coalesce(btrim(v_email), '') = '' then
+    return 'not_email';
+  end if;
+
+  loop
+    -- 这个 Telegram 已经连着谁
+    select l.user_id into v_owner from private.telegram_links l where l.telegram_id = p_telegram_id;
+    if found then
+      if v_owner = p_user_id then
+        if v_label <> '' then
+          update private.telegram_links set tg_label = v_label where telegram_id = p_telegram_id;
+        end if;
+        return 'already';
+      end if;
+      return 'telegram_taken';
+    end if;
+    -- 这个账号是不是已经连着别的 Telegram
+    if exists (select 1 from private.telegram_links l where l.user_id = p_user_id) then
+      return 'user_taken';
+    end if;
+    if v_retried then
+      raise exception '连接时撞到唯一约束，重判后却查不到连接';
+    end if;
+    begin
+      insert into private.telegram_links (telegram_id, user_id, kind, tg_label)
+      values (p_telegram_id, p_user_id, 'email', v_label);
+      return 'linked';
+    exception
+      when unique_violation then
+        v_retried := true;   -- 回到 loop 开头重判一次
+      when foreign_key_violation then
+        return 'no_user';    -- 账号刚好被删
+    end;
+  end loop;
+end;
+$$;
+
+-- 解除这个账号的 Telegram 连接；有删到回 true，本来就没有回 false
+create or replace function svc.svc_tg_unlink(p_user_id uuid) returns boolean
+language plpgsql security definer set search_path = '' as $$
+declare
+  n integer;
+begin
+  if p_user_id is null then
+    raise exception 'user_id 不能是 null';
+  end if;
+  delete from private.telegram_links where user_id = p_user_id;
+  get diagnostics n = row_count;
+  return n > 0;
+end;
+$$;
+
+-- 设置页用：{"linked": true, "label": …, "linked_at": …} 或 {"linked": false}。
+-- 故意不回 telegram_id（前端用不到）。注意：要确认「连着的是不是这一个 Telegram」请用 svc_tg_link_get 比对 user_id。
+create or replace function svc.svc_tg_status(p_user_id uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_label  text;
+  v_linked timestamptz;
+begin
+  if p_user_id is null then
+    raise exception 'user_id 不能是 null';
+  end if;
+  select l.tg_label, l.linked_at into v_label, v_linked from private.telegram_links l where l.user_id = p_user_id;
+  if not found then
+    return jsonb_build_object('linked', false);
+  end if;
+  return jsonb_build_object('linked', true, 'label', v_label, 'linked_at', v_linked);
+end;
+$$;
+
 -- 权限：只有 service_role 能执行
 revoke all on function svc.svc_otp_reserve(text)                        from public, anon, authenticated;
 revoke all on function svc.svc_otp_release(bigint)                      from public, anon, authenticated;
@@ -443,6 +561,10 @@ revoke all on function svc.svc_invites_list()                          from publ
 revoke all on function svc.svc_invite_set_active(text, boolean)        from public, anon, authenticated;
 revoke all on function svc.svc_invite_uses(text)                       from public, anon, authenticated;
 revoke all on function svc.svc_delete_user_data(uuid)                  from public, anon, authenticated;
+revoke all on function svc.svc_tg_link_get(bigint)                     from public, anon, authenticated;
+revoke all on function svc.svc_tg_bind(bigint, uuid, text)             from public, anon, authenticated;
+revoke all on function svc.svc_tg_unlink(uuid)                         from public, anon, authenticated;
+revoke all on function svc.svc_tg_status(uuid)                         from public, anon, authenticated;
 grant execute on function svc.svc_otp_reserve(text)                       to service_role;
 grant execute on function svc.svc_otp_release(bigint)                     to service_role;
 grant execute on function svc.svc_register_check(text, text, boolean)     to service_role;
@@ -455,6 +577,10 @@ grant execute on function svc.svc_invites_list()                         to serv
 grant execute on function svc.svc_invite_set_active(text, boolean)       to service_role;
 grant execute on function svc.svc_invite_uses(text)                      to service_role;
 grant execute on function svc.svc_delete_user_data(uuid)                 to service_role;
+grant execute on function svc.svc_tg_link_get(bigint)                    to service_role;
+grant execute on function svc.svc_tg_bind(bigint, uuid, text)            to service_role;
+grant execute on function svc.svc_tg_unlink(uuid)                        to service_role;
+grant execute on function svc.svc_tg_status(uuid)                        to service_role;
 
 -- 兜底：svc 里「所有」函数（包括以后新增、忘了写进上面名单的）一律只给 service_role
 do $$
