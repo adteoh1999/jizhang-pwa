@@ -46,8 +46,10 @@ export function adminHeaders(key: string): Record<string, string> {
 
 // 调用 svc schema 的函数；非 2xx、超时、内容坏掉就 throw。
 // 抛出的讯息一律是自己写的固定文字（函数名 + 状态码或错误种类），不会带出 key 或回应内容，可以放心写进日志。
+// emptyOk：2xx 空内容要不要当 null（回传 void 的函数需要）；回传 uuid 等值的函数传 false，空内容就当异常
 export async function rpc(
   fetchFn: typeof fetch, baseUrl: string, key: string, name: string, args: unknown, timeoutMs = 1000,
+  { emptyOk = true }: { emptyOk?: boolean } = {},
 ): Promise<unknown> {
   let res: Response;
   let text: string;
@@ -71,7 +73,10 @@ export async function rpc(
     } catch { /* 不是 JSON 就不带 */ }
     throw err;
   }
-  if (text === '') return null;
+  if (text === '') {
+    if (emptyOk) return null;
+    throw new Error(`rpc ${name} 失败：回传内容是空的`);
+  }
   try {
     return JSON.parse(text);
   } catch {

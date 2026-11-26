@@ -134,6 +134,7 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.deepEqual(r.logs, []);
   });
 
+  // 这里量的是测试档的常数；它和函数送出去的文字相同，由上一条「body 精确比对」保证
   test(`${label}：文字长度在 Telegram 上限内（简短介绍 ≤ 120、完整介绍 ≤ 512）`, () => {
     assert.ok([...SHORT].length <= 120 && SHORT.length <= 120);
     assert.ok([...DESC].length <= 512 && DESC.length <= 512);
@@ -161,5 +162,32 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
       assert.equal(tgCalls(f).length, 1);
       assert.ok(!r.logs.join('\n').includes(BOT));
     }
+  });
+}
+
+// 3b 审核 M1、S3：超时预算（前端等 10 秒）、最外层保护
+async function withTimeouts(fn) {
+  const orig = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => { seen.push(ms); return orig.call(AbortSignal, ms); };
+  try { await fn(); } finally { AbortSignal.timeout = orig; }
+  return seen;
+}
+
+for (const [label, mod] of await loadBoth('tg-admin')) {
+  test(`${label}：超时：查身份 2000、svc_is_owner 2000、每个 Bot API 1500（合计 8.5 秒 < 前端 10 秒）`, async () => {
+    const f = routes();
+    const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f })));
+    assert.equal(seen.length, f.calls.length);
+    assert.deepEqual(seen, [2000, 2000, 1500, 1500, 1500]);
+  });
+
+  test(`${label}：意外的错误 → 500 固定句子，带 CORS，日志不含错误原文`, async () => {
+    const env = (k) => { if (k === 'TELEGRAM_BOT_TOKEN') throw new Error('LEAK ' + BOT); return ENV(k); };
+    const { r: res, logs } = await quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env, fetch: routes() }));
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { error: '暂时无法完成，请稍后再试' });
+    assert.equal(res.headers.get('Access-Control-Allow-Origin'), ORIGIN);
+    assert.ok(!logs.join('\n').includes('LEAK'));
   });
 }

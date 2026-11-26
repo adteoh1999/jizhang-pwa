@@ -205,3 +205,9 @@ test('user.ts 符合 _shared 打包规则：不 import 别档', () => {
   const src = readFileSync(new URL('../supabase/functions/_shared/user.ts', import.meta.url), 'utf8');
   assert.equal(SHARED_IMPORT_FORBIDDEN.test(src), false);
 });
+
+test('mintSession：verify 回 200 有 token 但没有 user → 先作废再回 mismatch', async () => {
+  const f = routes(glOk(), verifyOk({ user: undefined }));
+  assert.equal(await mintSession(f, BASE, KEY, EMAIL, UID), 'mismatch');
+  assert.equal(f.callsTo('/auth/v1/logout?scope=local').length, 1);
+});

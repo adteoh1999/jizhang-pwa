@@ -619,19 +619,22 @@ begin
 end;
 $$;
 
--- 通知信没寄出去：删掉占位的那一笔，并把这次连接改回「还没寄」（只在那一笔属于这个连接的账号时才改）
+-- 通知信没寄出去：删掉占位的那一笔，并把这次连接改回「还没寄」。
+-- 只在那一笔属于这个连接的账号、而且 notified_at 正是那次预约设的（同一个交易的 now() = 那一笔的 sent_at）时才改：
+-- 预约后连接被解除又重新连接，新连接的 notified_at 不会被旧请求清掉（3b 审核 S6）。
 create or replace function svc.svc_tg_notify_release(p_id bigint, p_telegram_id bigint) returns void
 language plpgsql security definer set search_path = '' set lock_timeout = '3s' as $$
 declare
-  v_uid uuid;
+  v_uid  uuid;
+  v_sent timestamptz;
 begin
   if p_id is null or p_telegram_id is null or p_telegram_id <= 0 then
     raise exception '参数不合格';
   end if;
-  delete from private.tg_notify_sends where id = p_id returning user_id into v_uid;
+  delete from private.tg_notify_sends where id = p_id returning user_id, sent_at into v_uid, v_sent;
   if v_uid is not null then
     update private.telegram_links set notified_at = null
-     where telegram_id = p_telegram_id and user_id = v_uid;
+     where telegram_id = p_telegram_id and user_id = v_uid and notified_at = v_sent;
   end if;
 end;
 $$;

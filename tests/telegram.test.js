@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { tgBotTokenOk, tgLabel, tgVerifyInitData, tgVerifyInitDataWhy, tgBotCall } from '../supabase/functions/_shared/telegram.ts';
+import { tgBotTokenOk, tgLabel, tgVerifyInitData, tgVerifyInitDataWhy, tgBotCall, TG_BIND_MAX_SEC } from '../supabase/functions/_shared/telegram.ts';
 import { SHARED_IMPORT_FORBIDDEN } from '../scripts/build-functions.mjs';
 import { signInitData } from './helpers/tg-init-data.js';
 import { fakeFetch, jsonRes, hang } from './helpers/edge-fn.js';
@@ -304,4 +304,9 @@ test('tgBotCall：token 不合格、method 不合格 → {ok:false, status:0}，
     assert.deepEqual(await tgBotCall(f, tok, m, {}), { ok: false, status: 0 }, `${tok} ${m}`);
     assert.equal(f.calls.length, 0);
   }
+});
+
+// ---------- 3b 审核 S5：连接时效只有一份 ----------
+test('TG_BIND_MAX_SEC：600 秒（tg-login 的 bindLeft 与 tg-link 的 bind 共用）', () => {
+  assert.equal(TG_BIND_MAX_SEC, 600);
 });

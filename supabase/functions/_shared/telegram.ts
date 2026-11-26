@@ -12,6 +12,8 @@ const TG_MAX_INIT_DATA = 4096;      // 真机若因长度失败，先量实际�
 const TG_MAX_AGE_LIMIT_SEC = 86400; // maxAgeSec 最多 24 小时
 const TG_FUTURE_SKEW_SEC = 60;      // auth_date 最多可以比服务器时间快 60 秒
 const TG_LABEL_MAX = 64;            // 码点
+// 连接（tg-link bind）用的 initData 时效；tg-login 回 bindLeft 也用它算（用户选 10 分钟）
+export const TG_BIND_MAX_SEC = 600;
 
 // bot token 长这样：数字:30 个以上英数字或 _-（去头尾空白后判断）
 export function tgBotTokenOk(token: string | undefined): token is string {

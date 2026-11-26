@@ -16,6 +16,10 @@ type Deps = {
 };
 
 const ADMIN_FAIL_MSG = '暂时无法完成，请稍后再试';
+// 超时（审核 M1）：前端等 10 秒 → 查身份 2 + 查站主 2 + Bot API 3×1.5 = 8.5 秒
+const ADMIN_USER_MS = 2000;
+const ADMIN_RPC_MS = 2000;
+const ADMIN_BOT_MS = 1500;
 const APP_URL = 'https://jizhang.adteoh.com/';
 // 计划 Q4（用户同意）
 const MENU_TEXT = '记账';
@@ -29,6 +33,15 @@ export async function handleTgAdmin(req: Request, deps: Deps): Promise<Response>
   const reply = (status: number, obj: unknown) => json(status, obj, cors);
 
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+  try {
+    return await tgAdminFlow(req, deps, reply);
+  } catch {
+    logFail('意外错误', '失败');
+    return reply(500, { error: ADMIN_FAIL_MSG });
+  }
+}
+
+async function tgAdminFlow(req: Request, deps: Deps, reply: (status: number, obj: unknown) => Response): Promise<Response> {
   if (req.method !== 'POST') return reply(405, { error: '只接受 POST' });
 
   const token = bearer(req);
@@ -56,7 +69,7 @@ export async function handleTgAdmin(req: Request, deps: Deps): Promise<Response>
     return reply(500, { error: ADMIN_FAIL_MSG });
   }
 
-  const user = await getUser(deps.fetch, base, key, token);
+  const user = await getUser(deps.fetch, base, key, token, ADMIN_USER_MS);
   if (user === 'gone' || user === 'unauthorized') return reply(401, { error: '请重新登录后再试' });
   if (user === 'error') {
     logFail('查身份', '失败');
@@ -66,7 +79,7 @@ export async function handleTgAdmin(req: Request, deps: Deps): Promise<Response>
   let owner = false;
   if (user.kind === 'email') {
     try {
-      owner = (await rpc(deps.fetch, base, key, 'svc_is_owner', { p_email: user.email }, 3000)) === true;
+      owner = (await rpc(deps.fetch, base, key, 'svc_is_owner', { p_email: user.email }, ADMIN_RPC_MS)) === true;
     } catch (e) {
       logFail('查站主', e instanceof Error && e.message.startsWith('rpc ') ? e.message : '失败');
       return reply(500, { error: ADMIN_FAIL_MSG });
@@ -80,7 +93,7 @@ export async function handleTgAdmin(req: Request, deps: Deps): Promise<Response>
     ['setMyDescription', { description: LONG_DESC }],
   ];
   for (const [method, payload] of steps) {
-    const r = await tgBotCall(deps.fetch, bot, method, payload);
+    const r = await tgBotCall(deps.fetch, bot, method, payload, ADMIN_BOT_MS);
     if (!r.ok) {
       logFail(method, `HTTP ${r.status}`);
       return reply(502, { error: 'Telegram 暂时连不上，请稍后再试' });

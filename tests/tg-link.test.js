@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { loadBoth, fakeFetch, jsonRes, hang, envOf } from './helpers/edge-fn.js';
 import { signInitData } from './helpers/tg-init-data.js';
 import { tgLabel } from '../supabase/functions/_shared/telegram.ts';
+import { NOTICE_TEXT, NOTICE_SUBJECT } from '../supabase/functions/_shared/notice.ts';
 
 // 全是假的测试资料
 const ORIGIN = 'https://jizhang.adteoh.com';
@@ -260,12 +261,12 @@ for (const [label, mod] of await loadBoth('tg-link')) {
     assert.equal((await run({ action: 'bind', initData: initDataAt(NOW - 599) }, routes())).status, 200);
   });
 
-  test(`${label}：bind 坏 hash、时间超前 → 401 无法确认 Telegram 身份，没叫 bind；日志只有原因种类`, async () => {
+  test(`${label}：bind 坏 hash、时间超前 → 403 tg_invalid（不是 401），没叫 bind；日志只有原因种类`, async () => {
     for (const d of [FRESH.replace(/hash=[0-9a-f]{4}/, 'hash=0000'), initDataAt(NOW + 61)]) {
       const f = routes();
       const r = await run({ action: 'bind', initData: d }, f);
-      assert.equal(r.status, 401);
-      assert.deepEqual(r.body, { error: '无法确认 Telegram 身份' });
+      assert.equal(r.status, 403);
+      assert.deepEqual(r.body, { code: 'tg_invalid', error: '无法确认 Telegram 身份' });
       assert.equal(f.callsTo('/rpc/svc_tg_bind').length, 0);
       assertCleanLogs(r.logs, '坏 initData');
     }
@@ -284,8 +285,9 @@ for (const [label, mod] of await loadBoth('tg-link')) {
     assert.equal(mails[0].from, FROM);
     assert.deepEqual(mails[0].to, [EMAIL]);
     assert.equal(mails[0].subject, '你的记账已连接 Telegram');
-    assert.equal(mails[0].text,
-      `Telegram 用户「${LABEL}」刚刚连接到你的记账账号。如果不是你本人操作，请到记账 App 设置里按「解除 Telegram 连接」。`);
+    assert.equal(mails[0].subject, NOTICE_SUBJECT);
+    assert.equal(mails[0].text, '一个 Telegram 账号刚刚连接到你的记账账号。如果不是你本人操作，请到记账 App 设置里按「解除 Telegram 连接」。');
+    assert.equal(mails[0].text, NOTICE_TEXT);
     const c = f.callsTo('api.resend.com')[0];
     assert.equal(c.url, 'https://api.resend.com/emails');
     assert.equal(c.init.headers.Authorization, `Bearer ${RESEND_KEY}`);
@@ -364,21 +366,56 @@ for (const [label, mod] of await loadBoth('tg-link')) {
     }
   });
 
-  test(`${label}：通知信的名字：像网址就换成通用句；超过 32 字截断；空名字也用通用句`, async () => {
-    const GENERIC = '一个 Telegram 账号刚刚连接到你的记账账号。如果不是你本人操作，请到记账 App 设置里按「解除 Telegram 连接」。';
-    const textFor = async (user) => {
+  test(`${label}：通知信一律不放 Telegram 名字（用户 2026-11-26 选 B）：各种名字寄出的内容都一样`, async () => {
+    const names = [
+      { id: TID, first_name: 'Visit evil.com' },
+      { id: TID, first_name: '小明」已停用。请致电 0123456789「' },
+      { id: TID, first_name: '客服 0123456789' },
+      { id: TID, first_name: '你的 iPhone（系统自动同步，无需处理）' },
+      { id: TID, first_name: 'evil．com' },
+      { id: TID, username: 'jizhang_support' },
+      { id: TID, first_name: 'Ann', last_name: 'Lee' },
+      { id: TID },
+    ];
+    for (const user of names) {
       const f = routes();
       await run({ action: 'bind', initData: initDataAt(NOW - 100, user) }, f);
-      return mailOf(f)[0].text;
-    };
-    for (const first_name of ['Visit evil.com', 'go https://x', 'www.x', 'a://b', 'Shop.NOW']) {
-      assert.equal(await textFor({ id: TID, first_name }), GENERIC, first_name);
+      const m = mailOf(f)[0];
+      assert.equal(m.text, NOTICE_TEXT, JSON.stringify(user));
+      assert.equal(m.subject, NOTICE_SUBJECT);
+      const lab = tgLabel(user);
+      if (lab) assert.ok(!JSON.stringify(m).includes(lab), lab);
     }
-    assert.equal(await textFor({ id: TID }), GENERIC, '空名字');
-    const long = '甲'.repeat(40);
-    assert.equal(await textFor({ id: TID, first_name: long }),
-      `Telegram 用户「${'甲'.repeat(32)}」刚刚连接到你的记账账号。如果不是你本人操作，请到记账 App 设置里按「解除 Telegram 连接」。`);
-    assert.match(await textFor({ id: TID, first_name: 'Ann', last_name: 'Lee' }), /^Telegram 用户「Ann Lee」/);
+  });
+
+  test(`${label}：通知信预约、撤回的 rpc 超时都是 2000 毫秒`, async () => {
+    const f = routes({ resend: () => jsonRes(500, {}) });
+    const seen = await withTimeouts(() => run({ action: 'bind', initData: FRESH }, f));
+    assert.equal(seen.length, f.calls.length);
+    const at = (part) => seen[f.calls.findIndex((c) => c.url.includes(part))];
+    assert.equal(at('/rpc/svc_tg_notify_reserve'), 2000);
+    assert.equal(at('/rpc/svc_tg_notify_release'), 2000);
+  });
+
+  test(`${label}：账号邮箱是空字串 → 不预约、不寄，bind 照样回 200`, async () => {
+    const f = routes({ user: () => jsonRes(200, { id: UID, email: '', app_metadata: { kind: 'email' } }) });
+    const r = await run({ action: 'bind', initData: FRESH }, f);
+    assert.deepEqual(r.body, { result: 'linked' });
+    assert.equal(f.callsTo('/rpc/svc_tg_notify_reserve').length, 0);
+    assert.equal(mailOf(f).length, 0);
+  });
+
+  test(`${label}：意外的错误 → 500 固定句子，带 CORS、no-store，日志不含错误原文`, async () => {
+    for (const action of ['bind', 'check']) {
+      const { r: res, logs } = await quiet(() => mod.handleTgLink(req({ action, initData: FRESH }), {
+        env: ENV, fetch: routes(), nowSec: () => { throw new Error('LEAK ' + EMAIL); },
+      }));
+      assert.equal(res.status, 500, action);
+      assert.deepEqual(await res.json(), { error: '暂时无法连接，请稍后再试' });
+      assert.equal(res.headers.get('Access-Control-Allow-Origin'), ORIGIN);
+      assert.equal(res.headers.get('Cache-Control'), 'no-store');
+      assert.ok(!logs.join('\n').includes('LEAK'));
+    }
   });
 
   // ---------- check ----------
@@ -393,14 +430,17 @@ for (const [label, mod] of await loadBoth('tg-link')) {
     }
   });
 
-  test(`${label}：check：超过 86400 秒 → 422 init_stale；坏 hash → 401；rpc 失败 → 500`, async () => {
+  test(`${label}：check：超过 86400 秒 → 422 init_stale；坏 hash → 403 tg_invalid；rpc 失败、空内容 → 500`, async () => {
     const old = await run({ action: 'check', initData: initDataAt(NOW - 86401) }, routes());
     assert.equal(old.status, 422);
     assert.equal(old.body.code, 'init_stale');
     const bad = await run({ action: 'check', initData: FRESH.replace(/hash=[0-9a-f]{4}/, 'hash=0000') }, routes());
-    assert.equal(bad.status, 401);
+    assert.equal(bad.status, 403);
+    assert.deepEqual(bad.body, { code: 'tg_invalid', error: '无法确认 Telegram 身份' });
     const err = await run({ action: 'check', initData: FRESH }, routes({ linkGet: () => jsonRes(500, {}) }));
     assert.equal(err.status, 500);
+    const empty = await run({ action: 'check', initData: FRESH }, routes({ linkGet: () => new Response('', { status: 200 }) }));
+    assert.equal(empty.status, 500);
   });
 
   // ---------- status ----------
@@ -439,6 +479,8 @@ for (const [label, mod] of await loadBoth('tg-link')) {
     assert.equal(a.callsTo('/auth/v1/logout').length, 1);
     const rb = await run({ action: 'unlink' }, routes({ logout: () => jsonRes(500, {}) }));
     assert.deepEqual(rb.body, { ok: true, unlinked: true, others: false });
+    const rc = await run({ action: 'unlink' }, routes({ logout: () => jsonRes(401, {}) }));
+    assert.deepEqual(rc.body, { ok: true, unlinked: true, others: false });
   });
 
   test(`${label}：unlink：svc_tg_unlink 出错或回传不是布林 → 500，不登出`, async () => {

@@ -111,3 +111,16 @@ test('rpc：code 格式不对、或回应不是 JSON → 没有 pgCode', async (
     });
   }
 });
+
+// ---------- 3b 审核 S7：回传 uuid 的函数，空内容不能当成 null ----------
+test('rpc：emptyOk:false 时 2xx 空内容 → 抛固定讯息；内容是 null 照样回 null', async () => {
+  const empty = async () => new Response('', { status: 200 });
+  await assert.rejects(rpc(empty, 'https://p', 'K', 'svc_tg_touch', {}, 1000, { emptyOk: false }), (e) => {
+    assert.match(e.message, /^rpc svc_tg_touch 失败：/);
+    return true;
+  });
+  const nul = async () => new Response('null', { status: 200 });
+  assert.equal(await rpc(nul, 'https://p', 'K', 'svc_tg_touch', {}, 1000, { emptyOk: false }), null);
+  // 默认不变：空内容 → null（其他函数还在用）
+  assert.equal(await rpc(empty, 'https://p', 'K', 'svc_x', {}), null);
+});

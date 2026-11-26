@@ -6,7 +6,8 @@
 // 日志只记「哪一步＋原因种类／状态码／rpc 固定文字」，绝不记 initData、telegram_id、token、邮箱、名字、user id。
 import { json, secretKey, rpc, corsHeaders } from '../_shared/http.ts';
 import { getUser, bearer, logoutOthers } from '../_shared/user.ts';
-import { tgBotTokenOk, tgVerifyInitDataWhy } from '../_shared/telegram.ts';
+import { tgBotTokenOk, tgVerifyInitDataWhy, TG_BIND_MAX_SEC } from '../_shared/telegram.ts';
+import { noticeLinkedOnce } from '../_shared/notice.ts';
 
 type Deps = {
   env: (k: string) => string | undefined;
@@ -14,13 +15,12 @@ type Deps = {
   nowSec?: () => number;
 };
 
-const TG_BIND_MAX_SEC = 600;   // bind 的时效（用户选 10 分钟）
 const CHECK_MAX_SEC = 86400;
 const BIND_RPC_MS = 4000;      // 比 svc_tg_bind 的 lock_timeout 3 秒长
 const LINK_RPC_MS = 3000;
-const MAIL_MS = 2500;          // 照 send-email
+const NOTICE_RPC_MS = 2000;     // 预约、撤回（审核 M1：bind 合计 3+4+2+2.5+2 = 13.5 秒 < 前端 15 秒）
+const NOTICE_MAIL_MS = 2500;    // 照 send-email
 const LINK_FAIL_MSG = '暂时无法连接，请稍后再试';
-const MAIL_NAME_MAX = 32;      // 码点
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTIONS = ['bind', 'check', 'status', 'unlink'];
 
@@ -38,8 +38,16 @@ const BIND_REPLY: Record<string, [number, Record<string, string>]> = {
 export async function handleTgLink(req: Request, deps: Deps): Promise<Response> {
   const cors = { ...corsHeaders(req.headers.get('Origin')), 'Cache-Control': 'no-store' };
   const reply = (status: number, obj: unknown) => json(status, obj, cors);
-
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+  try {
+    return await tgLinkFlow(req, deps, reply);
+  } catch {
+    logFail('意外错误', '失败');
+    return reply(500, { error: LINK_FAIL_MSG });
+  }
+}
+
+async function tgLinkFlow(req: Request, deps: Deps, reply: (status: number, obj: unknown) => Response): Promise<Response> {
   if (req.method !== 'POST') return reply(405, { error: '只接受 POST' });
 
   const token = bearer(req);
@@ -79,6 +87,7 @@ export async function handleTgLink(req: Request, deps: Deps): Promise<Response> 
   if (user.kind !== 'email') return reply(403, { error: '没有权限' });
 
   const call = (name: string, args: unknown, ms = LINK_RPC_MS) => rpc(deps.fetch, base, key, name, args, ms);
+  const tid = (tg: { telegramId: string }) => Number(tg.telegramId); // 验签已确认是安全整数
   const now = deps.nowSec ? deps.nowSec() : Math.floor(Date.now() / 1000);
 
   // 验签：太旧 → 422 init_stale；bot token 不合格 → 500；其他 → 401
@@ -88,24 +97,26 @@ export async function handleTgLink(req: Request, deps: Deps): Promise<Response> 
     logFail('验证', v.fail);
     if (v.fail === 'expired') return reply(422, { code: 'init_stale', error: '太久没有完成，请关掉再重新打开' });
     if (v.fail === 'token') return reply(500, { error: LINK_FAIL_MSG });
-    return reply(401, { error: '无法确认 Telegram 身份' });
+    return reply(403, { code: 'tg_invalid', error: '无法确认 Telegram 身份' });
   };
 
   switch (action) {
     case 'bind': {
       const tg = await verify(TG_BIND_MAX_SEC);
       if (tg instanceof Response) return tg;
-      const tid = Number(tg.telegramId);
+      const telegramId = tid(tg);
       let result: unknown;
       try {
-        result = await call('svc_tg_bind', { p_telegram_id: tid, p_user_id: user.id, p_label: tg.label }, BIND_RPC_MS);
+        result = await call('svc_tg_bind', { p_telegram_id: telegramId, p_user_id: user.id, p_label: tg.label }, BIND_RPC_MS);
       } catch (e) {
         logFail('bind', errText(e));
         if ((e as { pgCode?: string })?.pgCode === '55P03') return reply(503, { code: 'busy', error: '系统忙碌，请再试一次' });
         return reply(500, { error: LINK_FAIL_MSG });
       }
       if (result === 'linked' || result === 'already') {
-        await notifyLinked(deps, call, tid, user.id, user.email, tg.label);
+        const r = await noticeLinkedOnce(call, deps.fetch, deps.env, telegramId, user.id, user.email,
+          { rpcMs: NOTICE_RPC_MS, mailMs: NOTICE_MAIL_MS, at: (cap) => cap });
+        if (r !== 'sent' && r !== 'skip') logFail('通知信', r);
         return reply(200, { result });
       }
       if (typeof result === 'string' && result in BIND_REPLY) {
@@ -120,7 +131,7 @@ export async function handleTgLink(req: Request, deps: Deps): Promise<Response> 
       const tg = await verify(CHECK_MAX_SEC);
       if (tg instanceof Response) return tg;
       try {
-        const uid = await call('svc_tg_link_get', { p_telegram_id: Number(tg.telegramId) });
+        const uid = await rpc(deps.fetch, base, key, 'svc_tg_link_get', { p_telegram_id: tid(tg) }, LINK_RPC_MS, { emptyOk: false });
         const linked = typeof uid === 'string' && UUID_RE.test(uid) && uid.toLowerCase() === user.id.toLowerCase();
         return reply(200, { linked });
       } catch (e) {
@@ -155,64 +166,6 @@ export async function handleTgLink(req: Request, deps: Deps): Promise<Response> 
     }
   }
   return reply(400, { error: '看不懂这个请求' });
-}
-
-// ---------------- 通知信 ----------------
-
-// 信里的名字：截到 32 字；空的、或有像网址的样式 → 不放名字，改用通用句
-export function linkMailText(label: string): string {
-  const tail = '如果不是你本人操作，请到记账 App 设置里按「解除 Telegram 连接」。';
-  const name = [...(label ?? '')].slice(0, MAIL_NAME_MAX).join('').trim();
-  const urlish = /:\/\/|www\./i.test(label ?? '') || /[a-z0-9-]+\.[a-z]{2,}/i.test(label ?? '');
-  if (name === '' || urlish) return `一个 Telegram 账号刚刚连接到你的记账账号。${tail}`;
-  return `Telegram 用户「${name}」刚刚连接到你的记账账号。${tail}`;
-}
-
-// 预约（同一个连接只寄一次、每个账号 24 小时最多 3 封）→ 寄 → 寄失败就撤回预约。
-// 任何一步出错都不影响 bind 的结果；不 throw。
-async function notifyLinked(
-  deps: Deps, call: (name: string, args: unknown) => Promise<unknown>,
-  tid: number, userId: string, email: string, label: string,
-): Promise<void> {
-  if (!email) return;
-  let r: any;
-  try {
-    r = await call('svc_tg_notify_reserve', { p_telegram_id: tid, p_user_id: userId });
-  } catch (e) {
-    logFail('通知信预约', errText(e));
-    return;
-  }
-  if (r?.do === 'limited') { logFail('通知信', '24 小时内已寄满，不寄'); return; }
-  if (r?.do !== 'send') return;
-  if (!Number.isSafeInteger(r.id)) { logFail('通知信预约', '回传格式不对'); return; }
-
-  if (await sendLinkedMail(deps, email, label)) return;
-  try {
-    await call('svc_tg_notify_release', { p_id: r.id, p_telegram_id: tid });
-  } catch (e) {
-    logFail('通知信撤回', errText(e));
-  }
-}
-
-async function sendLinkedMail(deps: Deps, email: string, label: string): Promise<boolean> {
-  const resendKey = deps.env('RESEND_API_KEY') ?? '';
-  const from = deps.env('EMAIL_FROM') ?? '';
-  if (!resendKey || !from) { logFail('通知信', '缺 RESEND_API_KEY 或 EMAIL_FROM'); return false; }
-  try {
-    const res = await deps.fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      // 只寄纯文字（不送 html）
-      body: JSON.stringify({ from, to: [email], subject: '你的记账已连接 Telegram', text: linkMailText(label) }),
-      signal: AbortSignal.timeout(MAIL_MS),
-    });
-    try { await res.body?.cancel(); } catch { /* 不需要内容 */ }
-    if (!res.ok) logFail('通知信', `HTTP ${res.status}`);
-    return res.ok;
-  } catch (e) {
-    logFail('通知信', e instanceof Error ? e.name : '失败');
-    return false;
-  }
 }
 
 function realDeps(): Deps {

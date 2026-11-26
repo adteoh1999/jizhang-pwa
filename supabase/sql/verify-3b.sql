@@ -11,10 +11,12 @@ declare
   ub uuid := '00000000-0000-4000-8000-0000000003b2';  -- 别人
   uc uuid := '00000000-0000-4000-8000-0000000003b3';  -- 24 小时内已寄满 3 封
   ud uuid := '00000000-0000-4000-8000-0000000003b4';  -- 删号连带
+  ue uuid := '00000000-0000-4000-8000-0000000003b5';  -- 解除后重新连接
   ta bigint := 5000000311;
   tb bigint := 5000000312;
   tc bigint := 5000000313;
   td bigint := 5000000314;
+  te bigint := 5000000315;
   tz bigint := 5000000319;  -- 没有连接
   pass  int := 0;
   total int := 0;
@@ -224,6 +226,42 @@ begin
   exception when others then
     perform set_config('role', 'postgres', true);
     fails := array_append(fails, ('12:' || sqlerrm));
+  end;
+
+  -- 13. release 只清「自己那次预约设的」notified_at：预约后连接被解除、又重新连接（新连接已有自己的 notified_at）
+  --     → 旧请求的 release 只删掉自己那一笔，不能把新连接改回「还没寄」（审核 S6）
+  total := total + 1;
+  begin
+    insert into auth.users (instance_id, id, aud, role, email, raw_app_meta_data)
+    values ('00000000-0000-0000-0000-000000000000', ue, 'authenticated', 'authenticated', 'ue3b@test.invalid', '{"kind":"email"}');
+    insert into private.telegram_links (telegram_id, user_id, kind, tg_label) values (te, ue, 'email', '');
+    j := svc.svc_tg_notify_reserve(te, ue);
+    delete from private.telegram_links where telegram_id = te;
+    insert into private.telegram_links (telegram_id, user_id, kind, tg_label, notified_at)
+    values (te, ue, 'email', '', clock_timestamp());
+    select notified_at into ts from private.telegram_links where telegram_id = te;
+    perform svc.svc_tg_notify_release((j->>'id')::bigint, te);
+    ok := j->>'do' = 'send' and ts is not null
+      and (select notified_at from private.telegram_links where telegram_id = te) = ts
+      and not exists (select 1 from private.tg_notify_sends where id = (j->>'id')::bigint);
+    if ok then pass := pass + 1; else fails := array_append(fails, ('13 旧的 release 清掉了新连接的 notified_at:' || coalesce(j::text, 'null'))); end if;
+  exception when others then fails := array_append(fails, ('13:' || sqlerrm));
+  end;
+
+  -- 14. touch、reserve、release 都设了 lock_timeout = 3s（tg-link 的 bind rpc 等 4 秒、要比锁等待长）
+  total := total + 1;
+  begin
+    n := 0;
+    foreach f in array array[
+      'svc.svc_tg_touch(bigint,text)', 'svc.svc_tg_notify_reserve(bigint,uuid)', 'svc.svc_tg_notify_release(bigint,bigint)']
+    loop
+      if exists (select 1 from pg_proc p where p.oid = to_regprocedure(f) and 'lock_timeout=3s' = any(coalesce(p.proconfig, '{}'))) then
+        n := n + 1;
+      end if;
+    end loop;
+    ok := n = 3;
+    if ok then pass := pass + 1; else fails := array_append(fails, ('14 lock_timeout 没设好:' || n)); end if;
+  exception when others then fails := array_append(fails, ('14:' || sqlerrm));
   end;
 
   raise exception 'VERIFY 3b: % / % PASS。失败: %', pass, total,
