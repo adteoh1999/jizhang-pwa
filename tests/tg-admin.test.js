@@ -83,7 +83,7 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
 
   test(`${label}：缺设定、bot token 不合格 → 500，没叫任何服务器`, async () => {
     for (const over of [{ SUPABASE_URL: undefined }, { SUPABASE_SECRET_KEYS: undefined }, { TELEGRAM_BOT_TOKEN: undefined }, { TELEGRAM_BOT_TOKEN: ' ' }, { TELEGRAM_BOT_TOKEN: '1:x' },
-      { TELEGRAM_WEBHOOK_SECRET: undefined }, { TELEGRAM_WEBHOOK_SECRET: 'short' }]) {
+      { TELEGRAM_WEBHOOK_SECRET: undefined }, { TELEGRAM_WEBHOOK_SECRET: 'short' }, { SUPABASE_URL: 'http://p.supabase.co' }]) {
       const f = routes();
       const r = await run({ action: 'setup' }, f, { env: envOf({ ...ENV_OBJ, ...over }) });
       assert.equal(r.status, 500, JSON.stringify(over));
@@ -131,13 +131,14 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.equal(r.status, 200);
     assert.deepEqual(r.body, { ok: true });
     const c = tgCalls(f);
-    assert.deepEqual(c.map((x) => x.url), ['setChatMenuButton', 'setMyShortDescription', 'setMyDescription', 'setWebhook', 'setMyCommands']
+    // setWebhook 排第一（审核 S1：恢复功能优先，外观失败也不影响 webhook）
+    assert.deepEqual(c.map((x) => x.url), ['setWebhook', 'setChatMenuButton', 'setMyShortDescription', 'setMyDescription', 'setMyCommands']
       .map((m) => `https://api.telegram.org/bot${BOT}/${m}`));
-    assert.deepEqual(c[0].body, { menu_button: { type: 'web_app', text: MENU_TEXT, web_app: { url: 'https://jizhang.adteoh.com/' } } });
-    assert.deepEqual(c[1].body, { short_description: SHORT });
-    assert.deepEqual(c[2].body, { description: DESC });
-    assert.deepEqual(c[3].body, { url: `${BASE}/functions/v1/telegram-bot`, secret_token: SECRET,
+    assert.deepEqual(c[0].body, { url: `${BASE}/functions/v1/telegram-bot`, secret_token: SECRET,
       allowed_updates: ['message', 'callback_query'], max_connections: 4 });
+    assert.deepEqual(c[1].body, { menu_button: { type: 'web_app', text: MENU_TEXT, web_app: { url: 'https://jizhang.adteoh.com/' } } });
+    assert.deepEqual(c[2].body, { short_description: SHORT });
+    assert.deepEqual(c[3].body, { description: DESC });
     assert.deepEqual(c[4].body, { commands: [{ command: 'start', description: '开始／说明' }, { command: 'help', description: '怎么记账' }] });
     assert.deepEqual(r.logs, []);
   });
@@ -197,7 +198,7 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.deepEqual(r.body, { error: 'Telegram 暂时连不上，请稍后再试' });
     assert.equal(tgCalls(f).length, 2);
     const all = r.logs.join('\n');
-    assert.match(all, /setMyShortDescription/);
+    assert.match(all, /setChatMenuButton/);
     assert.match(all, /400/);
     assert.ok(!all.includes(BOT) && !all.includes('DDDD') && !all.includes('Bad Request'));
     assert.ok(!all.includes(EMAIL) && !all.includes(TOKEN));
@@ -214,7 +215,7 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
   });
 }
 
-// 3b 审核 M1、S3：超时预算（前端等 10 秒）、最外层保护
+// 3b 审核 M1、S3：超时预算（3d 起前端等 20 秒、服务器 18 秒）、最外层保护
 async function withTimeouts(fn) {
   const orig = AbortSignal.timeout;
   const seen = [];
@@ -224,27 +225,38 @@ async function withTimeouts(fn) {
 }
 
 for (const [label, mod] of await loadBoth('tg-admin')) {
-  // 实测（2026-11-26）：第一次连 api.telegram.org 超过 1.5 秒（Telegram 其实已设好）→ 改成总时限 8.5 秒、每步最多 5 秒
+  // 实测（2026-11-26）：第一次连 api.telegram.org 超过 1.5 秒（Telegram 其实已设好）→ 每步最多 5 秒；3d 起总时限 18 秒
   test(`${label}：超时：查身份 2000、svc_is_owner 2000、Bot API 每步最多 5000（时间充裕时）`, async () => {
     const f = routes();
     const clock = { t: 1_000_000 };
     const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f, nowMs: () => clock.t })));
     assert.equal(seen.length, f.calls.length);
     assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000, 5000, 5000]);
+    // status：身份、站主、getWebhookInfo、AI 次数
+    const g = routes({ tg: () => jsonRes(200, { ok: true, result: { url: '', pending_update_count: 0 } }) });
+    const seen2 = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'status' }), { env: ENV, fetch: g, nowMs: () => clock.t })));
+    assert.deepEqual(seen2, [2000, 2000, 5000, 2000]);
   });
 
   test(`${label}：总时限 18 秒：前面用掉的时间会让后面每一步缩短；时间用完就不再叫 Telegram、回 502`, async () => {
     const clock = { t: 1_000_000 };
     let n = 0;
-    const f = routes({ tg: () => { n += 1; clock.t += n === 1 ? 4000 : 4500; return jsonRes(200, { ok: true, result: true }); } });
+    const f = routes({ tg: () => { n += 1; clock.t += 4000; return jsonRes(200, { ok: true, result: true }); } });
     const seen = await withTimeouts(() => quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: f, nowMs: () => clock.t })));
-    // 剩 18000 → 5000；剩 14000 → 5000；剩 9500 → 5000；剩 5000 → 5000；剩 500 → 500
-    assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000, 5000, 500]);
+    // 剩 18000、14000、10000、6000 → 5000；剩 2000 → 2000
+    assert.deepEqual(seen, [2000, 2000, 5000, 5000, 5000, 5000, 2000]);
+    // 审核 S2：剩不到 1 秒就当时间用完、不送（送了必然逾时）
+    const clock3 = { t: 1_000_000 };
+    const h = routes({ tg: () => { clock3.t += 4300; return jsonRes(200, { ok: true, result: true }); } });
+    const { r: res3 } = await quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: h, nowMs: () => clock3.t }));
+    assert.equal(res3.status, 502);
+    assert.equal(tgCalls(h).length, 4);
     const clock2 = { t: 1_000_000 };
     const g = routes({ tg: () => { clock2.t += 19000; return jsonRes(200, { ok: true, result: true }); } });
     const { r: res, logs } = await quiet(() => mod.handleTgAdmin(req({ action: 'setup' }), { env: ENV, fetch: g, nowMs: () => clock2.t }));
     assert.equal(res.status, 502);
     assert.equal(tgCalls(g).length, 1, '时间用完就不再叫');
+    assert.equal(seen.length > 0, true);
     assert.ok(!logs.join('\n').includes(BOT));
   });
 
@@ -255,5 +267,71 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.deepEqual(await res.json(), { error: '暂时无法完成，请稍后再试' });
     assert.equal(res.headers.get('Access-Control-Allow-Origin'), ORIGIN);
     assert.ok(!logs.join('\n').includes('LEAK'));
+  });
+}
+
+
+// ======================= 审核（Task 9）补测 =======================
+for (const [label, mod] of await loadBoth('tg-admin')) {
+  const run = async (body, f, env = ENV) => {
+    const { r: res, logs } = await quiet(() => mod.handleTgAdmin(req(body), { env, fetch: f }));
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* 没有内容 */ }
+    return { status: res.status, body: json, logs, text };
+  };
+
+  test(`${label}：审核 M2：webhook 密钥坏了 → setup 500 零呼叫；pause、status 照样能用`, async () => {
+    const bad = envOf({ ...ENV_OBJ, TELEGRAM_WEBHOOK_SECRET: 'short' });
+    let f = routes();
+    assert.equal((await run({ action: 'setup' }, f, bad)).status, 500);
+    assert.equal(f.calls.length, 0);
+    f = routes();
+    assert.equal((await run({ action: 'pause' }, f, bad)).status, 200);
+    assert.equal(tgCalls(f)[0].url, `https://api.telegram.org/bot${BOT}/deleteWebhook`);
+    f = routes({ tg: () => jsonRes(200, { ok: true, result: { url: '', pending_update_count: 0 } }) });
+    assert.equal((await run({ action: 'status' }, f, bad)).status, 200);
+  });
+
+  test(`${label}：审核 S5：SUPABASE_URL 带尾斜线 → webhook 网址没有双斜线`, async () => {
+    const f = routes();
+    await run({ action: 'setup' }, f, envOf({ ...ENV_OBJ, SUPABASE_URL: BASE + '/' }));
+    assert.equal(tgCalls(f)[0].body.url, `${BASE}/functions/v1/telegram-bot`);
+  });
+
+  test(`${label}：审核 T1：setWebhook 失败、Telegram 的说明带着密钥 → 日志与回应都没有密钥`, async () => {
+    const f = routes({ tg: () => jsonRes(400, { ok: false, description: 'bad secret ' + SECRET }) });
+    const r = await run({ action: 'setup' }, f);
+    assert.equal(r.status, 502);
+    assert.ok(!r.logs.join('\n').includes(SECRET) && !r.text.includes(SECRET));
+    assert.ok(!r.logs.join('\n').includes('functions/v1'));
+  });
+
+  test(`${label}：审核 T2／S3：status 资料怪 → 安全的值；成功时日志是空的`, async () => {
+    const cases = [
+      [{ url: `${BASE}/functions/v1/telegram-bot`, pending_update_count: -3, last_error_date: 1e15 }, { webhook: 'ok', pending: 0, lastErrorAt: null }],
+      [{ url: `${BASE}/functions/v1/telegram-bot/`, pending_update_count: 1.5, last_error_date: '1764000000' }, { webhook: 'wrong_url', pending: 0, lastErrorAt: null }],
+      [{ url: `${BASE.toUpperCase()}/functions/v1/telegram-bot`, pending_update_count: '2', last_error_date: -1 }, { webhook: 'wrong_url', pending: 0, lastErrorAt: null }],
+    ];
+    for (const [result, want] of cases) {
+      const f = routes({ tg: () => jsonRes(200, { ok: true, result }) });
+      const r = await run({ action: 'status' }, f);
+      assert.equal(r.status, 200);
+      assert.deepEqual({ webhook: r.body.webhook, pending: r.body.pending, lastErrorAt: r.body.lastErrorAt }, want, JSON.stringify(result));
+      assert.deepEqual(r.logs, []);
+    }
+    for (const n of ['12', 1.5, -1]) {
+      const f = routes({ tg: () => jsonRes(200, { ok: true, result: 'x' }), aiCount: () => jsonRes(200, n) });
+      const r = await run({ action: 'status' }, f);
+      assert.equal(r.body.aiUsed24h, null, String(n));
+      assert.equal(r.body.webhook, 'none');
+    }
+  });
+
+  test(`${label}：审核 T3：pause 失败 → 502，日志只有 deleteWebhook＋状态码`, async () => {
+    const r = await run({ action: 'pause' }, routes({ tg: () => jsonRes(400, { ok: false, description: 'x ' + BOT }) }));
+    assert.equal(r.status, 502);
+    assert.match(r.logs.join('\n'), /deleteWebhook: HTTP 400/);
+    assert.ok(!r.logs.join('\n').includes(BOT));
   });
 }

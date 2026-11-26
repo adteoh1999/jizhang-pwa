@@ -41,6 +41,7 @@ const ASSETS = [
   './js/ui/sign-out.js',
   './js/ui/tg-gone.js',
   './js/ui/tg-unlink.js',
+  './js/ui/tg-admin-actions.js',
   './js/ui/fatal.js',
   './js/ui/dialogs.js',
   './js/ui/dom.js',

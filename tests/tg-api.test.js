@@ -254,3 +254,19 @@ test('tgAdminPause：POST {action:pause}；{ok:true} 才算成功', async () => 
   const { r } = await quiet(() => tgAdminPause(fake(() => res(403, { error: '没有权限' })), TOKEN));
   assert.deepEqual(r, { ok: false, error: '没有权限' });
 });
+
+test('审核 T4／S9：status 栏位严格（时间要 ISO、次数不能负、栏位不能缺）', async () => {
+  const base = { ok: true, webhook: 'ok', pending: 0, lastErrorAt: null, aiUsed24h: 0 };
+  for (const over of [{ lastErrorAt: '2026' }, { lastErrorAt: 'Nov 26' }, { lastErrorAt: 5 }, { pending: -1 }, { aiUsed24h: -1 },
+    { aiUsed24h: '3' }, { aiUsed24h: 1.5 }, { aiUsed24h: undefined }, { lastErrorAt: undefined }]) {
+    const { r } = await quiet(() => tgAdminStatus(fake(() => res(200, { ...base, ...over })), TOKEN));
+    assert.deepEqual(r, { ok: false, error: GENERIC }, JSON.stringify(over));
+  }
+  const ok = await tgAdminStatus(fake(() => res(200, { ...base, lastErrorAt: '2026-11-26T02:05:00.000Z' })), TOKEN);
+  assert.equal(ok.data.lastErrorAt, '2026-11-26T02:05:00.000Z');
+});
+
+test('审核 T4：status、pause 的预设逾时也是 20 秒', async () => {
+  assert.ok((await delaysOf(() => tgAdminStatus(fake(() => res(200, { ok: true, webhook: 'ok', pending: 0, lastErrorAt: null, aiUsed24h: 0 })), TOKEN))).includes(20000));
+  assert.ok((await delaysOf(() => tgAdminPause(fake(() => res(200, { ok: true })), TOKEN))).includes(20000));
+});

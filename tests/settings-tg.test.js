@@ -59,13 +59,11 @@ test('tgStatusText：正常、待处理、最近错误（马来西亚时间）�
   assert.equal(tgStatusText({ webhook: 'wrong_url', pending: 0, lastErrorAt: null, aiUsed24h: 0 }).title, '没设好，请按「设定 Telegram bot」');
 });
 
-// 3d 接线：设定页真的把两个新列接到 tg-admin 的 status／pause，暂停前先确认
+// 3d 接线（审核 M3：行为测试在 tg-admin-actions.test.js；这里只确认设置页用了那个模块）
 import { readFileSync } from 'node:fs';
-test('接线：检查／暂停 Telegram bot 接到 tgAdminStatus／tgAdminPause，暂停先确认', () => {
+test('接线：设置页用 createTgAdminActions，三个 API 都传进去', () => {
   const src = readFileSync(new URL('../js/ui/settings.js', import.meta.url), 'utf8');
-  assert.match(src, /import \{[^}]*\btgAdminStatus\b[^}]*\btgAdminPause\b[^}]*\} from '\.\.\/tg-api\.js'/);
-  assert.match(src, /'tg-status'[\s\S]{0,400}tgAdminStatus/);
-  assert.match(src, /'tg-pause'[\s\S]{0,600}confirmDialog[\s\S]{0,600}tgAdminPause/);
-  assert.ok(src.includes('暂停期间传给 bot 的讯息不会补记。再按「设定 Telegram bot」就恢复。'));
-  assert.ok(src.includes('tgStatusText(r.data)'));
+  assert.match(src, /import \{[^}]*\bcreateTgAdminActions\b[^}]*\} from '\.\/tg-admin-actions\.js'/);
+  assert.match(src, /import \{[^}]*\btgAdminSetup\b[^}]*\btgAdminStatus\b[^}]*\btgAdminPause\b[^}]*\} from '\.\.\/tg-api\.js'/);
+  assert.match(src, /createTgAdminActions\(\{/);
 });

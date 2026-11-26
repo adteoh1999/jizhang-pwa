@@ -110,15 +110,16 @@ export async function tgAdminPause(fetchFn, accessToken, { timeoutMs = ADMIN_TIM
 }
 
 const STATUS_WEBHOOK = ['ok', 'wrong_url', 'none'];
-const intOrNull = (v) => v === null || Number.isSafeInteger(v);
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 /** 站主检查 bot：{ok:true, data:{webhook, pending, lastErrorAt, aiUsed24h}} | {ok:false, error}（只取认得的栏位） */
 export async function tgAdminStatus(fetchFn, accessToken, { timeoutMs = ADMIN_TIMEOUT_MS } = {}) {
   const r = await adminAction(fetchFn, accessToken, 'status', timeoutMs);
   if (!r.ok) return r;
   const b = r.body;
-  if (!STATUS_WEBHOOK.includes(b.webhook) || !Number.isSafeInteger(b.pending) || !intOrNull(b.aiUsed24h)
-      || !(b.lastErrorAt === null || (typeof b.lastErrorAt === 'string' && !Number.isNaN(Date.parse(b.lastErrorAt))))) {
+  if (!STATUS_WEBHOOK.includes(b.webhook) || !isCount(b.pending) || !(b.aiUsed24h === null || isCount(b.aiUsed24h))
+      || !(b.lastErrorAt === null || (typeof b.lastErrorAt === 'string' && ISO_RE.test(b.lastErrorAt) && !Number.isNaN(Date.parse(b.lastErrorAt))))) {
     console.warn('[tg] tg-admin status 回应格式不对');
     return { ok: false, error: GENERIC };
   }
