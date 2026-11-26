@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SHARED_IMPORT = /^import\s+\{([^}]*)\}\s+from\s+['"]\.\.\/_shared\/([\w.-]+\.ts)['"];?\s*$/;
+// _shared 档里不能出现的东西（再 import 别档、export … from、动态 import）；测试也用这条检查
+export const SHARED_IMPORT_FORBIDDEN = /^\s*import\b|\bexport\b[^;]*?\bfrom\s*['"]|\bimport\s*\(/m;
 
 export function bundle(functionsDir, name) {
   const src = readFileSync(join(functionsDir, name, 'index.ts'), 'utf8');
@@ -19,7 +21,7 @@ export function bundle(functionsDir, name) {
     if (done.has(m[2])) continue;
     done.add(m[2]);
     const shared = readFileSync(join(functionsDir, '_shared', m[2]), 'utf8');
-    if (/^\s*import\b|\bexport\b[^;]*?\bfrom\s*['"]|\bimport\s*\(/m.test(shared)) throw new Error(`_shared/${m[2]} 不能再 import 或 export from 别的文件`);
+    if (SHARED_IMPORT_FORBIDDEN.test(shared)) throw new Error(`_shared/${m[2]} 不能再 import 或 export from 别的文件`);
     out.push(`// ---- _shared/${m[2]} ----`, shared.trimEnd(), `// ---- end _shared/${m[2]} ----`);
   }
   return out.join('\n');
