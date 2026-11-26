@@ -150,7 +150,7 @@ function mountShell(root, store, session, { telegram = null } = {}) {
   sync.subscribe(() => realtime.check()); // sync.stop() 也会最后通知一次（登出、重新登录）
   window.addEventListener('jizhang:blocked', () => { realtime.stop(); sync.stop(); }, { once: true });
   const settings = mountSettings(screens.get('settings').querySelector('.screen-content'), store, {
-    session, sync, realtime, onStartSync: (opts) => runClaim(true, opts),
+    session, sync, realtime, onStartSync: (opts) => runClaim(true, opts), telegram,
   });
 
   const tabbar = mountTabBar(root, {

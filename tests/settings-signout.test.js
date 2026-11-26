@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
 import { runSignOut, SIGNOUT_TEXT as T } from '../js/ui/sign-out.js';
+import { runTgUnlinkMiniApp, TG_UNLINK_TEXT as U } from '../js/ui/tg-unlink.js';
 import { loadSession } from '../js/auth.js';
 import { HIDE_KEY } from '../js/ui/home.js';
 import { SUPABASE_URL } from '../js/config.js';
@@ -470,4 +471,128 @@ test('「先同步」认领失败 → 先说明「没能开始同步」，再回
 test('app.js：consented 时认领失败不另外弹「没能开始同步」（由登出流程说明）', () => {
   const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
   assert.match(app, /userStarted = fromUser && !consented;/);
+});
+
+
+// ---------- 3b-10：runSignOut 的 text、beforeWipe ----------
+test('runSignOut：text 覆盖部分文字；beforeWipe 回 true → 照常清除、reload', async () => {
+  const { log, dialogs, deps } = await setup({ confirms: [true] });
+  const order = [];
+  const r = await runSignOut({ ...deps, text: { plainTitle: '要解除连接吗？', confirmLabel: '解除连接' }, beforeWipe: async () => { order.push(log.length); log.push('beforeWipe'); return true; } });
+  assert.equal(r, 'done');
+  assert.equal(dialogs.lastConfirm.title, '要解除连接吗？');
+  assert.equal(dialogs.lastConfirm.confirmLabel, '解除连接');
+  assert.equal(dialogs.lastConfirm.message, T.plainMessage, '没覆盖的照旧');
+  const iBlock = log.findIndex((l) => l.startsWith('block:'));
+  const iBefore = log.indexOf('beforeWipe');
+  const iStop = log.indexOf('sync.stop');
+  assert.ok(iBlock >= 0 && iBefore > iBlock && iStop > iBefore, log.join(' | '));
+  assert.ok(ran(log, 'reload:'));
+});
+
+test('runSignOut：beforeWipe 回 false 或丢错 → 解除遮罩、回 fail、不清、不 reload', async () => {
+  for (const bw of [async () => false, async () => { throw new Error('x'); }]) {
+    const { log, store, deps } = await setup({ confirms: [true] });
+    assert.equal(await runSignOut({ ...deps, beforeWipe: bw }), 'fail');
+    assert.ok(log.includes('unblock'));
+    assert.ok(log.includes('busy:false'));
+    assert.ok(!ran(log, 'reload:'));
+    assert.ok(!log.includes('sync.stop'));
+    assert.equal((await loadSession(store)).user_id, 'u-A');
+    assert.equal(store.transactions().length, 1);
+  }
+});
+
+// ---------- 3b-10：Mini App 解除连接（runTgUnlinkMiniApp）----------
+function tgDeps(base, { got = { session: SESSION }, unlink = { ok: true, data: { ok: true, unlinked: true, others: true } }, login = null } = {}) {
+  const calls = { unlink: [], login: 0, logout: [] };
+  return {
+    calls,
+    deps: {
+      ...base.deps,
+      env: { initData: 'INIT' },
+      getSession: async () => got,
+      tgLink: async (token, action) => { calls.unlink.push([token, action]); return unlink; },
+      tgLogin: async () => { calls.login += 1; return login; },
+      logoutServer: (s) => { calls.logout.push(s.access_token); },
+    },
+  };
+}
+
+test('Mini App 解除连接：确认框文字；unlink 成功 → 清除、reload', async () => {
+  const b = await setup({ confirms: [true] });
+  const { deps, calls } = tgDeps(b);
+  assert.equal(await runTgUnlinkMiniApp(deps), 'done');
+  assert.equal(b.dialogs.lastConfirm.title, '要解除连接吗？');
+  assert.equal(b.dialogs.lastConfirm.message, '这台设备上的账本会清除。这个账号在其他设备（包括 iPhone 的 PWA）也会被登出，最晚 1 小时内生效。');
+  assert.equal(b.dialogs.lastConfirm.confirmLabel, '解除连接');
+  assert.deepEqual(calls.unlink, [['tok-A', 'unlink']]);
+  assert.ok(ran(b.log, 'reload:0'));
+});
+
+test('Mini App 解除连接：unlink 失败 → 「没能解除连接，请稍后再试」、没清、没 reload', async () => {
+  const b = await setup({ confirms: [true] });
+  const { deps } = tgDeps(b, { unlink: { ok: false, status: 500, code: null, error: '暂时无法连接，请稍后再试', retry: true } });
+  assert.equal(await runTgUnlinkMiniApp(deps), 'fail');
+  assert.equal(b.dialogs.lastMessage.title, U.failTitle);
+  assert.equal(U.failTitle, '没能解除连接，请稍后再试');
+  assert.ok(!ran(b.log, 'reload:'));
+  assert.equal(b.store.transactions().length, 1);
+});
+
+test('Mini App 解除连接：离线 → 「需要网络才能解除连接」，不叫服务器、不清', async () => {
+  const b = await setup({ confirms: [true], online: false });
+  const { deps, calls } = tgDeps(b);
+  assert.equal(await runTgUnlinkMiniApp(deps), 'fail');
+  assert.equal(b.dialogs.lastMessage.title, '需要网络才能解除连接');
+  assert.equal(calls.unlink.length, 0);
+  assert.ok(!ran(b.log, 'reload:'));
+});
+
+test('Mini App 解除连接：token 失效＋tg-login 说没连接 → 不叫 unlink、直接清', async () => {
+  const b = await setup({ confirms: [true] });
+  const { deps, calls } = tgDeps(b, { got: { invalid: true }, login: { ok: true, status: 'unlinked', label: '', bindDeadline: null } });
+  assert.equal(await runTgUnlinkMiniApp(deps), 'done');
+  assert.equal(calls.login, 1);
+  assert.equal(calls.unlink.length, 0);
+  assert.ok(ran(b.log, 'reload:0'));
+});
+
+test('Mini App 解除连接：token 失效＋tg-login 换到同账号的新 session → 用它 unlink，之后不管成败都作废它（r2-M2-4）', async () => {
+  for (const unlink of [{ ok: true, data: { ok: true, unlinked: true, others: true } }, { ok: false, status: 500, code: null, error: 'x', retry: true }]) {
+    const b = await setup({ confirms: [true] });
+    const fresh = { ...SESSION, access_token: 'tok-NEW' };
+    const { deps, calls } = tgDeps(b, { got: { invalid: true }, login: { ok: true, status: 'linked', session: fresh, label: '' }, unlink });
+    await runTgUnlinkMiniApp(deps);
+    assert.deepEqual(calls.unlink, [['tok-NEW', 'unlink']]);
+    assert.deepEqual(calls.logout, ['tok-NEW']);
+  }
+});
+
+test('Mini App 解除连接：session 或 tg-login 换来的是别的账号 → 不叫 unlink、不清（新 session 先作废）', async () => {
+  const b1 = await setup({ confirms: [true] });
+  const x1 = tgDeps(b1, { got: { session: { ...SESSION, user_id: 'u-B' } } });
+  assert.equal(await runTgUnlinkMiniApp(x1.deps), 'fail');
+  assert.equal(x1.calls.unlink.length, 0);
+  const b2 = await setup({ confirms: [true] });
+  const x2 = tgDeps(b2, { got: { invalid: true }, login: { ok: true, status: 'linked', session: { ...SESSION, user_id: 'u-B', access_token: 'tok-B' }, label: '' } });
+  assert.equal(await runTgUnlinkMiniApp(x2.deps), 'fail');
+  assert.equal(x2.calls.unlink.length, 0);
+  assert.deepEqual(x2.calls.logout, ['tok-B']);
+  assert.ok(!ran(b2.log, 'reload:'));
+});
+
+test('Mini App 解除连接：others:false → 先说明「已解除连接，但没能登出其他设备」再清除', async () => {
+  const b = await setup({ confirms: [true] });
+  const { deps } = tgDeps(b, { unlink: { ok: true, data: { ok: true, unlinked: true, others: false } } });
+  assert.equal(await runTgUnlinkMiniApp(deps), 'done');
+  assert.ok(b.log.includes('message:已解除连接，但没能登出其他设备'));
+  assert.ok(ran(b.log, 'reload:0'));
+});
+
+test('Mini App 解除连接：有没同步的 → 四个选项照旧（标题沿用登出的）', async () => {
+  const b = await setup({ unsynced: 'tx', choices: ['cancel'] });
+  const { deps } = tgDeps(b);
+  assert.equal(await runTgUnlinkMiniApp(deps), 'cancel');
+  assert.deepEqual(b.dialogs.lastChoice.buttons.map((x) => x.label), [T.syncLabel, T.exportLabel, '仍要解除连接', T.cancelLabel]);
 });

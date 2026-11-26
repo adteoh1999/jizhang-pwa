@@ -67,6 +67,8 @@ let running = false;
  * 跑一次登出流程。回 'done' | 'cancel' | 'fail'。正在跑时再叫直接回 'cancel'。
  * deps：store、userId（设置页挂载时的账号）、sync、realtime、onStartSync（认领，回 claimState 结果）、
  * fetchFn、isOnline、reload、onBusy(bool)；测试另可注入 dialogs、storage、announce、exportCsv、locks、block。
+ * 3b-10（Mini App「解除连接」用）：text 覆盖 SIGNOUT_TEXT 的部分键；beforeWipe() → boolean 在挡住画面之后、清除之前跑，
+ * false（或丢错）→ 解除遮罩、回 'fail'、不清、不 reload。不给时行为不变。
  */
 export async function runSignOut(deps) {
   if (running) return 'cancel';
@@ -89,7 +91,10 @@ async function flow({
   locks,
   block = (text) => busyOverlay(text),
   syncWaitMs = 25_000, // 「正在同步…」最多挡这么久（审核 S-6：一轮上限 120 秒，不能挡那么久）
+  text = null,
+  beforeWipe = null,
 }) {
+  const T = text ? { ...SIGNOUT_TEXT, ...text } : SIGNOUT_TEXT;
   for (;;) {
     // 别的分页已换成另一个账号：不能替那个账号登出、清掉它的账本
     const cur = await loadSession(store);
@@ -138,6 +143,11 @@ async function flow({
   onBusy(true);
   let unblock = block(T.busyLabel);
   const release = () => { if (unblock) { const u = unblock; unblock = null; try { u(); } catch { /* 忽略 */ } } };
+  if (beforeWipe) {
+    let go = false;
+    try { go = (await beforeWipe()) === true; } catch (e) { console.warn(`[sign-out] 清除前步骤出错：${e && e.name ? e.name : '未知'}`); }
+    if (!go) { release(); onBusy(false); return 'fail'; }
+  }
   let done = false;
   try {
     done = await signOut(store, () => {

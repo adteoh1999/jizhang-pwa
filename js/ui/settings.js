@@ -1,5 +1,6 @@
-// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出）、管理（2f-3：只有站主看得到的邀请码管理）、
-// 分类、数据（导出 / 导入 CSV）、关于、删除账号（2f，最下面）。绑定是第 3 阶段的事，这里不放占位。
+// 设置页（iOS inset grouped 列表）：账号（2d：邮箱、登出；3b-10：Telegram 列、解除连接）、
+// 管理（2f-3：只有站主看得到的邀请码管理；3b-10：设定 Telegram bot）、分类、数据（导出 / 导入 CSV）、关于（版本、环境）、
+// 删除账号（2f，最下面）。Telegram 模式没有「登出」，改成「解除连接」（spec §8.6、R2）。
 // 导出在 export-csv.js（提醒对话框也用）。
 import { h } from './dom.js';
 import { icon } from './icons.js';
@@ -8,7 +9,11 @@ import { showToast } from './toast.js';
 import { openCategoriesPage } from './categories-page.js';
 import { APP_VERSION } from '../version.js';
 import { onUpdateAvailable, applyUpdate } from '../update.js';
-import { forgetSession } from '../auth.js';
+import { forgetSession, getValidSession } from '../auth.js';
+import { readTgStatus, refreshTgStatus } from '../tg-status.js';
+import { tgAdminSetup } from '../tg-api.js';
+import { closeMiniApp } from '../telegram.js';
+import { runTgUnlinkPwa, runTgUnlinkMiniApp, TG_UNLINK_TEXT } from './tg-unlink.js';
 import { formatRM } from '../money.js';
 import { createExporter } from './export-csv.js';
 import { runDeleteAccount, dangerRows, busyRowHandler } from './delete-account.js';
@@ -103,26 +108,51 @@ export function syncErrorMessage({ txs = [], cats = [] }, categoryById) {
   return `这些记录上传不了，仍保留在这台设备上。修改后会重新上传。\n\n${lines.join('\n')}`;
 }
 
-/** 账号区要显示的列（纯函数）：有 session → 邮箱、同步、登出；没有 → 不显示账号区。 */
-export function accountRows(session) {
-  if (!session) return [];
-  return [
-    { kind: 'email', label: '邮箱', detail: session.email || '' },
-    { kind: 'sync', label: '同步' },
-    { kind: 'signout', label: '登出' },
-  ];
+/** Telegram 列的详情：有名字显示名字；名字空、或还没读到 →「已连接」；没连接 →「未连接」。 */
+export function tgRowDetail(tg) {
+  if (!tg) return '已连接';
+  return tg.linked ? (tg.label || '已连接') : '未连接';
 }
 
-/** 「管理」区的列（纯函数）：只有站主有「邀请码管理」（快取只决定显不显示，权限由服务器判断）。 */
+/**
+ * 账号区要显示的列（纯函数）。没有 session → 不显示账号区。
+ *   PWA：邮箱 →（tg 有资料才有）Telegram → 同步 →（已连接才有）解除 Telegram 连接（红）→ 登出。
+ *   Telegram：邮箱 → Telegram（还没读到先显示「已连接」，免得列表跳动）→ 同步 → 解除连接（红）；没有登出。
+ */
+export function accountRows(session, { platform = 'pwa', tg = null } = {}) {
+  if (!session) return [];
+  const isTg = platform === 'telegram';
+  const rows = [{ kind: 'email', label: '邮箱', detail: session.email || '' }];
+  if (isTg || tg) rows.push({ kind: 'tg', label: 'Telegram', detail: tgRowDetail(tg) });
+  rows.push({ kind: 'sync', label: '同步' });
+  if (isTg) {
+    rows.push({ kind: 'tg-unlink', label: '解除连接' });
+  } else {
+    if (tg && tg.linked) rows.push({ kind: 'tg-unlink', label: '解除 Telegram 连接' });
+    rows.push({ kind: 'signout', label: '登出' });
+  }
+  return rows;
+}
+
+/** 「管理」区的列（纯函数）：只有站主有「邀请码管理」「设定 Telegram bot」（快取只决定显不显示，权限由服务器判断）。 */
 export function adminRows(isOwner) {
-  return isOwner ? [{ kind: 'invites', label: '邀请码管理' }] : [];
+  return isOwner ? [{ kind: 'invites', label: '邀请码管理' }, { kind: 'tg-setup', label: '设定 Telegram bot' }] : [];
+}
+
+/** 「关于 › 环境」（r1-S8）：Telegram 显示平台与版本；否则 PWA（加到主屏幕）或浏览器。 */
+export function envText({ telegram = null, standalone = false } = {}) {
+  if (telegram) return ['Telegram', telegram.platform, telegram.version].filter(Boolean).join(' · ');
+  return standalone ? 'PWA' : '浏览器';
 }
 
 /**
  * opts.session：目前登录的 session（没有就不显示账号区）。
  * opts.sync：同步引擎（status / subscribe / stop）；opts.onStartSync()：设置页按「开始」（认领，回 promise）。
  */
-export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null } = {}) {
+export function mountSettings(root, store, { session = null, sync = null, onStartSync = () => {}, realtime = null, telegram = null } = {}) {
+  const fetchFn = (url, init) => fetch(url, init);
+  const platform = telegram ? 'telegram' : 'pwa';
+  let tgState = null; // 设置页的 Telegram 状态（快取或刚问到的）
   let seq = 0;
   // title 空字串：不放标题（iOS 设置里单独一列的红字区就是这样），也不设 aria-labelledby
   const section = (title, rows, footer) => {
@@ -296,6 +326,15 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     }
   }
   async function onRelogin() {
+    if (telegram) {
+      // Telegram 模式（r1-S12）：没有邮箱登录页可回，清掉失效的登录后关掉，重新从 bot 打开会自动换新
+      const ok = await confirmDialog({ title: '要重新登录吗？', message: '记账会关掉，请再从 @adjizhangbot 打开。账本会保留。', confirmLabel: '重新登录' });
+      if (!ok) return;
+      if (sync) sync.stop();
+      try { await forgetSession(store); } catch (e) { console.warn(`[settings] 清登录失败：${e && e.name ? e.name : '未知'}`); }
+      closeMiniApp(telegram.webApp);
+      return;
+    }
     // 离线时清了登录也收不到验证码，会卡在登录页：先挡下
     if (navigator.onLine === false) {
       await messageDialog({ title: '请连上网络后再试', message: '重新登录需要网络和邮箱验证码。' });
@@ -321,19 +360,61 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     renderSync();
   }
 
+  // ---- Telegram：解除连接 ----
+  let unlinking = false;
+  const tgUnlinkLabel = h('span', { class: 'inset-row-label' });
+  const tgUnlinkBtn = h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: () => onTgUnlink() } }, tgUnlinkLabel);
+  const refreshTg = (force = false) => refreshTgStatus(store, { fetchFn, userId: session.user_id, force })
+    .then((v) => { if (v) { tgState = v; renderAccount(); } })
+    .catch((e) => console.warn(`[settings] 读 Telegram 状态出错：${e && e.name ? e.name : '未知'}`));
+  function onTgUnlink() {
+    if (unlinking) return;
+    if (telegram) {
+      // Mini App：清本机账本（流程在 tg-unlink.js / sign-out.js；忙碌时改文字，连按由流程挡）
+      const idle = tgUnlinkLabel.textContent;
+      runTgUnlinkMiniApp({
+        store, sync, realtime, onStartSync, env: telegram,
+        userId: session.user_id, fetchFn, reload: () => location.reload(),
+        onBusy: busyRowHandler({ btn: tgUnlinkBtn, label: tgUnlinkLabel, idleText: idle, busyText: TG_UNLINK_TEXT.busy }),
+      }).catch((e) => {
+        console.warn(`[settings] 解除连接出错：${e && e.name ? e.name : '未知'}`);
+        location.reload();
+      });
+      return;
+    }
+    unlinking = true;
+    runTgUnlinkPwa({
+      store, userId: session.user_id, fetchFn, toast: (m) => showToast(m),
+      refreshStatus: () => refreshTg(true),
+    }).catch((e) => console.warn(`[settings] 解除连接出错：${e && e.name ? e.name : '未知'}`))
+      .finally(() => { unlinking = false; });
+  }
+
   const accountSection = () => {
-    const rows = accountRows(session).map((r) => {
-      if (r.kind === 'email') {
+    const rows = accountRows(session, { platform, tg: tgState }).map((r) => {
+      if (r.kind === 'email' || r.kind === 'tg') {
+        // 名字是对方在 Telegram 填的：一律当文字
         return h('div', { class: 'inset-row has-long-detail' },
           h('span', { class: 'inset-row-label' }, r.label),
-          h('span', { class: 'inset-row-detail account-email' }, r.detail));
+          h('span', { class: `inset-row-detail${r.kind === 'email' ? ' account-email' : ''}` }, r.detail));
       }
       if (r.kind === 'sync') return sync ? [syncInfo, syncBtn] : null;
-      signOutBtn = h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: onSignOut } }, signOutLabel);
+      if (r.kind === 'tg-unlink') {
+        if (!tgUnlinkBtn.hasAttribute('aria-disabled')) tgUnlinkLabel.textContent = r.label;
+        return tgUnlinkBtn;
+      }
+      if (!signOutBtn) signOutBtn = h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: onSignOut } }, signOutLabel);
       return signOutBtn;
     }).flat().filter(Boolean);
     return rows.length ? section('账号', rows, sync ? syncDiag : null) : null;
   };
+  let accountEl = null;
+  function renderAccount() {
+    if (!accountEl) return;
+    const next = accountSection();
+    accountEl.replaceWith(next);
+    accountEl = next;
+  }
 
   // ---------- 删除账号（最下面、红字；HIG：在 App 里提供清楚的删除入口）----------
   const dangerSection = () => {
@@ -361,7 +442,35 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
   };
 
   // ---------- 管理（只有站主）：先藏起来，读到快取才显示；enter()（启动、回前景、打开设置页）时需要才问服务器 ----------
-  const adminSection = section('管理', adminRows(true).map((r) => buttonRow(r.label, () => openInvitesPage(store, {
+  // 设定 Telegram bot（3b-10）：选单按钮与简介；可以重按
+  let settingUp = false;
+  async function onTgSetup(btn, label, idle) {
+    if (settingUp) return;
+    settingUp = true;
+    label.textContent = '正在设定…';
+    btn.setAttribute('aria-disabled', 'true');
+    let r;
+    try {
+      const got = await getValidSession(store, fetchFn);
+      r = got.session ? await tgAdminSetup(fetchFn, got.session.access_token) : { ok: false, error: '请重新登录后再试' };
+    } catch (e) {
+      console.warn(`[settings] 设定 bot 出错：${e && e.name ? e.name : '未知'}`);
+      r = { ok: false, error: '暂时无法完成，请稍后再试' };
+    } finally {
+      label.textContent = idle;
+      btn.removeAttribute('aria-disabled');
+      settingUp = false;
+    }
+    if (r.ok) showToast('已设定 Telegram bot');
+    else await messageDialog({ title: '没能设定 Telegram bot', message: r.error });
+  }
+  const adminSection = section('管理', adminRows(true).map((r) => (r.kind === 'tg-setup'
+    ? (() => {
+      const label = h('span', { class: 'inset-row-label' }, r.label);
+      const btn = h('button', { type: 'button', class: 'inset-row is-action', on: { click: () => onTgSetup(btn, label, r.label) } }, label);
+      return btn;
+    })()
+    : buttonRow(r.label, () => openInvitesPage(store, {
     userId: session.user_id,
     onOwnerChanged: () => { renderAdmin().catch(() => {}); },
     // 那一列被藏起来了（服务器说没有权限）：关页时焦点放到设置页大标题
@@ -369,21 +478,37 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       const t = root.closest('.screen') && root.closest('.screen').querySelector('.large-title');
       if (t) { t.tabIndex = -1; t.focus({ preventScroll: true }); }
     },
-  }), { chevron: true })));
+  }), { chevron: true }))));
   adminSection.hidden = true;
   const renderAdmin = async () => {
     adminSection.hidden = !(session && adminRows(await readOwnerFlag(store, session.user_id)).length);
   };
   const enter = () => {
     if (!session) return Promise.resolve();
-    return refreshOwnerFlag(store, { fetchFn: (url, init) => fetch(url, init), userId: session.user_id })
-      .then(renderAdmin)
-      .catch((e) => console.warn(`[settings] 站主判断出错：${e && e.name ? e.name : '未知'}`));
+    return Promise.all([
+      refreshOwnerFlag(store, { fetchFn, userId: session.user_id })
+        .then(renderAdmin)
+        .catch((e) => console.warn(`[settings] 站主判断出错：${e && e.name ? e.name : '未知'}`)),
+      refreshTg(),
+    ]);
   };
   renderAdmin().catch((e) => console.warn(`[settings] 读站主快取出错：${e && e.name ? e.name : '未知'}`));
+  if (session) {
+    readTgStatus(store, session.user_id)
+      .then((v) => { if (v) { tgState = v; renderAccount(); } })
+      .catch((e) => console.warn(`[settings] 读 Telegram 快取出错：${e && e.name ? e.name : '未知'}`));
+  }
+
+  const standalone = (() => {
+    try { return globalThis.matchMedia('(display-mode: standalone)').matches || globalThis.navigator.standalone === true; } catch { return false; }
+  })();
+  const envRow = h('div', { class: 'inset-row' },
+    h('span', { class: 'inset-row-label' }, '环境'),
+    h('span', { class: 'inset-row-detail' }, envText({ telegram, standalone })));
+  accountEl = accountSection();
 
   root.replaceChildren(
-    ...[accountSection()].filter(Boolean),
+    ...[accountEl].filter(Boolean),
     adminSection,
     section('分类', [
       buttonRow('管理分类', () => openCategoriesPage(store, { from: 'settings' }), { chevron: true }),
@@ -392,7 +517,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       buttonRow('导出 CSV', onExport, { action: true, chevron: true }),
       buttonRow('导入 CSV', () => fileInput.click(), { action: true, chevron: true }),
     ]),
-    section('关于', [versionRow], '账本先存在这台设备，登录后会在背景同步到你的账号。'),
+    section('关于', [versionRow, envRow], '账本先存在这台设备，登录后会在背景同步到你的账号。'),
     ...[dangerSection()].filter(Boolean),
     fileInput,
   );
