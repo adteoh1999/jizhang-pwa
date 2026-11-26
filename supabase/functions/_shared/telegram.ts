@@ -14,7 +14,7 @@ const TG_FUTURE_SKEW_SEC = 60;      // auth_date 最多可以比服务器时间�
 const TG_LABEL_MAX = 64;            // 码点
 
 // bot token 长这样：数字:30 个以上英数字或 _-（去头尾空白后判断）
-export function tgBotTokenOk(token: string | undefined): boolean {
+export function tgBotTokenOk(token: string | undefined): token is string {
   return typeof token === 'string' && /^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(token.trim());
 }
 
@@ -24,7 +24,9 @@ export function tgLabel(user: unknown): string {
   const u = (user && typeof user === 'object') ? user as Record<string, unknown> : {};
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
   const raw = str(u.username) ? '@' + str(u.username) : `${str(u.first_name)} ${str(u.last_name)}`;
-  const clean = raw.replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/gu, ' ').trim();
+  // Cc 控制字元（换行、Tab 直接删掉，不变空格）、Cf 格式字元（零宽、方向字元；也会拆开 U+200D 组合表情，只是显示名，可接受）、
+  // Cs 孤立的代理字元（半个表情符号，送进 Postgres 的 JSON 会被拒）
+  const clean = raw.replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu, '').replace(/\s+/gu, ' ').trim();
   return [...clean].slice(0, TG_LABEL_MAX).join('').trimEnd();
 }
 
@@ -38,7 +40,8 @@ async function tgHmacKey(raw: Uint8Array, usage: KeyUsage): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, [usage]);
 }
 
-export async function tgVerifyInitData(initData: string, botToken: string, nowSec: number, maxAgeSec: number): Promise<TgUser | null> {
+// 注意：maxAgeSec 内同一份 initData 可以重放（这里不管）；tg-login 的时效要取短（3b 定）
+export async function tgVerifyInitData(initData: string, botToken: string | undefined, nowSec: number, maxAgeSec: number): Promise<TgUser | null> {
   try {
     if (typeof nowSec !== 'number' || !Number.isFinite(nowSec) || nowSec <= 0) return null;
     if (typeof maxAgeSec !== 'number' || !Number.isFinite(maxAgeSec) || maxAgeSec <= 0 || maxAgeSec > TG_MAX_AGE_LIMIT_SEC) return null;

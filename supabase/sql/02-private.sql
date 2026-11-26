@@ -472,7 +472,8 @@ begin
   -- 全站只有一把锁：同一时间只处理一个连接请求（量很小，最简单也最稳）
   perform pg_advisory_xact_lock(hashtext('jizhang:tg-bind'));
 
-  -- 账号：要存在、是邮箱账号（register 建号时写的 app_metadata.kind，用户自己改不了），而且邮箱还在（删号做到一半会清空）
+  -- 账号：要存在、是邮箱账号（register 建号时写的 app_metadata.kind，用户自己改不了），而且 email 不是空的（异常资料不连）。
+  -- 注意：删号「资料已删、auth 账号删失败」的半删账号 email 还在，仍可连接；重试删号时连接会跟着账号 cascade 删掉（3a S1，用户 2026-11-26 接受）
   select u.raw_app_meta_data->>'kind', u.email into v_kind, v_email from auth.users u where u.id = p_user_id;
   if not found then
     return 'no_user';

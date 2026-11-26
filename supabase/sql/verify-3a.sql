@@ -9,7 +9,7 @@ do $$
 declare
   ue uuid := '00000000-0000-4000-8000-0000000003a1';  -- 邮箱账号（主角）
   uk uuid := '00000000-0000-4000-8000-0000000003a2';  -- kind 是空的（例如后台手建）
-  uh uuid := '00000000-0000-4000-8000-0000000003a3';  -- kind=email，但 email 已清空（删号做到一半）
+  uh uuid := '00000000-0000-4000-8000-0000000003a3';  -- kind=email，但 email 是空的（异常资料；现实中删号流程不会清 auth.users.email）
   ux uuid := '00000000-0000-4000-8000-0000000003a4';  -- 别人
   ud uuid := '00000000-0000-4000-8000-0000000003a5';  -- 会被删掉的账号
   uz uuid := '00000000-0000-4000-8000-0000000003af';  -- 不存在
@@ -127,7 +127,7 @@ begin
   exception when others then fails := array_append(fails, ('6:' || sqlerrm));
   end;
 
-  -- 7. 账号不存在 → 'no_user'；kind 不是 email → 'not_email'；email 已清空 → 'not_email'；账号检查在最前面
+  -- 7. 账号不存在 → 'no_user'；kind 不是 email → 'not_email'；email 是空的 → 'not_email'；账号检查在最前面
   total := total + 1;
   begin
     ok := svc.svc_tg_bind(t2, uz, 'x') = 'no_user';
@@ -140,19 +140,20 @@ begin
   exception when others then fails := array_append(fails, ('7:' || sqlerrm));
   end;
 
-  -- 8. 参数不合格 → 一律 exception（程式错误，不是使用者情况）
+  -- 8. 参数不合格 → 一律 raise exception（程式错误，不是使用者情况）。只接 raise_exception（P0001）：
+  --    其他错误（锁超时、权限、别的 bug）不算「有挡」，会落到外层记成失败
   total := total + 1;
   begin
     n := 0;
-    begin perform svc.svc_tg_bind(0, ue, 'x');          exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_bind(-1, ue, 'x');         exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_bind(null, ue, 'x');       exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_bind(t2, null, 'x');       exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_link_get(0);               exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_link_get(-5);              exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_link_get(null);            exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_unlink(null);              exception when others then n := n + 1; end;
-    begin perform svc.svc_tg_status(null);              exception when others then n := n + 1; end;
+    begin perform svc.svc_tg_bind(0, ue, 'x');          exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_bind(-1, ue, 'x');         exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_bind(null, ue, 'x');       exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_bind(t2, null, 'x');       exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_link_get(0);               exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_link_get(-5);              exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_link_get(null);            exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_unlink(null);              exception when raise_exception then n := n + 1; end;
+    begin perform svc.svc_tg_status(null);              exception when raise_exception then n := n + 1; end;
     -- 前提：函数存在（不然上面全部因为「函数不存在」而算成 exception）
     ok := n = 9 and to_regprocedure('svc.svc_tg_bind(bigint,uuid,text)') is not null
       and to_regprocedure('svc.svc_tg_link_get(bigint)') is not null

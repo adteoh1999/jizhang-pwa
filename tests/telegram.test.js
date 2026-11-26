@@ -64,6 +64,8 @@ test('initData：botToken 是空字串（就算资料也用空字串签）→ nu
 });
 
 // ---------- 参数防呆：设定读错不能变成永不过期 ----------
+// 真正守住「参数防呆」那几行的是 Infinity、86401、字串 '600'／'1764000100'：
+// 拿掉防呆时，0、-1、undefined、NaN 也会因为比较式回 null，所以别只留那几个值。
 test('initData：maxAgeSec 不合格 → null', async () => {
   assert.deepEqual(await verify(good()), OK);
   for (const age of [undefined, NaN, 0, -1, Infinity, 86401, '600']) {
@@ -121,10 +123,13 @@ const signedBad = {
   'user.id 是 2**53': (f) => ({ ...f, user: '{"id":9007199254740992,"username":"alice"}' }),
   '缺 user.id': (f) => ({ ...f, user: JSON.stringify({ username: 'alice' }) }),
   'user.is_bot 是 true': (f) => ({ ...f, user: JSON.stringify({ ...USER, is_bot: true }) }),
-  "auth_date 是 '12e3'": (f) => ({ ...f, auth_date: '12e3' }),
+  // 下面三个换成数字都落在有效时间内，只有 auth_date 的格式检查挡得住
+  "auth_date 是 '17640000e2'（科学记号）": (f) => ({ ...f, auth_date: '17640000e2' }),
+  "auth_date 是 '+1764000000'": (f) => ({ ...f, auth_date: '+1764000000' }),
+  "auth_date 是 '1764000000.0'": (f) => ({ ...f, auth_date: '1764000000.0' }),
   'auth_date 是空字串': (f) => ({ ...f, auth_date: '' }),
   "auth_date 是 ' 123'": (f) => ({ ...f, auth_date: ' 1764000000' }),
-  'auth_date 是 13 位数字': (f) => ({ ...f, auth_date: '1764000000000' }),
+  'auth_date 是 13 位数字（与「在未来」检查重复的防线）': (f) => ({ ...f, auth_date: '1764000000000' }),
   'auth_date 太旧（now - maxAge - 1）': (f) => ({ ...f, auth_date: String(NOW - AGE - 1) }),
   'auth_date 在未来 61 秒': (f) => ({ ...f, auth_date: String(NOW + 61) }),
 };
@@ -187,6 +192,11 @@ test('tgLabel：去掉控制字元、零宽字、方向字元；空白并成一�
   assert.equal(tgLabel({ first_name: 'A\nB\u200BC\u202ED\u0000E\u2066F' }), 'ABCDEF');
   assert.equal(tgLabel({ first_name: '  a   b  ' }), 'a b');
   assert.equal(tgLabel({ first_name: 'a\u3000\u3000b' }), 'a b');
+});
+
+test('tgLabel：孤立的代理字元（半个表情符号）→ 去掉（不然送进资料库的 JSON 会被拒）', () => {
+  assert.equal(tgLabel({ first_name: 'A\ud83dB\udc00C' }), 'ABC');
+  assert.equal(tgLabel({ first_name: '😀' }), '😀', '完整的表情符号要留着');
 });
 
 test('tgLabel：截完 64 码点后尾巴是空白 → 去掉', () => {
