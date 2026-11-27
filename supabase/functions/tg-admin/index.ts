@@ -34,7 +34,8 @@ const APP_URL = 'https://jizhang.adteoh.com/';
 // 计划 Q4（用户同意）
 const MENU_TEXT = '记账';
 const SHORT_DESC = '快速记账：点下方「记账」用邮箱登录（第一次需要邀请码）。';
-const LONG_DESC = '点下方「记账」按钮，用邮箱验证码登录并连接这个 Telegram，就能在这里记账、看统计，和手机上的记账 App 是同一本账。第一次使用需要邀请码。连接后，也可以直接在这里传付款截图或打「午餐 12.50」记一笔。';
+// 用户 2026-11-27：文字尽量简短；不出现 Claude／Anthropic
+const LONG_DESC = '点下方「记账」用邮箱登录并连接这个 Telegram，就能在这里记账、看统计，和记账 App 是同一本账（第一次需要邀请码）。连接后也可以直接传付款截图或打「午餐 12.50」，由 AI 自动识别记一笔。';
 const ADMIN_ACTIONS = ['setup', 'status', 'pause'];
 const ADMIN_TG_FAIL = 'Telegram 暂时连不上，请稍后再试';
 

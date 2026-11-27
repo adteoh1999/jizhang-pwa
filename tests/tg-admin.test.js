@@ -18,7 +18,7 @@ const TOKEN = 'eyJ.owner-access-token.sig';
 // 计划 Q4 的文字（用户已同意）
 const MENU_TEXT = '记账';
 const SHORT = '快速记账：点下方「记账」用邮箱登录（第一次需要邀请码）。';
-const DESC = '点下方「记账」按钮，用邮箱验证码登录并连接这个 Telegram，就能在这里记账、看统计，和手机上的记账 App 是同一本账。第一次使用需要邀请码。连接后，也可以直接在这里传付款截图或打「午餐 12.50」记一笔。';
+const DESC = '点下方「记账」用邮箱登录并连接这个 Telegram，就能在这里记账、看统计，和记账 App 是同一本账（第一次需要邀请码）。连接后也可以直接传付款截图或打「午餐 12.50」，由 AI 自动识别记一笔。';
 
 const req = (body, { origin = ORIGIN, method = 'POST', token = TOKEN } = {}) => new Request(`${BASE}/functions/v1/tg-admin`, {
   method,
@@ -142,6 +142,12 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     assert.deepEqual(c[3].body, { description: DESC });
     assert.deepEqual(c[4].body, { commands: [{ command: 'start', description: '开始／说明' }, { command: 'help', description: '怎么记账' }] });
     assert.deepEqual(r.logs, []);
+  });
+
+  test(`${label}：用户 2026-11-27：setup 送给 Telegram 的文字（选单、简介、指令）都不出现 Claude／Anthropic`, async () => {
+    const f = routes();
+    await run({ action: 'setup' }, f);
+    for (const c of tgCalls(f).slice(1)) assert.doesNotMatch(JSON.stringify(c.body), /claude|anthropic/i);
   });
 
   test(`${label}：status → getWebhookInfo＋AI 次数；不回 Telegram 的错误文字与网址`, async () => {

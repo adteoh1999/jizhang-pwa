@@ -23,12 +23,13 @@ test('固定文案逐字（用户已同意）', () => {
   assert.equal(R.BOT_IMAGE_BAD, '这张图片读不了，请传截图（JPG／PNG，5 MB 以内）。');
   assert.equal(R.BOT_UNLINKED_START, '请先点下方按钮打开记账、用邮箱登录。');
   assert.equal(R.BOT_SKIPPED, '好，这笔不记。');
+  // 用户 2026-11-27：不出现 Claude／Anthropic，统一说「AI 服务商」；文字尽量简短（只给身边朋友用）
   assert.equal(R.BOT_HELP,
-    '传付款截图，或打像「午餐 12.50」「昨天 晚餐 15」「工资 3000」这样的文字，就会自动记一笔。记错了按［改分类］或［撤销］；改讯息不会改账，请按［改分类］或到 App 改。没有回应就再传一次。\n'
-    + '说明：截图、文字和你的分类名称会送到 Anthropic 的 AI（Claude）认出金额和分类，不会被拿去训练；Anthropic 一般最多保存 30 天（被安全系统标记的可能更久）。我们这里不存截图；截图会留在你和 bot 的聊天记录里，可以自己删。目前只支援 RM。');
+    '传付款截图，或打「午餐 12.50」「昨天 晚餐 15」「工资 3000」，就会自动记一笔。记错了按［改分类］或［撤销］；没有回应就再传一次。\n'
+    + '截图、文字和分类名称会交给 AI 服务商自动识别，服务商一般最多保存 30 天；我们不存截图。目前只支援 RM。');
   assert.equal(R.BOT_CONSENT,
-    '第一次使用 AI 记账前请先看：截图、文字和你的分类名称会送到 Anthropic 的 AI（Claude）认出金额和分类，不会被拿去训练；Anthropic 一般最多保存 30 天（被安全系统标记的可能更久）。我们这里不存截图；截图会留在你和 bot 的聊天记录里，可以自己删。\n'
-    + '同意后，请再传一次这笔。');
+    '第一次用 AI 记账前请先看：你传的截图、文字和分类名称，会交给 AI 服务商自动识别金额和分类，服务商一般最多保存 30 天。'
+    + '我们这里不存截图；截图只留在你和 bot 的聊天记录里，可以自己删。\n同意后，请再传一次这笔。');
   assert.equal(R.BOT_CONSENT_OK, '✅ 已同意。现在可以传付款截图，或打「午餐 12.50」记账了。');
   assert.equal(R.BOT_ANS_EXPIRED, '这个按钮已经过期了。');
   assert.equal(R.BOT_ANS_DELETED, '这笔已经删除了。');
@@ -142,4 +143,12 @@ test('审核：botFormatRM 0 与负数与 App 相同；大额按钮完整', () =
 test('审核：选分类序号不许前导零', () => {
   assert.equal(R.botParseCallback(`s:${TX}:07:0a1b2c3d`), null);
   assert.deepEqual(R.botParseCallback(`s:${TX}:0:0a1b2c3d`), { op: 's', id: TX, idx: 0, h: '0a1b2c3d' });
+});
+
+test('用户 2026-11-27：bot 给用户看的文字都不出现 Claude／Anthropic', async () => {
+  const texts = Object.values(R).filter((v) => typeof v === 'string');
+  texts.push(R.botRecordedText({ amountMinor: 690, categoryName: '餐饮', note: '早餐', occurredOn: TODAY, today: TODAY }),
+    R.botSimilarText(null, '', TODAY), R.botBigText({ amount_minor: 100000, occurred_on: TODAY }, '餐饮', TODAY), R.botCategoryPrompt(true));
+  assert.ok(texts.length >= 15, String(texts.length));
+  for (const t of texts) assert.doesNotMatch(t, /claude|anthropic/i, t);
 });
