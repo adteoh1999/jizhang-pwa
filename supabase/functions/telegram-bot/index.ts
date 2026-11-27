@@ -223,7 +223,7 @@ function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }
     if (out.similar !== null && out.similar !== undefined && !tbTxOk(out.similar)) return null;
     const text = out.reason === 'big'
       ? botBigText(out.pending, tbCatName(cats, out.pending.category_id), ctx.today)
-      : botSimilarText(out.similar, out.similar ? tbCatName(cats, out.similar.category_id) : '', ctx.today);
+      : botSimilarText(out.similar, out.similar ? tbCatName(cats, out.similar.category_id) : '', ctx.today, out.pending.kind);
     return { text, markup: botAskKeyboard(out.pending.id, out.reason) };
   }
   return null;

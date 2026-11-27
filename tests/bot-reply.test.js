@@ -160,3 +160,15 @@ test('用户 2026-11-27：收入的已记／已撤销标明「收入」＋「+�
   assert.equal(R.botRecordedText({ ...base, kind: 'expense' }), '✅ 已记：工资 RM 3,000.00');
   assert.equal(R.botUndoneText(base), '↩️ 已撤销：工资 RM 3,000.00');
 });
+
+test('用户 2026-11-27：问句也标明收入（大额、相似、相似找不到）；支出照旧', () => {
+  assert.equal(R.botBigText({ amount_minor: 300000, occurred_on: TODAY, kind: 'income' }, '工资', TODAY), '截图上的收入是 +RM 3,000.00（工资），要记吗？');
+  assert.equal(R.botBigText({ amount_minor: 300000, occurred_on: '2026-11-25', kind: 'income' }, '工资', TODAY),
+    '截图上的收入是 +RM 3,000.00（工资 · 11月25日），要记吗？');
+  assert.equal(R.botBigText({ amount_minor: 300000, occurred_on: TODAY, kind: 'expense' }, '购物', TODAY), '截图上的金额是 RM 3,000.00（购物），要记吗？');
+  assert.equal(R.botSimilarText({ amount_minor: 300000, note: '', occurred_on: TODAY }, '工资', TODAY, 'income'),
+    '今天已经有一笔差不多的收入：工资 +RM 3,000.00。还要记这一笔吗？');
+  assert.equal(R.botSimilarText(null, '', TODAY, 'income'), '已经有一笔差不多的收入。还要记这一笔吗？');
+  assert.equal(R.botSimilarText({ amount_minor: 690, note: '', occurred_on: TODAY }, '餐饮', TODAY, 'expense'),
+    '今天已经有一笔差不多的：餐饮 RM 6.90。还要记这一笔吗？');
+});

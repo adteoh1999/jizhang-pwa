@@ -719,3 +719,17 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     assert.equal(sent(f)[0].text, '✅ 已记收入：工资 +RM 3,000.00（工资）');
   });
 }
+
+for (const [label, mod] of await loadBoth('telegram-bot')) {
+  test(`${label}：用户 2026-11-27：收入截图大额、相似 → 问句标明收入`, async () => {
+    const pend = { id: PEND, kind: 'income', amount_minor: 300000, category_id: 'salary', occurred_on: TODAY, note: '' };
+    let f = routes({ ai: () => aiReply(aiOut({ kind: 'income', amount: '3000', category_id: 'salary' })),
+      svc_bot_record: () => jsonRes(200, { status: 'asked', reason: 'big', pending: pend, similar: null }) });
+    await quiet(() => mod.handleTelegramBot(req(update({ photo: PHOTO })), { env: (k) => ENV_OBJ[k], fetch: f }));
+    assert.equal(sent(f)[0].text, '截图上的收入是 +RM 3,000.00（工资），要记吗？');
+    f = routes({ ai: () => aiReply(aiOut({ kind: 'income', amount: '3000', category_id: 'salary' })),
+      svc_bot_record: () => jsonRes(200, { status: 'asked', reason: 'similar', pending: pend, similar: { ...pend, id: TX, deleted: false } }) });
+    await quiet(() => mod.handleTelegramBot(req(update({ photo: PHOTO }, { updateId: 9301 })), { env: (k) => ENV_OBJ[k], fetch: f }));
+    assert.equal(sent(f)[0].text, '今天已经有一笔差不多的收入：工资 +RM 3,000.00。还要记这一笔吗？');
+  });
+}

@@ -62,18 +62,25 @@ export function botUndoneText(d: BotLine): string {
   return `↩️ 已撤销${d.kind === 'income' ? '收入' : ''}：${botLine(d)}`;
 }
 
+// kind：这次要记的那笔（问句）的收支；收入标明「收入」＋「+」（用户 2026-11-27），支出照旧
 export function botSimilarText(
   similar: { amount_minor: number; note: string; occurred_on: string } | null | undefined, catName: string, today: string,
+  kind?: string,
 ): string {
-  if (!similar) return '已经有一笔差不多的账。还要记这一笔吗？';
+  const inc = kind === 'income';
+  if (!similar) return inc ? '已经有一笔差不多的收入。还要记这一笔吗？' : '已经有一笔差不多的账。还要记这一笔吗？';
   const when = similar.occurred_on === today ? '今天' : botMonthDay(similar.occurred_on);
-  return `${when}已经有一笔差不多的：${catName} ${botFormatRM(similar.amount_minor)}${botNotePart(similar.note)}。还要记这一笔吗？`;
+  return `${when}已经有一笔差不多的${inc ? '收入' : ''}：${catName} ${inc ? '+' : ''}${botFormatRM(similar.amount_minor)}`
+    + `${botNotePart(similar.note)}。还要记这一笔吗？`;
 }
 
 // 不是今天的账就带日期（用户决定 6，2026-11-27）
-export function botBigText(pending: { amount_minor: number; occurred_on: string }, catName: string, today: string): string {
+export function botBigText(
+  pending: { amount_minor: number; occurred_on: string; kind?: string }, catName: string, today: string,
+): string {
   const day = pending.occurred_on !== today ? ` · ${botMonthDay(pending.occurred_on)}` : '';
-  return `截图上的金额是 ${botFormatRM(pending.amount_minor)}（${catName}${day}），要记吗？`;
+  const amt = pending.kind === 'income' ? `收入是 +${botFormatRM(pending.amount_minor)}` : `金额是 ${botFormatRM(pending.amount_minor)}`;
+  return `截图上的${amt}（${catName}${day}），要记吗？`;
 }
 
 export function botCategoryPrompt(truncated: boolean): string {
