@@ -909,6 +909,26 @@ begin
 end;
 $$;
 
+-- 3e：bot 读这个人的关键词（没删除；按关键词；最多 500 个）。没连接 → null。只读。
+-- 关键词一定优先于 AI 分类：比对在 Edge Function（_shared/bot-keywords.ts），这里只给资料。
+create or replace function svc.svc_bot_keywords(p_telegram_id bigint) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  v_user uuid;
+begin
+  if p_telegram_id is null or p_telegram_id <= 0 then
+    raise exception 'telegram_id 不合格';
+  end if;
+  select l.user_id into v_user from private.telegram_links l where l.telegram_id = p_telegram_id;
+  if not found then
+    return null;
+  end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('keyword', k.keyword, 'category_id', k.category_id) order by k.keyword)
+                     from (select keyword, category_id from public.category_keywords
+                            where user_id = v_user and not deleted order by keyword limit 500) k), '[]'::jsonb);
+end;
+$$;
+
 -- 记一笔（同一个交易：闸门、相似、大额、写账、记状态）。回传 bot_outcome 的形状，或 {"status":"gone"}。
 -- 闸门：这则 update 必须是这个 telegram 的「处理中」，而且领取时的账号就是现在连着的账号（M4）。
 -- 相似（D3）：这个人没删除、同收支、同金额、同一天的账 → 先问。
@@ -1133,6 +1153,7 @@ revoke all on function svc.svc_bot_ai_reserve(bigint, integer, integer) from pub
 revoke all on function svc.svc_bot_ai_refund(bigint, bigint) from public, anon, authenticated;
 revoke all on function svc.svc_bot_ai_count() from public, anon, authenticated;
 revoke all on function svc.svc_bot_categories(bigint) from public, anon, authenticated;
+revoke all on function svc.svc_bot_keywords(bigint) from public, anon, authenticated;
 revoke all on function svc.svc_bot_record(bigint, bigint, text, bigint, text, date, text, boolean) from public, anon, authenticated;
 revoke all on function svc.svc_bot_confirm(bigint, uuid) from public, anon, authenticated;
 revoke all on function svc.svc_bot_discard(bigint, uuid) from public, anon, authenticated;
@@ -1166,6 +1187,7 @@ grant execute on function svc.svc_bot_ai_reserve(bigint, integer, integer) to se
 grant execute on function svc.svc_bot_ai_refund(bigint, bigint) to service_role;
 grant execute on function svc.svc_bot_ai_count() to service_role;
 grant execute on function svc.svc_bot_categories(bigint) to service_role;
+grant execute on function svc.svc_bot_keywords(bigint) to service_role;
 grant execute on function svc.svc_bot_record(bigint, bigint, text, bigint, text, date, text, boolean) to service_role;
 grant execute on function svc.svc_bot_confirm(bigint, uuid) to service_role;
 grant execute on function svc.svc_bot_discard(bigint, uuid) to service_role;
