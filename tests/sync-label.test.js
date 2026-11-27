@@ -118,10 +118,10 @@ test('设置页接线：同步列、登出带 fetchFn 与 stopSync、「正在�
   assert.ok(shell.lastIndexOf('sync.start()') > shell.indexOf('mountTabBar('));
 });
 
-test('版本 v3.4.1（收入改白＋渐变条）：version.js 与 sw.js 相同', () => {
+test('版本 v3.5（3e 关键词管理）：version.js 与 sw.js 相同', () => {
   const v = readFileSync(new URL('../js/version.js', import.meta.url), 'utf8').match(/'(v[^']+)'/)[1];
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
-  assert.match(v, /^v3\.4\.1-2026-11-27$/);
+  assert.match(v, /^v3\.5-2026-11-27$/);
   assert.ok(sw.includes(`'${v}'`));
 });
 

@@ -74,7 +74,7 @@ test('第一步：标题、内文、三个按钮（先导出 CSV 不关窗／继
   await runDeleteAccount(deps);
   const o = dialogs.lastChoice;
   assert.equal(o.title, '删除账号和全部数据？');
-  assert.equal(o.message, '会永久删除你在这台设备和云端的所有记录、分类和设置，无法复原。');
+  assert.equal(o.message, '会永久删除你在这台设备和云端的所有记录、分类、关键词和设置，无法复原。');
   assert.deepEqual(o.buttons.map((b) => b.label), ['先导出 CSV', '继续删除', '取消']);
   assert.equal(o.buttons[0].keepOpen, true);
   assert.equal(o.buttons[1].destructive, true);

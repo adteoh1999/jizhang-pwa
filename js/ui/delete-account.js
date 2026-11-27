@@ -17,7 +17,7 @@ export const DELETE_TEXT = Object.freeze({
   offlineTitle: '需要网络才能删除账号',
   offlineMessage: '请连上网络后再试。',
   firstTitle: '删除账号和全部数据？',
-  firstMessage: '会永久删除你在这台设备和云端的所有记录、分类和设置，无法复原。',
+  firstMessage: '会永久删除你在这台设备和云端的所有记录、分类、关键词和设置，无法复原。',
   exportLabel: '先导出 CSV',
   continueLabel: '继续删除',
   cancelLabel: '取消',
