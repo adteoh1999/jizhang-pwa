@@ -25,7 +25,7 @@ test('固定文案逐字（用户已同意）', () => {
   assert.equal(R.BOT_SKIPPED, '好，这笔不记。');
   // 用户 2026-11-27：不出现 Claude／Anthropic，统一说「AI 服务商」；文字尽量简短（只给身边朋友用）
   assert.equal(R.BOT_HELP,
-    '传付款截图，或打「午餐 12.50」「昨天 晚餐 15」「工资 3000」，就会自动记一笔。记错了按［改分类］或［撤销］；没有回应就再传一次。\n'
+    '传付款截图，或打「午餐 12.50」「昨天 晚餐 15」「工资 3000」，就会自动记一笔。记错了按［改分类］或［撤销］；改讯息不会改账，请按［改分类］或到 App 改。没有回应就再传一次。\n'
     + '截图、文字和分类名称会交给 AI 服务商自动识别，服务商一般最多保存 30 天；我们不存截图。目前只支援 RM。');
   assert.equal(R.BOT_CONSENT,
     '第一次用 AI 记账前请先看：你传的截图、文字和分类名称，会交给 AI 服务商自动识别金额和分类，服务商一般最多保存 30 天。'
@@ -54,7 +54,7 @@ test('已记：今天、有备注', () => {
 });
 test('已记：没备注不加括号；不是今天加日期', () => {
   assert.equal(R.botRecordedText({ kind: 'income', amountMinor: 300000, categoryName: '工资', note: '', occurredOn: '2026-11-05', today: TODAY }),
-    '✅ 已记：工资 RM 3,000.00 · 11月5日');
+    '✅ 已记收入：工资 +RM 3,000.00 · 11月5日');   // 用户 2026-11-27：收入标明「收入」＋「+」
 });
 test('已记：备注超过 30 字截断加 …', () => {
   const t = R.botRecordedText({ kind: 'expense', amountMinor: 100, categoryName: '其他', note: '字'.repeat(40), occurredOn: TODAY, today: TODAY });
@@ -151,4 +151,12 @@ test('用户 2026-11-27：bot 给用户看的文字都不出现 Claude／Anthrop
     R.botSimilarText(null, '', TODAY), R.botBigText({ amount_minor: 100000, occurred_on: TODAY }, '餐饮', TODAY), R.botCategoryPrompt(true));
   assert.ok(texts.length >= 15, String(texts.length));
   for (const t of texts) assert.doesNotMatch(t, /claude|anthropic/i, t);
+});
+
+test('用户 2026-11-27：收入的已记／已撤销标明「收入」＋「+」；支出照旧；没给 kind 当支出', () => {
+  const base = { amountMinor: 300000, categoryName: '工资', note: '', occurredOn: TODAY, today: TODAY };
+  assert.equal(R.botRecordedText({ ...base, kind: 'income' }), '✅ 已记收入：工资 +RM 3,000.00');
+  assert.equal(R.botUndoneText({ ...base, kind: 'income' }), '↩️ 已撤销收入：工资 +RM 3,000.00');
+  assert.equal(R.botRecordedText({ ...base, kind: 'expense' }), '✅ 已记：工资 RM 3,000.00');
+  assert.equal(R.botUndoneText(base), '↩️ 已撤销：工资 RM 3,000.00');
 });

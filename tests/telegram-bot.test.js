@@ -710,3 +710,12 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     }
   });
 }
+
+// 用户 2026-11-27：收入回复标明收入
+for (const [label, mod] of await loadBoth('telegram-bot')) {
+  test(`${label}：「工资 3000」→ ✅ 已记收入：工资 +RM 3,000.00（工资）（备注照旧是去掉金额的原文）`, async () => {
+    const f = routes({ ai: () => aiReply(aiOut({ kind: 'income', amount: '3000', category_id: 'salary' })) });
+    await quiet(() => mod.handleTelegramBot(req(update({ text: '工资 3000' })), { env: (k) => ENV_OBJ[k], fetch: f }));
+    assert.equal(sent(f)[0].text, '✅ 已记收入：工资 +RM 3,000.00（工资）');
+  });
+}

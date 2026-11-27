@@ -94,6 +94,12 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     assert.equal(edits(f)[0].reply_markup, undefined);
   });
 
+  test(`${label}：用户 2026-11-27：撤销收入 → 「已撤销收入：… +RM」`, async () => {
+    const f = routes({ svc_bot_undo: () => jsonRes(200, { status: 'done', tx: tx({ deleted: true, kind: 'income', category_id: 'salary', amount_minor: 300000, note: '' }) }) });
+    await run(cbUpdate(`u:${TX}`), f);
+    assert.equal(edits(f)[0].text, '↩️ 已撤销收入：工资 +RM 3,000.00');
+  });
+
   test(`${label}：撤销：already → 已删除；not_found → 过期；busy → 现在记不了（绝不说已撤销）`, async () => {
     for (const [status, ans] of [['already', R.BOT_ANS_DELETED], ['not_found', R.BOT_ANS_EXPIRED], ['busy', R.BOT_DOWN]]) {
       const f = routes({ svc_bot_undo: () => jsonRes(200, { status }) });
@@ -135,7 +141,7 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     const h = await R.botCatHash('salary');
     await run(cbUpdate(`s:${TX}:6:${h}`), f);
     assert.deepEqual(rpcBody(f, 'svc_bot_set_category'), [{ p_telegram_id: TID, p_tx_id: TX, p_category_id: 'salary', p_kind: 'income' }]);
-    assert.equal(edits(f)[0].text, '✅ 已记：工资 RM 6.90（早餐）');
+    assert.equal(edits(f)[0].text, '✅ 已记收入：工资 +RM 6.90（早餐）');
     assert.deepEqual(edits(f)[0].reply_markup, R.botRecordedKeyboard(TX));
   });
 

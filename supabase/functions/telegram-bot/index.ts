@@ -213,7 +213,7 @@ function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }
     const tx = out.tx;
     if (!tbTxOk(tx) || tx.deleted) return null;
     return {
-      text: botRecordedText({ amountMinor: tx.amount_minor, categoryName: tbCatName(cats, tx.category_id), note: tx.note,
+      text: botRecordedText({ kind: tx.kind, amountMinor: tx.amount_minor, categoryName: tbCatName(cats, tx.category_id), note: tx.note,
         occurredOn: tx.occurred_on, today: ctx.today }),
       markup: botRecordedKeyboard(tx.id),
     };
@@ -458,6 +458,7 @@ async function tbEditMarkup(ctx: TbCtx, markup: unknown): Promise<boolean> {
 }
 
 const tbLineOf = (ctx: TbCtx, tx: TbTx, cats: { id: string; name: string }[]) => ({
+  kind: tx.kind,
   amountMinor: tx.amount_minor, categoryName: tbCatName(cats, tx.category_id), note: tx.note, occurredOn: tx.occurred_on, today: ctx.today,
 });
 

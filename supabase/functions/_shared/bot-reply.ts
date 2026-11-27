@@ -10,7 +10,7 @@ export const BOT_IMAGE_BAD = '这张图片读不了，请传截图（JPG／PNG�
 export const BOT_UNLINKED_START = '请先点下方按钮打开记账、用邮箱登录。';
 export const BOT_SKIPPED = '好，这笔不记。';
 // 用户 2026-11-27：给用户看的文字不出现 Claude／Anthropic，统一说「AI 服务商」（但不说成是我们自己的 AI）；文字尽量简短
-export const BOT_HELP = '传付款截图，或打「午餐 12.50」「昨天 晚餐 15」「工资 3000」，就会自动记一笔。记错了按［改分类］或［撤销］；没有回应就再传一次。\n'
+export const BOT_HELP = '传付款截图，或打「午餐 12.50」「昨天 晚餐 15」「工资 3000」，就会自动记一笔。记错了按［改分类］或［撤销］；改讯息不会改账，请按［改分类］或到 App 改。没有回应就再传一次。\n'
   + '截图、文字和分类名称会交给 AI 服务商自动识别，服务商一般最多保存 30 天；我们不存截图。目前只支援 RM。';
 // 同意说明：用户 2026-11-27 给的原文
 export const BOT_CONSENT = '第一次用 AI 记账前请先看：你传的截图、文字和分类名称，会交给 AI 服务商自动识别金额和分类，服务商一般最多保存 30 天。'
@@ -47,18 +47,19 @@ function botNotePart(note: string): string {
   return `（${cp.length > BOT_NOTE_SHOW ? cp.slice(0, BOT_NOTE_SHOW).join('') + '…' : note}）`;
 }
 
-type BotLine = { amountMinor: number; categoryName: string; note: string; occurredOn: string; today: string };
+// kind 'income' → 金额前加「+」，标题加「收入」（用户 2026-11-27）；没给或其他值当支出、照旧
+type BotLine = { amountMinor: number; categoryName: string; note: string; occurredOn: string; today: string; kind?: string };
 
 function botLine(d: BotLine): string {
-  return `${d.categoryName} ${botFormatRM(d.amountMinor)}${botNotePart(d.note)}${d.occurredOn !== d.today ? ` · ${botMonthDay(d.occurredOn)}` : ''}`;
+  return `${d.categoryName} ${d.kind === 'income' ? '+' : ''}${botFormatRM(d.amountMinor)}${botNotePart(d.note)}${d.occurredOn !== d.today ? ` · ${botMonthDay(d.occurredOn)}` : ''}`;
 }
 
-export function botRecordedText(d: BotLine & { kind?: string }): string {
-  return `✅ 已记：${botLine(d)}`;
+export function botRecordedText(d: BotLine): string {
+  return `✅ 已记${d.kind === 'income' ? '收入' : ''}：${botLine(d)}`;
 }
 
 export function botUndoneText(d: BotLine): string {
-  return `↩️ 已撤销：${botLine(d)}`;
+  return `↩️ 已撤销${d.kind === 'income' ? '收入' : ''}：${botLine(d)}`;
 }
 
 export function botSimilarText(
