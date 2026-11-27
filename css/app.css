@@ -1832,6 +1832,39 @@ button.inset-row:active { background: var(--press-bg); }
 .cat-row-delete:focus { opacity: 1; pointer-events: auto; z-index: 1; }
 .cat-row-delete:focus-visible { outline: 2px solid var(--on-red); outline-offset: -4px; }
 
+/* 关键词清单（3e，设置 › 关键词）：沿用分类列；左边没有图示 → 分隔线从文字起点 16px 开始。
+   关键词优先完整（可换行），分类名太长才省略。 */
+.kw-add { margin-bottom: 22px; }
+.kw-add .cat-row-main:disabled { color: var(--tertiary-label); }
+.kw-list .cat-row + .cat-row .cat-row-main::before { left: 16px; }
+.kw-row-main { gap: 10px; }
+.kw-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: var(--font-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.kw-cat {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--secondary-label);
+  font: var(--font-subhead);
+}
+.kw-cat-icon { flex: none; display: inline-flex; color: var(--icon-ink); }
+.kw-cat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kw-cat.is-gone { color: var(--red-text); white-space: nowrap; }
+.kw-empty { padding: 28px 24px 8px; text-align: center; color: var(--secondary-label); }
+.kw-empty-title { margin: 0 0 8px; font: var(--font-headline); color: var(--label); }
+.kw-empty-text { margin: 0; font: var(--font-subhead); line-height: 1.5; }
+.kw-input { width: 100%; font-weight: 600; }
+.kw-help { margin-top: 6px; }
+.kw-notice { margin: 0 4px 8px; }
+
 /* 新增 / 编辑分类 sheet：名称列 + 图示网格（只有图示，没有文字） */
 .cat-name-input { flex: 1; min-width: 0; padding: 11px 0; }
 .cat-name-input::placeholder { color: var(--tertiary-label); }

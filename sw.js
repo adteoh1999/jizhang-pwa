@@ -36,6 +36,7 @@ const ASSETS = [
   './js/timefmt.js',
   './js/ui/announce.js',
   './js/ui/categories-page.js',
+  './js/ui/keywords-page.js',
   './js/ui/components.js',
   './js/ui/delete-account.js',
   './js/ui/sign-out.js',

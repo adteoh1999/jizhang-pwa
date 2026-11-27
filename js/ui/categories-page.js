@@ -30,11 +30,17 @@ export function checkCategoryName(name, sameKind, selfId) {
   return null;
 }
 
+/** 删除分类的确认文字（纯函数）：有关键词指向它（3e）→ 说明会失效。 */
+export function deleteCategoryMessage(keywordCount) {
+  const base = '删除后，旧的记录仍保留这个分类名称';
+  return keywordCount > 0 ? `${base}。有 ${keywordCount} 个关键词指向这个分类，会失效` : base;
+}
+
 /** 删除确认（action sheet）→ 删除。回传是否已删除。 */
 async function confirmDeleteCategory(store, cat) {
   const choice = await actionSheet({
     title: '删除分类？',
-    message: '删除后，旧的记录仍保留这个分类名称',
+    message: deleteCategoryMessage(store.keywords().filter((k) => k.category_id === cat.id).length),
     actions: [{ label: '删除', style: 'destructive' }, { label: '取消', style: 'cancel' }],
   });
   if (choice !== '删除') return false;
