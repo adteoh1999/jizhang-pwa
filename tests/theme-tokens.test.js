@@ -66,13 +66,13 @@ test('nav bar material and the opaque fallbacks equal sky-top', () => {
 
 test('spec colors are used verbatim', () => {
   assert.equal(light['--sky-top'], '#F9F9F7');
-  assert.equal(light['--sky-mid'], '#F5F8F5');
-  assert.equal(light['--sky-low'], '#EAF4EE');
-  assert.equal(light['--sky-bottom'], '#DDEFE6');
+  assert.equal(light['--sky-mid'], '#F8F9F7');
+  assert.equal(light['--sky-low'], '#F4F6F3');
+  assert.equal(light['--sky-bottom'], '#F1F4F1');
   assert.equal(attrDark['--sky-top'], '#0D1412');
-  assert.equal(attrDark['--sky-mid'], '#0E1714');
-  assert.equal(attrDark['--sky-low'], '#0F1B17');
-  assert.equal(attrDark['--sky-bottom'], '#0E1F18');
+  assert.equal(attrDark['--sky-mid'], '#0E1412');
+  assert.equal(attrDark['--sky-low'], '#0F1513');
+  assert.equal(attrDark['--sky-bottom'], '#0F1614');
   assert.equal(light['--ink'], '#0A0A0B');
   assert.equal(attrDark['--ink'], '#F2F5F3');
   assert.equal(light['--drawer'], '#FFFFFF');

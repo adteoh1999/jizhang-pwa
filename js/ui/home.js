@@ -72,14 +72,15 @@ function defaultStorage() {
  * 结余卡要显示的内容（纯函数）。
  * 隐藏时：数字都换成 ••••，负号、缩级 class 也拿掉（不能从大小或正负看出金额），读屏读「已隐藏」。
  * 比例线也藏：线宽 0、文字一律「已花掉收入的 ••%」（「支出已超过收入」「还没有收入」本身就会透露结余正负）。
- * meter：barHidden 线条是否隐藏、pct 线宽、label 线条读屏文字、note 线下文字、noteRead 文字是否给读屏读。
+ * meter：barHidden 线条是否隐藏、pct 线宽、label 线条读屏文字、note 线下文字、noteRead 文字是否给读屏读、
+ *   noteShown 文字是否显示在卡片上（B 改版：只有超支时显示「支出已超过收入」，用户 2026-11-27）。
  */
 export function cardView(s, hidden) {
   if (hidden) {
     const flow = { text: `RM ${MASK}`, sr: '已隐藏', cls: '' };
     return {
       sign: '', int: MASK, dec: '', sizeCls: '', balSr: '已隐藏', income: flow, expense: { ...flow },
-      meter: { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false },
+      meter: { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false, noteShown: false },
     };
   }
   const m = spendMeter(s.income, s.expense);
@@ -93,7 +94,7 @@ export function cardView(s, hidden) {
     sign: bp.sign, int: bp.int, dec: bp.dec, sizeCls: balanceSizeClass(s.balance),
     balSr: formatRM(s.balance), income: flow(s.income), expense: flow(s.expense),
     // 线条显示时由它（role=img）读出，文字不重复读；线条隐藏（没有收入）时由文字读出
-    meter: { barHidden: m.state === 'none', pct: m.pct, label: text, note: text, noteRead: m.state === 'none' },
+    meter: { barHidden: m.state === 'none', pct: m.pct, label: text, note: text, noteRead: m.state === 'none', noteShown: m.state === 'over' },
   };
 }
 
@@ -432,6 +433,7 @@ export function mountHome(root, store, { monthEl = null, storage = defaultStorag
     }
     lastRatio = ratio;
     meterNote.textContent = m.note;
+    meterNote.classList.toggle('is-shown', m.noteShown);
     if (m.noteRead) meterNote.removeAttribute('aria-hidden');
     else meterNote.setAttribute('aria-hidden', 'true');
   }

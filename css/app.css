@@ -29,11 +29,11 @@
 :root {
   color-scheme: light;
 
-  /* 整页渐变：顶端白 #F9F9F7 → 往下带一点薄荷绿（0% / 30% / 65% / 100%） */
+  /* 整页渐变（B 改版）：几乎全白，往下只带一点点灰绿（0% / 30% / 65% / 100%） */
   --sky-top: #F9F9F7;
-  --sky-mid: #F5F8F5;
-  --sky-low: #EAF4EE;
-  --sky-bottom: #DDEFE6;
+  --sky-mid: #F8F9F7;
+  --sky-low: #F4F6F3;
+  --sky-bottom: #F1F4F1;
   --ink: #0A0A0B;
   --ink-2: rgba(10, 12, 18, 0.65);
   --ink-3: rgba(10, 12, 18, 0.32);
@@ -52,37 +52,29 @@
   /* 登录页（2d）：输入框底、错误字（直接压在晨雾上，--red-text 只有 4.07，另设较深的红） */
   --field: rgba(255, 255, 255, 0.72);
   --login-error: #B4000F;
-  /* 欢迎页（3c-1）：示例账单小卡（实心、不模糊）的底、内框线、投影 */
-  --chip-bg: rgba(255, 255, 255, 0.86);
-  --chip-edge: rgba(255, 255, 255, 0.95);
-  --chip-shadow: 0 14px 30px -16px rgba(30, 80, 60, 0.32), 0 2px 6px -3px rgba(20, 60, 45, 0.14);
   --income: #1663C7;               /* 收入蓝（不跟深绿撞色；玻璃卡上 ≥4.9:1） */
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
   --glass-sheen: rgba(255, 255, 255, 0.18);
-  /* 结余卡后面的光球（静态 radial-gradient）。深色版：光球透明度 ×0.5、卡片左上玻璃 .10、次要字 .95，
-     是为了让压在光球上的字仍 ≥4.5:1（tests/contrast.test.js 锁住）。深色余量很小（约 4.6），
-     调亮光球、玻璃或调暗次要字都必须先跑测试 */
-  --orb-1: rgba(140, 212, 178, 0.80);
-  --orb-2: rgba(170, 222, 198, 1);
-  --orb-3: rgba(9, 131, 84, 0.30);
-  --orb-4: rgba(160, 218, 192, 0.85);
-  /* 结余卡玻璃：半透明底、渐层反光边（左上亮 → 右下暗）、内阴影＋投影 */
-  --card-glass-1: rgba(255, 255, 255, 0.78);
-  --card-glass-2: rgba(255, 255, 255, 0.48);
-  --card-rim-1: rgba(255, 255, 255, 1);
-  --card-rim-2: rgba(255, 255, 255, 0.35);
-  --card-rim-3: rgba(255, 255, 255, 0.08);
-  --card-rim-4: rgba(40, 100, 75, 0.35);
-  --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(30, 80, 60, 0.26),
-    0 24px 44px -20px rgba(20, 90, 60, 0.34), 0 4px 12px -6px rgba(20, 60, 45, 0.16);
-  --card-ink-2: rgba(10, 12, 18, 0.65);   /* 卡片上的次要字（深色版较亮，压在光球上仍 ≥4.5:1） */
-  /* 统计页玻璃卡（v2.4）：同结余卡玻璃，投影收小（两张卡上下只隔一个分段控件） */
-  --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(30, 80, 60, 0.26),
-    0 18px 36px -20px rgba(20, 90, 60, 0.30), 0 4px 12px -6px rgba(20, 60, 45, 0.14);
-  /* 统计页摘要卡后面的淡蓝光晕（静态 radial-gradient）。浓度上限：文字压在最浓处仍 ≥4.5:1（tests/contrast.test.js） */
-  --stats-glow-1: rgba(196, 230, 214, 0.55);
-  --stats-glow-2: rgba(160, 220, 190, 0.3);
+  /* B 深绿卡（首页结余卡、统计摘要卡、欢迎页示意卡）：浅深相同的深绿；卡上字一律用 --card-*（tests/green-card.test.js）。
+     对比度以「卡底＋两层光泽最亮处」计算，调光泽或字色都要先跑测试 */
+  --card-1: #0F4A35;
+  --card-2: #0A3526;
+  --card-3: #062219;
+  --card-sheen-mint: rgba(196, 230, 214, 0.10);   /* 右上角薄荷光泽 */
+  --card-sheen-white: rgba(255, 255, 255, 0.04);  /* 斜向白光泽 */
+  --card-ink: #FFFFFF;
+  --card-ink-2: rgba(255, 255, 255, 0.72);        /* 卡上次要字、眼睛 */
+  --card-ink-dec: rgba(255, 255, 255, 0.72);      /* 金额小数 */
+  --card-income: #BBD8FF;                         /* 卡上收入：浅蓝（深蓝在深绿上看不清） */
+  --card-track: rgba(255, 255, 255, 0.14);
+  --card-fill: #C4E6D6;                           /* 比例线：薄荷 */
+  --card-line: rgba(255, 255, 255, 0.14);         /* 卡内分隔线 */
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 1px rgba(6, 35, 26, 0.2),
+    0 14px 24px -12px rgba(6, 35, 26, 0.45), 0 34px 56px -30px rgba(6, 35, 26, 0.6);
+  --card-glow: rgba(9, 131, 84, 0.16);            /* 卡后一团淡深绿 */
+  /* 中性白面板（走势图卡、欢迎页账单小卡）的柔和投影 */
+  --panel-shadow: 0 10px 24px -16px rgba(10, 12, 18, 0.25);
   /* 统计页分类条：轨道、渐层淡端（浅色往白淡；深色往抽屉色淡，＝ --drawer 的 .5，测试锁住） */
   --stats-track: rgba(10, 12, 18, 0.07);
   --bar-fade: rgba(255, 255, 255, 0.55);
@@ -113,26 +105,23 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --sky-top: #0D1412; --sky-mid: #0E1714; --sky-low: #0F1B17; --sky-bottom: #0E1F18;
+    --sky-top: #0D1412; --sky-mid: #0E1412; --sky-low: #0F1513; --sky-bottom: #0F1614;
     --ink: #F2F5F3; --ink-2: rgba(232, 242, 236, 0.66); --ink-3: rgba(232, 242, 236, 0.34);
     --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --group-edge: transparent; --glass-shade: rgba(0, 0, 0, 0.35);
     --drawer: #171C1A; --hairline: rgba(255, 255, 255, 0.08);
     --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #6AAEFF; --red: rgb(255, 66, 69);
     --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
-    --chip-bg: rgba(28, 35, 32, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
     --track: rgba(255, 255, 255, 0.14);
     --glass-sheen: rgba(255, 255, 255, 0.18);
-    --orb-1: rgba(120, 200, 165, 0.22); --orb-2: rgba(9, 131, 84, 0.34);
-    --orb-3: rgba(80, 180, 140, 0.20); --orb-4: rgba(196, 230, 214, 0.12);
-    --card-glass-1: rgba(255, 255, 255, 0.1); --card-glass-2: rgba(255, 255, 255, 0.05);
-    --card-rim-1: rgba(255, 255, 255, 0.55); --card-rim-2: rgba(255, 255, 255, 0.12);
-    --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
-    --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
-    --card-ink-2: rgba(232, 242, 236, 0.95);
+    --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
+    --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
+    --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
+    --card-track: rgba(255, 255, 255, 0.14); --card-fill: #C4E6D6; --card-line: rgba(255, 255, 255, 0.14);
+    --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
+    --card-glow: rgba(9, 131, 84, 0.22);
+    --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
     --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(23, 28, 26, 0.5);
-    --stats-glow-1: rgba(80, 180, 140, 0.08); --stats-glow-2: rgba(196, 230, 214, 0.04);
-    --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
     --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
     --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
@@ -146,26 +135,23 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --sky-top: #0D1412; --sky-mid: #0E1714; --sky-low: #0F1B17; --sky-bottom: #0E1F18;
+  --sky-top: #0D1412; --sky-mid: #0E1412; --sky-low: #0F1513; --sky-bottom: #0F1614;
   --ink: #F2F5F3; --ink-2: rgba(232, 242, 236, 0.66); --ink-3: rgba(232, 242, 236, 0.34);
   --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --group-edge: transparent; --glass-shade: rgba(0, 0, 0, 0.35);
   --drawer: #171C1A; --hairline: rgba(255, 255, 255, 0.08);
   --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #6AAEFF; --red: rgb(255, 66, 69);
   --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
-  --chip-bg: rgba(28, 35, 32, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
   --track: rgba(255, 255, 255, 0.14);
   --glass-sheen: rgba(255, 255, 255, 0.18);
-  --orb-1: rgba(120, 200, 165, 0.22); --orb-2: rgba(9, 131, 84, 0.34);
-  --orb-3: rgba(80, 180, 140, 0.20); --orb-4: rgba(196, 230, 214, 0.12);
-  --card-glass-1: rgba(255, 255, 255, 0.1); --card-glass-2: rgba(255, 255, 255, 0.05);
-  --card-rim-1: rgba(255, 255, 255, 0.55); --card-rim-2: rgba(255, 255, 255, 0.12);
-  --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
-  --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
-  --card-ink-2: rgba(232, 242, 236, 0.95);
+  --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
+  --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
+  --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
+  --card-track: rgba(255, 255, 255, 0.14); --card-fill: #C4E6D6; --card-line: rgba(255, 255, 255, 0.14);
+  --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
+  --card-glow: rgba(9, 131, 84, 0.22);
+  --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
   --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(23, 28, 26, 0.5);
-  --stats-glow-1: rgba(80, 180, 140, 0.08); --stats-glow-2: rgba(196, 230, 214, 0.04);
-  --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
   --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
   --fill: rgba(120, 120, 128, 0.36);
   --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
@@ -1004,167 +990,173 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    - [hig-patterns] 删除不跳确认框，改用「撤销」toast；左滑露出红色「删除」（80pt）。
    - 列表是 inset grouped：12pt 圆角卡片、内缩分隔线、组标题用 footnote 次要色。
    ===================================================================== */
-/* ---------- 结余卡「晨雾」：光球在卡片后面，卡片是半透明玻璃（无 backdrop-filter） ----------
-   效能：光球与玻璃全是静态渐变和阴影，没有模糊、没有动画，只在重绘时算一次。
-   层叠：首页 .screen 自成层叠上下文；光球是包装层的 ::before（z-index:-1），
-   所以在大标题、卡片、「记一笔」按钮、抽屉下面，在 .sky 上面。包装层自己不能建层叠上下文。 */
+/* ---------- B 深绿卡（2026-11-27 改版）：首页结余卡、统计摘要卡、欢迎页示意卡共用 ----------
+   每个画面只有一个大面积深绿重点（用户定案）。卡上字一律用 --card-* token（tests/green-card.test.js 反向扫描）。
+   效能：卡底是静态渐层＋阴影，没有模糊、没有动画、没有细纹。
+   层叠：首页 .screen 自成层叠上下文；卡后光晕是包装层的 ::before（z-index:-1）。包装层自己不能建层叠上下文。 */
 .screen[data-screen="home"] { isolation: isolate; }
-.screen[data-screen="stats"] { isolation: isolate; }   /* 统计页光晕（.stats-month::after，z-index:-1）在 .sky 上面、内容下面 */
-.home-card-wrap { position: relative; margin-top: 10px; }
-.home-card-wrap::before {
-  /* 光球层：左右伸到屏幕边（不超出，避免横向滚动），上方只伸出 56px（不碰状态栏），高度固定。
-     光球位置：横向＝卡片宽度的比例，纵向＝离卡片顶端的固定 px（卡片变高也不会往上漂）。
-     每个光球在 70% 半径处已完全透明；纵向都在图层内淡完（测试会检查），横向超出的部分被屏幕边切掉，看不出来。
-     left / right 必须等于 .screen 的左右 padding（测试会检查），否则会横向滚动。 */
-  --mx: calc(var(--margin) + var(--safe-left));
-  content: "";
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  top: -56px;
-  height: 390px;
-  left: calc(-1 * var(--mx));
-  right: calc(-1 * (var(--margin) + var(--safe-right)));
-  background:
-    radial-gradient(240px 170px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.874) 119px, var(--orb-1), transparent 70%),
-    radial-gradient(260px 200px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.18) 234px, var(--orb-2), transparent 70%),
-    radial-gradient(200px 170px at calc(var(--mx) + (100% - 2 * var(--mx)) * 1.036) 267px, var(--orb-3), transparent 70%),
-    radial-gradient(220px 170px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.126) 151px, var(--orb-4), transparent 70%);
-}
-.home-card {
+.home-card,
+.stats-summary,
+.wl-card {
   position: relative;
   isolation: isolate;
-  padding: 22px 22px 20px;
-  border-radius: 30px;
-  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
-  box-shadow: var(--card-shadow);   /* 上缘内亮线、下缘内阴影（玻璃厚度）＋两层投影（浮起来） */
+  color: var(--card-ink);
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--card-sheen-mint), transparent 55%),
+    linear-gradient(112deg, transparent 30%, var(--card-sheen-white) 46%, transparent 62%),
+    linear-gradient(150deg, var(--card-1) 0%, var(--card-2) 52%, var(--card-3) 100%);
+  box-shadow: var(--card-shadow);
 }
-/* 渐层反光边：1.3px 的框，左上亮 → 右下暗；用 mask 挖空中间 */
+/* 反光边：1px 的框，左上亮 → 右下带一点薄荷；用 mask 挖空中间，垫在内容下面 */
 @supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
-  .home-card::before {
+  .home-card::before,
+  .stats-summary::before,
+  .wl-card::before {
     content: "";
     position: absolute;
     inset: 0;
-    z-index: 0;
-    padding: 1.3px;
+    z-index: -1;
+    padding: 1px;
     border-radius: inherit;
     pointer-events: none;
-    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 62%, rgba(196, 230, 214, 0.26));
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   }
 }
-@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
-  .home-card { border: 1px solid var(--card-rim-2); }   /* 不支援 mask 时：普通细边 */
+
+/* 卡后光晕：一团很淡的深绿，相对卡片定位（卡片高度随机型变），只往下、不往上伸，静态 */
+.home-card-wrap { position: relative; margin-top: 14px; }
+.home-card-wrap::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  top: 30%;
+  height: 100%;
+  left: 0;
+  right: 0;
+  background: radial-gradient(55% 40% at 50% 55%, var(--card-glow), transparent 70%);
 }
-.home-card > * { position: relative; z-index: 1; }
+/* 首页结余卡：信用卡比例；长金额或大字级时由内容撑高（不能设 height / overflow / contain，测试锁） */
+.home-card {
+  aspect-ratio: 1.586;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px;
+  border-radius: 20px;
+}
+@media (min-width: 600px) {
+  .home-card { aspect-ratio: auto; }   /* iPad、桌面：不维持比例，免得卡片太高 */
+}
+.home-card > * { position: relative; }
 /* 眼睛按钮：右上角 44×44 点击区（.home-card > .home-eye 优先级高于 .home-card > *，position 不会被盖掉） */
 .home-card > .home-eye {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 8px;
+  right: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
   height: 44px;
   border-radius: 22px;
-  color: var(--card-ink-2);   /* 次要控件：比金额轻一级（非文字 ≥3:1） */
+  color: var(--card-ink-2);   /* 次要控件：比金额轻一级 */
 }
-.home-card-label { padding-right: 36px; font: var(--font-subhead); color: var(--card-ink-2); }
+.home-card > .home-eye:focus-visible { outline-color: var(--card-ink); }   /* 全域焦点框是 --ink（黑），压在深绿上看不见 */
+.home-card-label { padding-right: 36px; font: 500 0.8235rem/1.3 var(--font-family); letter-spacing: 0.01em; color: var(--card-ink-2); }
 .home-balance {
-  margin-top: 6px;
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;               /* 极端长度 / 大字级时宁可换行也不溢出 */
   align-items: baseline;
-  column-gap: 8px;
+  column-gap: 6px;
   font-variant-numeric: tabular-nums;
 }
-/* 金额加粗、加深：在玻璃上要清楚。字级用 rem＋上限：一般结余可随大字放大到 64px；
-   is-long（≥RM 10,000）与窄屏的上限等于预设大小，只会缩小、不会放大——为了长数字一定放得下一行（实测过 320/375/430 × 字级 17–23）。
-   上限不要随手调大，改了要重新实测 */
-.home-balance-cur { font: 700 min(1.1765rem, 22px)/1 var(--font-family); color: var(--ink); }   /* 20；上限让大字级时长数字仍放得下一行 */
-.home-balance-sign { font: 700 min(1.1765rem, 22px)/1 var(--font-family); color: var(--ink); margin-right: -6px; }
+/* 金额：600 粗细、紧字距；字级用 rem＋上限（可随大字放大），is-long（≥RM 10,000）与窄屏的上限等于预设大小，只缩不放。
+   上限不要随手调大，改了要重新用无头 Chrome 量（320/375/430 × 字级 17–23） */
+.home-balance-cur { font: 600 min(0.8824rem, 15px)/1 var(--font-family); letter-spacing: 0.02em; color: var(--card-ink-2); }
+.home-balance-sign { font: 600 min(0.8824rem, 15px)/1 var(--font-family); color: var(--card-ink-2); margin-right: -4px; }
 .home-balance-int {
-  font: 750 min(calc(1rem * 2.94), 64px)/1.05 var(--font-family);                    /* ≈50 */
-  letter-spacing: -0.03em;
+  font: 600 min(calc(1rem * 2.82), 56px)/1 var(--font-family);                     /* ≈48 */
+  letter-spacing: -0.045em;
   white-space: nowrap;
 }
 .home-balance-dec {
-  margin-left: -6px;
-  font: 700 min(calc(1rem * 1.41), 30px)/1 var(--font-family);                       /* ≈24 */
-  color: var(--ink);
+  margin-left: -4px;
+  font: 600 min(calc(1rem * 1.35), 27px)/1 var(--font-family);                     /* ≈23 */
+  color: var(--card-ink-dec);
 }
-/* 粗体比细体宽：长数字缩级比旧版多缩一点 */
-.home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 2.35), 40px); }  /* ≈40；上限 40：375 宽大字级时 9 字元仍一行 */
-.home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.18), 22px); }  /* ≈20 */
-.home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.88), 36px); } /* ≈32 */
-.home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 1.06), 22px); } /* ≈18 */
-/* 窄屏（iPhone SE 320 宽，卡片内容约 244px）：长数字再缩一级，小数才不会单独掉到下一行。
-   上限贴近预设字级的大小：320 宽的人常开大字，上限放松一点就又会掉行（「RM」、负号也一起设上限）。
+.home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 2.24), 38px); }  /* ≈38 */
+.home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.12), 19px); }  /* ≈19 */
+.home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.82), 31px); } /* ≈31 */
+.home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 1), 17px); }    /* ≈17 */
+/* 窄屏（iPhone SE 320 宽，卡片内容约 244px）：长数字再缩一级。
    必须写在上面同优先级的规则之后（靠文件顺序压过，测试会检查） */
 @media (max-width: 359px) {
   .home-balance-cur,
-  .home-balance-sign { font-size: min(1.1765rem, 21px); }
-  .home-balance-int { font-size: min(calc(1rem * 2.94), 50px); }                       /* ≈50 */
-  .home-balance-dec { font-size: min(calc(1rem * 1.41), 24px); }                       /* ≈24 */
-  .home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 2), 34px); }     /* ≈34：9 字元整行约 236px */
-  .home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.12), 19px); }  /* ≈19 */
-  .home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.65), 29px); } /* ≈28 */
-  .home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 0.94), 17px); } /* ≈16 */
+  .home-balance-sign { font-size: min(0.8824rem, 14px); }
+  .home-balance-int { font-size: min(calc(1rem * 2.82), 44px); }                       /* ≈44 */
+  .home-balance-dec { font-size: min(calc(1rem * 1.35), 21px); }                       /* ≈21 */
+  .home-balance.is-long .home-balance-int { font-size: min(calc(1rem * 1.94), 32px); }  /* ≈32 */
+  .home-balance.is-long .home-balance-dec { font-size: min(calc(1rem * 1.06), 17px); }  /* ≈17 */
+  .home-balance.is-xlong .home-balance-int { font-size: min(calc(1rem * 1.6), 27px); }  /* ≈27 */
+  .home-balance.is-xlong .home-balance-dec { font-size: min(calc(1rem * 0.94), 15px); } /* ≈15 */
 }
 
+/* 收入 / 支出：沉到卡片底部；两栏放不下（百万级）时支出换到下一行，所以不画分隔线（换行后会落单） */
 .home-flow {
   display: flex;
-  flex-wrap: wrap;               /* 两栏放不下（金额不断行）时，支出换到下一行 */
-  gap: 12px;
-  margin-top: 20px;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: auto;
+  padding-top: 14px;
 }
-.home-flow-item { flex: 1 1 calc(50% - 6px); display: grid; align-content: start; gap: 2px; }
+.home-flow-item { flex: 1 1 calc(50% - 8px); display: grid; align-content: start; gap: 3px; }
 .home-flow-k {
   display: flex;
   align-items: center;
   gap: 4px;
-  font: var(--font-footnote);
+  font: 400 0.7647rem/1.2 var(--font-family);
   color: var(--card-ink-2);
 }
-.home-flow-k svg { flex: none; }
+.home-flow-k svg { display: none; }   /* B 改版：拿掉小箭头（读屏本来就读「收入」「支出」） */
 .home-flow-v {
-  font: var(--font-body);
-  font-weight: 700;
+  font: 600 1rem/1.2 var(--font-family);
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;           /* 「RM」与数字不断开 */
 }
 .home-flow-v.is-small { font-size: 0.8824rem; }
-.home-flow-v .roll { --roll-h: 1.294em; }   /* 滚轮格高＝原本的行高，卡片高度不变 */
+.home-flow-v .roll { --roll-h: 1.2em; }   /* 滚轮格高＝行高，卡片高度不变 */
 /* 记账飘字：在「本月结余」那一行、眼睛左边，往上飘（不压在结余数字上）；动画结束就移除（.home-card > * 的 position 要压过） */
 .home-card > .home-float {
   position: absolute;
-  top: 22px;
+  top: 20px;
   right: 60px;
   z-index: 2;
   font: var(--font-headline);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  color: var(--ink);
+  color: var(--card-ink);
   opacity: 0;
   pointer-events: none;
 }
-.home-card > .home-float.is-income { color: var(--income); }   /* 缩一级（subhead 字级） */
-/* 窄屏：粗体金额较宽，一般金额（到 RM 999,999.99）也缩一级，收入、支出才能并排；百万以上会上下堆叠（flex-wrap） */
+.home-card > .home-float.is-income { color: var(--card-income); }
+/* 窄屏：一般金额（到 RM 999,999.99）也缩一级，收入、支出才能并排；百万以上会上下堆叠（flex-wrap） */
 @media (max-width: 359px) {
   .home-flow-v { font-size: 0.8824rem; }
 }
 
 /* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、同色 */
-.home-meter { display: grid; gap: 7px; margin-top: 16px; }
+.home-meter { display: grid; margin-top: 12px; }
 .home-meter-bar {
   position: relative;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--track);
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--card-track);
   overflow: hidden;
 }
 /* 比例线「滑入」（v2.3）：填充条固定 100% 宽，用 translateX 往左藏（只走合成，圆角不被压扁）。
@@ -1173,8 +1165,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   position: absolute;
   inset: 0;
   width: 100%;
-  border-radius: 0 2px 2px 0;
-  background: var(--ink);
+  border-radius: 0 1.5px 1.5px 0;
+  background: var(--card-fill);
   transform: translateX(-100%);
 }
 .home-meter-fill::before {
@@ -1186,23 +1178,36 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   width: 100%;
   background: inherit;
 }
+/* 比例文字：平常只给读屏（B 改版卡片要干净）；超支时 home.js 加 .is-shown 才显示「支出已超过收入」（用户 2026-11-27） */
 .home-meter-note {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
   font: var(--font-caption);
   color: var(--card-ink-2);
   font-variant-numeric: tabular-nums;
 }
+.home-meter-note.is-shown {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  margin-top: 7px;
+}
 
-/* 增加对比度 / 降低透明度：拿掉光球与渐层反光边，卡片改成不透明＋实线边
-   （放在结余卡规则之后，才压得过上面的 background） */
+/* 增加对比度 / 降低透明度：拿掉光晕与反光边；卡片本来就是不透明深绿，不用改 */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .home-card-wrap::before,
-  .home-card::before { display: none; }
-  .home-card { background: var(--glass); border: 1px solid var(--glass-edge); }
+  .home-card::before,
+  .stats-summary::before,
+  .wl-card::before,
+  .wl-hero::before { display: none; }
 }
-@media (prefers-contrast: more) {
-  .home-card { border-color: var(--ink-2); }
-}
-
 /* ---------- 主按钮：黑色胶囊 ---------- */
 .home-add {
   display: flex;
@@ -1383,28 +1388,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    - 效能（v2.4）：玻璃卡、光晕、分类条渐层全是静态渐层与阴影（无 backdrop-filter、无新动画）；分类列不加阴影；拖动只改标记与标签属性。
    ===================================================================== */
 .stats-month {
-  position: relative;   /* 光晕的定位基准；不能有 transform / opacity / z-index / isolation（测试锁住） */
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
-}
-/* 摘要卡后面的淡蓝光晕：挂在不会动的月份列上（换月份时整块 .stats-body 滑动，光晕不跟着闪）。
-   以月份列顶端为 0：往上伸 40px（到大标题，不碰状态栏），摘要卡顶在 56px。左右刚好到屏幕边（同首页光球）。
-   每个光晕在 70% 半径处已透明，纵向都在图层内淡完（测试会检查）。静态、无动画、无模糊。 */
-.stats-month::after {
-  --mx: calc(var(--margin) + var(--safe-left));
-  content: "";
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  top: -40px;
-  height: 270px;
-  left: calc(-1 * var(--mx));
-  right: calc(-1 * (var(--margin) + var(--safe-right)));
-  background:
-    radial-gradient(240px 150px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.72) 136px, var(--stats-glow-1), transparent 70%),
-    radial-gradient(220px 140px at calc(var(--mx) + (100% - 2 * var(--mx)) * 0.2) 158px, var(--stats-glow-2), transparent 70%);
 }
 .stats-month-title { font: var(--font-headline); text-align: center; flex: 1; font-variant-numeric: tabular-nums; }
 .stats-month-btn {
@@ -1418,45 +1405,17 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 .stats-month-btn[aria-disabled="true"] { color: var(--ink-3); }
 
-/* 统计页玻璃卡（v2.4，摘要卡＋走势图卡）：与首页结余卡同一套晨雾玻璃，不用 backdrop-filter。
-   反光边是 ::before 垫在内容下面（z-index:-1，卡片自成层叠上下文）：不压在走势图的动画层 / 拖动层上面，
-   切分页、换月份时不会多出一张带遮罩的合成层。 */
-.glass-card {
-  position: relative;
-  isolation: isolate;
-  border-radius: 26px;
-  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
-  box-shadow: var(--stats-card-shadow);
-}
-@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
-  .glass-card::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    padding: 1.3px;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  }
-}
-@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
-  .glass-card { border: 1px solid var(--card-rim-2); }   /* 不支援 mask 时：普通细边 */
-}
-
 /* 摘要：一行三格（收入｜支出｜结余），格间 1px 细线（inset 阴影，不占宽度）；「RM」缩小当单位。
    金额字级有上限（同结余卡做法）：大字级时三格也放得下 RM 9,999.99；放不下的情况改三行（见下）。 */
 .stats-summary {
+  border-radius: 20px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 8px;
   padding: 16px 6px;
 }
 .stats-sum-item { min-width: 0; display: grid; align-content: start; gap: 5px; padding: 0 8px; }
-.stats-sum-item + .stats-sum-item { box-shadow: inset 1px 0 0 var(--hairline); }
+.stats-sum-item + .stats-sum-item { box-shadow: inset 1px 0 0 var(--card-line); }
 .stats-sum-k { font: var(--font-footnote); color: var(--card-ink-2); }
 .stats-sum-v {
   font: 600 min(0.8824rem, 15px)/1.2 var(--font-family);   /* 15/17 */
@@ -1465,14 +1424,14 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   white-space: nowrap;
 }
 .stats-sum-v small { font: 600 min(0.6471rem, 11px)/1 var(--font-family); letter-spacing: 0; color: var(--card-ink-2); }
-.stats-sum-v.is-income { color: var(--income); }
+.stats-sum-v.is-income { color: var(--card-income); }
 .stats-sum-v.is-income small { color: inherit; }
 /* 金额上万（数字连负号超过 8 字元，JS 加 is-long）或窄屏：改成三行，名称在左、金额在右 */
 .stats-summary.is-long { grid-template-columns: 1fr; padding: 4px 18px; }
 .stats-summary.is-long .stats-sum-item {
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 11px 0; box-shadow: none;
 }
-.stats-summary.is-long .stats-sum-item + .stats-sum-item { box-shadow: inset 0 1px 0 var(--hairline); }
+.stats-summary.is-long .stats-sum-item + .stats-sum-item { box-shadow: inset 0 1px 0 var(--card-line); }
 .stats-summary.is-long .stats-sum-v { font-size: min(0.9412rem, 17px); }
 /* iPhone SE 宽度：三格一定放不下 → 一律三行（写在 is-long 之后，同优先级靠文件顺序） */
 @media (max-width: 359px) {
@@ -1480,50 +1439,19 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   .stats-summary .stats-sum-item {
     display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 11px 0; box-shadow: none;
   }
-  .stats-summary .stats-sum-item + .stats-sum-item { box-shadow: inset 0 1px 0 var(--hairline); }
+  .stats-summary .stats-sum-item + .stats-sum-item { box-shadow: inset 0 1px 0 var(--card-line); }
   .stats-summary .stats-sum-v { font-size: min(0.9412rem, 17px); }
 }
 
 .stats-summary + .segmented { margin: 16px 0 0; }
-/* 统计页的分段控件也换晨雾玻璃（夹在两张玻璃卡中间）；记一笔面板里的不变。
-   选中胶囊是 ::before，反光边用 ::after（z-index:0，在 .segment 的字下面）；边框保留宽度但透明，尺寸不变 */
-.stats-body .segmented {
-  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
-  border-color: transparent;
-}
-@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
-  .stats-body .segmented::after {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    z-index: 0;
-    padding: 1.3px;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  }
-}
-@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
-  .stats-body .segmented { border-color: var(--card-rim-2); }
-}
-/* 增加对比度 / 降低透明度：拿掉反光边，统计页玻璃改成不透明＋实线边（写在上面的玻璃规则之后才压得过） */
-@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  .glass-card::before,
-  .stats-body .segmented::after,
-  .stats-month::after { display: none; }
-  .glass-card,
-  .stats-body .segmented { background: var(--glass); border: 1px solid var(--glass-edge); }
-}
-@media (prefers-contrast: more) {
-  .glass-card,
-  .stats-body .segmented { border-color: var(--ink-2); }
-}
-
 /* 走势图卡 */
-.trend-card { margin-top: 12px; padding: 16px 14px 12px; }
+.trend-card {
+  margin-top: 12px;
+  padding: 16px 14px 12px;
+  border-radius: 20px;
+  background: var(--drawer);
+  box-shadow: 0 0 0 1px var(--hairline), var(--panel-shadow);   /* B 改版：中性白面板（这页的深绿重点是摘要卡） */
+}
 .trend-head {
   display: flex;
   flex-wrap: wrap;
@@ -2087,68 +2015,43 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   right: calc(-1 * (24px + var(--safe-right)));
   top: calc(50% - 219px);
   height: 438px;
-  background:
-    radial-gradient(190px 150px at 88% 120px, var(--orb-1), transparent 70%),
-    radial-gradient(210px 170px at 10% 260px, var(--orb-2), transparent 70%),
-    radial-gradient(170px 140px at 94% 320px, var(--orb-3), transparent 70%),
-    radial-gradient(170px 130px at 16% 110px, var(--orb-4), transparent 70%);
+  background: radial-gradient(45% 30% at 50% 40%, var(--card-glow), transparent 70%);   /* B 改版：示意卡后面一团淡深绿 */
 }
 .wl-stage { position: relative; width: min(100%, 342px); height: 318px; }
 .wl-layer { position: absolute; left: 0; right: 0; }
 .wl-layer-card { top: 6px; z-index: 3; padding: 0 6px; }
 .wl-layer-tx1 { top: 186px; z-index: 2; padding: 0 2px 0 22px; }
 .wl-layer-tx2 { top: 246px; z-index: 1; padding: 0 30px 0 8px; }
-.wl-card {
-  position: relative;
-  isolation: isolate;
+.wl-card {   /* 底色、字色、反光边：与首页结余卡共用深绿卡规则 */
   padding: 20px 22px 18px;
-  border-radius: 30px;
-  background: linear-gradient(155deg, var(--card-glass-1), var(--card-glass-2));
-  box-shadow: var(--card-shadow);
+  border-radius: 20px;
   transform: rotate(-4deg);
 }
-@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
-  .wl-card::before {   /* 渐层反光边（同首页结余卡） */
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    padding: 1.3px;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(140deg, var(--card-rim-1), var(--card-rim-2) 35%, var(--card-rim-3) 60%, var(--card-rim-4));
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  }
-}
-@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
-  .wl-card { border: 1px solid var(--card-rim-2); }
-}
-.wl-card > * { position: relative; z-index: 1; }
+.wl-card > * { position: relative; }
 .wl-card-label { font: 400 15px/1.33 var(--font-family); color: var(--card-ink-2); }
 .wl-amt { margin-top: 4px; display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.wl-amt-cur { font: 700 20px/1 var(--font-family); }
-.wl-amt-int { font: 750 44px/1.05 var(--font-family); letter-spacing: -0.03em; }
-.wl-amt-dec { margin-left: -5px; font: 700 22px/1 var(--font-family); }
+.wl-amt-cur { font: 600 15px/1 var(--font-family); letter-spacing: 0.02em; color: var(--card-ink-2); }
+.wl-amt-int { font: 600 44px/1.05 var(--font-family); letter-spacing: -0.045em; }
+.wl-amt-dec { margin-left: -4px; font: 600 21px/1 var(--font-family); color: var(--card-ink-dec); }
 .wl-flow { display: flex; gap: 12px; margin-top: 14px; }
 .wl-flow-item { flex: 1; display: grid; gap: 2px; }
 .wl-flow-k { display: flex; align-items: center; gap: 4px; font: 400 13px/1.38 var(--font-family); color: var(--card-ink-2); }
-.wl-flow-v { font: 700 16px/1.29 var(--font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.wl-bar { margin-top: 12px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
-.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--ink); }
+.wl-flow-k svg { display: none; }
+.wl-flow-v { font: 600 16px/1.29 var(--font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wl-bar { margin-top: 12px; height: 3px; border-radius: 1.5px; background: var(--card-track); overflow: hidden; }
+.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--card-fill); }
 .wl-tx {
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 60px;
   padding: 9px 16px 9px 12px;
-  border-radius: 22px;
-  background: var(--chip-bg);
-  box-shadow: inset 0 0 0 1px var(--chip-edge), var(--chip-shadow);
+  border-radius: 18px;
+  background: var(--drawer);
+  box-shadow: 0 0 0 1px var(--hairline), var(--panel-shadow);
 }
 .wl-layer-tx1 .wl-tx { transform: rotate(2deg); }
-.wl-layer-tx2 .wl-tx { transform: rotate(-1.5deg) scale(0.96); opacity: 0.94; /* 0.94：收入金额压在光球最浓处仍 ≥4.5:1（tests/welcome-contrast，0.92 只有 4.42） */ }
+.wl-layer-tx2 .wl-tx { transform: rotate(-1.5deg) scale(0.96); opacity: 0.94; /* 0.94：整组半透明叠在背景上，字仍 ≥4.5:1（tests/welcome-contrast） */ }
 .wl-tx-ic { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--cat-bg, var(--ink-tint)); color: var(--cat-fg, var(--ink)); }
 .wl-tx-t { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .wl-tx-name { font: 500 16px/1.25 var(--font-family); white-space: nowrap; }
@@ -2267,14 +2170,11 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .login-resend { min-height: var(--hit); display: flex; align-items: center; font: var(--font-subhead); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .login-link { min-height: var(--hit); padding: 0; font: var(--font-subhead); font-weight: 600; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  .wl-hero::before,
-  .wl-card::before { display: none; }
-  .wl-card, .wl-tx { background: var(--drawer); border: 1px solid var(--glass-edge); }
   .wl-layer-tx2 .wl-tx { opacity: 1; }
   .login-input, .login-cell { border-color: var(--ink-2); }
 }
 @media (prefers-contrast: more) {
-  .wl-card, .wl-tx { border-color: var(--ink-2); }
+  .wl-tx { box-shadow: 0 0 0 1px var(--ink-2), var(--panel-shadow); }
 }
 @media (prefers-reduced-motion: reduce) {
   .login-body { transition: none; }

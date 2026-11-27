@@ -158,11 +158,11 @@ test('CSS：验证码输入框是盖满 6 格的透明真实输入框，不是 d
   assert.doesNotMatch(r.body, /display\s*:\s*none|width\s*:\s*1px|opacity\s*:\s*0(?![.\d])/);
 });
 
-test('CSS：欢迎页光球在增加对比度 / 降低透明度时关掉，示例卡改实心', () => {
+test('CSS：欢迎页光晕与反光边在增加对比度 / 降低透明度时关掉，后面那张小卡不再半透明', () => {
   const block = (css.match(/@media \(prefers-contrast: more\), \(prefers-reduced-transparency: reduce\)\s*\{([^@]*?)\n\}/g) || []).join('\n');
-  assert.match(block, /\.wl-hero::before[^{]*\{\s*display\s*:\s*none/, '光球关掉');
-  assert.match(block, /\.wl-card,\s*\.wl-tx\s*\{[^}]*background\s*:\s*var\(--drawer\)/, '两种卡都改实心');
-  assert.match(block, /\.wl-card::before\s*\{\s*display\s*:\s*none/, '渐层反光边关掉');
+  assert.match(block, /\.wl-hero::before[^{]*\{\s*display\s*:\s*none/, '光晕关掉');
+  assert.match(block, /\.wl-card::before[^{]*\{\s*display\s*:\s*none/, '渐层反光边关掉');
+  // B 改版：示例卡（深绿）与账单小卡（白面板）本来就不透明，后备不用再改底色
   assert.match(block, /\.wl-layer-tx2 \.wl-tx\s*\{[^}]*opacity\s*:\s*1/, '后面那张不再半透明');
 });
 
@@ -220,7 +220,7 @@ test('CSS：欢迎页规则没有模糊、will-change、CSS 动画', () => {
   for (const r of rulesMatching(/\.wl-(card|amt|flow|bar|tx)/)) assert.doesNotMatch(r.body, /\d(\.\d+)?rem|var\(--font-(?!family)/, r.sel);
 });
 
-test('CSS：光球在最底层、不盖文字（欢迎页隔离层叠，光球 z-index -1），左右伸到屏幕边', () => {
+test('CSS：光晕在最底层、不盖文字（欢迎页隔离层叠，光晕 z-index -1），左右伸到屏幕边', () => {
   const [w] = rulesMatching(/^\.login-welcome$/);
   assert.match(w.body, /isolation\s*:\s*isolate/);
   const [o] = rulesMatching(/^\.wl-hero::before$/);
@@ -229,13 +229,12 @@ test('CSS：光球在最底层、不盖文字（欢迎页隔离层叠，光球 z
   assert.match(o.body, /pointer-events\s*:\s*none/);
   assert.match(o.body, /left\s*:\s*calc\(-1 \* \(24px \+ var\(--safe-left\)\)\)/);
   assert.match(o.body, /right\s*:\s*calc\(-1 \* \(24px \+ var\(--safe-right\)\)\)/);
-  // 每个光球纵向都在框里淡完（70% 半径），不会切出横边
-  const hgt = Number(o.body.match(/height\s*:\s*(\d+)px/)[1]);
-  const orbs = [...o.body.matchAll(/radial-gradient\((\d+)px (\d+)px at [\d.]+% (\d+)px, var\(--orb-\d\), transparent 70%\)/g)];
-  assert.equal(orbs.length, 4);
-  for (const [, , ry, y] of orbs) {
-    assert.ok(Number(y) - 0.7 * Number(ry) >= 0, `上缘 ${y}`);
-    assert.ok(Number(y) + 0.7 * Number(ry) <= hgt, `下缘 ${y}`);
+  // B 改版：单一深绿光晕（百分比椭圆，在框内 70% 半径淡完）
+  const glows = [...o.body.matchAll(/radial-gradient\(([\d.]+)% ([\d.]+)% at ([\d.]+)% ([\d.]+)%, var\(--card-glow\), transparent 70%\)/g)];
+  assert.equal(glows.length, 1);
+  for (const [, rx, ry, x, y] of glows) {
+    assert.ok(+y - 0.7 * +ry >= 0 && +y + 0.7 * +ry <= 100, `纵向在框内淡完 ${y}`);
+    assert.ok(+x - 0.7 * +rx >= 0 && +x + 0.7 * +rx <= 100, `横向在框内淡完 ${x}`);
   }
   // 光球挂在 .wl-hero 上：.wl-hero 本身不能建层叠上下文（否则光球会困在里面、整层画到标题上面）
   for (const r of rulesMatching(/^\.wl-hero$/)) assert.doesNotMatch(r.body, /z-index|isolation|transform|opacity|filter/, r.sel);

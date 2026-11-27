@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { css, blockAfter, light, mediaDark, attrDark } from './helpers/css-tokens.js';
 
-// v2.4 统计页晨雾玻璃：摘要卡、走势图卡、分段控件（只在统计页）、光晕、分类列
+// 统计页：摘要卡（B 改版后是深绿卡，见 green-card.test.js）、分类列
 const root = new URL('../', import.meta.url);
 const statsJs = readFileSync(new URL('js/ui/stats-view.js', root), 'utf8');
 
@@ -15,65 +15,6 @@ const selectorsWith = (block, decl) => {
   }
   return out;
 };
-
-test('glass card: same glass tokens as the balance card, no blur, own stacking context', () => {
-  const card = blockAfter(css, '\n.glass-card {');
-  assert.ok(!/backdrop-filter|filter:/.test(card));
-  assert.match(card, /linear-gradient\(155deg, var\(--card-glass-1\), var\(--card-glass-2\)\)/);
-  assert.match(card, /box-shadow:\s*var\(--stats-card-shadow\)/);
-  assert.match(card, /isolation:\s*isolate/);
-  assert.match(card, /position:\s*relative/);
-});
-
-test('glass card rim: ::before under the content (z-index -1), inside @supports mask, with a plain-border fallback', () => {
-  const sup = blockAfter(css, '\n@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {', css.indexOf('\n.glass-card {'));
-  const rim = blockAfter(sup, '.glass-card::before {');
-  assert.match(rim, /z-index:\s*-1/);
-  assert.match(rim, /pointer-events:\s*none/);
-  assert.match(rim, /var\(--card-rim-1\)/);
-  const no = blockAfter(css, '\n@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {', css.indexOf('\n.glass-card {'));
-  assert.match(no, /\.glass-card \{ border: 1px solid var\(--card-rim-2\); \}/);
-});
-
-test('stats segmented control gets the glass; the entry sheet one does not change', () => {
-  assert.match(css, /\n\.stats-body \.segmented \{[^}]*var\(--card-glass-1\)/);
-  assert.match(css, /\n\.modal-sheet \.segmented \{ background: var\(--ink-tint\); border-color: transparent; \}/);
-  const sup = blockAfter(css, '\n@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {', css.indexOf('\n.stats-body .segmented {'));
-  const rim = blockAfter(sup, '.stats-body .segmented::after {');
-  assert.match(rim, /pointer-events:\s*none/);
-  assert.match(rim, /z-index:\s*0/);   // 低于 .segment（z-index:1）的字，胶囊在 ::before
-});
-
-test('increase contrast / reduce transparency: rims off, stats glass opaque (rule comes after the glass rules)', () => {
-  const marker = '\n@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {';
-  const at = css.indexOf(marker, css.indexOf('\n.stats-body .segmented {'));
-  assert.ok(at > css.indexOf('\n.glass-card {'), 'fallback must come after the glass rules');
-  const fb = blockAfter(css, marker, css.indexOf('\n.stats-body .segmented {'));
-  const hidden = selectorsWith(fb, /display:\s*none/);
-  for (const sel of ['.glass-card::before', '.stats-body .segmented::after', '.stats-month::after']) {
-    assert.ok(hidden.includes(sel), `${sel} must be display:none in the fallback`);
-  }
-  const opaque = selectorsWith(fb, /background:\s*var\(--glass\)/);
-  for (const sel of ['.glass-card', '.stats-body .segmented']) {
-    assert.ok(opaque.includes(sel), `${sel} must be opaque in the fallback`);
-  }
-});
-
-test('stats card shadow token exists in light and both dark blocks', () => {
-  for (const t of [light, mediaDark, attrDark]) assert.ok(t['--stats-card-shadow'], 'missing --stats-card-shadow');
-});
-
-test('glow hangs on the month row, which never animates or builds a stacking context', () => {
-  assert.match(css, /\.screen\[data-screen="stats"\] \{ isolation: isolate; \}/);
-  const month = blockAfter(css, '\n.stats-month {');
-  assert.ok(!/isolation|z-index|transform|opacity|filter|contain|will-change|mask|clip-path|mix-blend-mode|perspective/.test(month));
-  assert.match(month, /position:\s*relative/);
-  for (const t of [light, mediaDark, attrDark]) {
-    assert.ok(t['--stats-glow-1'] && t['--stats-glow-2'], 'glow tokens in every theme block');
-  }
-  const fb = blockAfter(css, '\n@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {', css.indexOf('\n.stats-month::after {'));
-  assert.match(fb, /\.stats-month::after/);
-});
 
 test('summary: three columns; long amounts / narrow screens switch to three rows (narrow rule last)', () => {
   assert.match(blockAfter(css, '\n.stats-summary {'), /grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/);
@@ -98,14 +39,6 @@ test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from 
   for (const k of ['income', 'expense', 'balance']) {
     assert.match(statsJs, new RegExp(`cell\\('[^']+', ${k}El, ${k}Sr\\)`), `${k} cell wires el + sr`);
   }
-});
-
-test('month row stays outside .stats-body (glow must not ride on the animated body)', () => {
-  assert.match(statsJs, /const switcher = h\('div', \{ class: 'stats-month' \}/);
-  const body = /const body = h\('div', \{ class: 'stats-body' \}, ([^)]*)\)/.exec(statsJs);
-  assert.ok(body, 'stats-body construction');
-  assert.ok(!/\bswitcher\b/.test(body[1]), 'switcher must not be a child of .stats-body');
-  assert.match(statsJs, /root\.replaceChildren\(switcher, body\)/);
 });
 
 test('category bar: gradient lives on .stats-bar-fill (old [data-icon] override gone); ::before never inherits', () => {

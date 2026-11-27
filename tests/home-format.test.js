@@ -57,18 +57,6 @@ test('rowIconAttr：有效分类 → iconKey；已删除 / 未分类 → null', 
   assert.equal(rowIconAttr(undefined), null);
 });
 
-test('CSS：增加对比度 / 降低透明度时拿掉光球与反光边，卡片改不透明，且写在结余卡规则之后', async () => {
-  const { readFileSync } = await import('node:fs');
-  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
-  const marker = '@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {\n  .home-card-wrap::before';
-  const i = css.indexOf(marker);
-  assert.ok(i >= 0);
-  const block = css.slice(i, css.indexOf('\n}', i));
-  assert.match(block, /\.home-card-wrap::before,\s*\.home-card::before\s*\{\s*display:\s*none;/);
-  assert.match(block, /\.home-card \{ background: var\(--glass\); border: 1px solid var\(--glass-edge\); \}/);
-  assert.ok(i > css.indexOf('\n.home-card {'), '后备规则要在 .home-card 之后才压得过');
-});
-
 test('CSS：窄屏缩级写在同优先级的基础规则之后（靠文件顺序压过）', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
@@ -158,15 +146,18 @@ test('cardView 隐藏：数字、负号、缩级都不留，读屏读「已隐�
   const over = cardView({ balance: -500, income: 100, expense: 600 }, true);
   assert.deepEqual(none.meter, big.meter);
   assert.deepEqual(over.meter, big.meter);
-  assert.deepEqual(big.meter, { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false });
+  assert.deepEqual(big.meter, { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false, noteShown: false });
 });
 
 test('cardView 显示：比例线与原本相同（线条读出时文字不重复读）', () => {
   assert.deepEqual(cardView({ balance: 3200, income: 10000, expense: 6800 }, false).meter,
-    { barHidden: false, pct: 68, label: '已花掉收入的 68%', note: '已花掉收入的 68%', noteRead: false });
+    { barHidden: false, pct: 68, label: '已花掉收入的 68%', note: '已花掉收入的 68%', noteRead: false, noteShown: false });
   assert.deepEqual(cardView({ balance: 0, income: 0, expense: 0 }, false).meter,
-    { barHidden: true, pct: 0, label: '本月还没有收入', note: '本月还没有收入', noteRead: true });
-  assert.equal(cardView({ balance: -500, income: 100, expense: 600 }, false).meter.note, '支出已超过收入');
+    { barHidden: true, pct: 0, label: '本月还没有收入', note: '本月还没有收入', noteRead: true, noteShown: false });
+  const over = cardView({ balance: -500, income: 100, expense: 600 }, false).meter;
+  assert.equal(over.note, '支出已超过收入');
+  // B 改版（用户 2026-11-27）：比例文字平常不显示，只有超支时在卡片上显示
+  assert.equal(over.noteShown, true);
 });
 
 test('eyeButtonState：标签说「按了会怎样」', () => {
@@ -201,10 +192,12 @@ test('CSS/JS：比例线填充固定 100% 宽、只用 transform 滑入，左侧
   assert.match(js, /slideX\(/);
 });
 
-test('CSS：收入 / 支出滚轮的格高等于原本的行高', async () => {
+test('CSS：收入 / 支出滚轮的格高等于那一行的行高（卡片高度不会因滚动改变）', async () => {
   const { readFileSync } = await import('node:fs');
-  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8');
-  assert.match(css, /\.home-flow-v \.roll \{[^}]*--roll-h:\s*1\.294em/);
+  const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const v = css.slice(css.indexOf('\n.home-flow-v {'));
+  const lh = v.slice(0, v.indexOf('}')).match(/font:\s*\d+\s+[^/]+\/([\d.]+)\s/)[1];
+  assert.match(css, new RegExp(`\\.home-flow-v \\.roll \\{[^}]*--roll-h:\\s*${lh.replace('.', '\\.')}em`));
 });
 
 test('paintCardEarly：没有浮层且有待画变动才先画卡片', () => {
@@ -260,7 +253,7 @@ test('CSS：飘字在标签那一行（眼睛左边），不压在结余数字�
   const css = readFileSync(new URL('../css/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
   const f = css.slice(css.indexOf('\n.home-card > .home-float {'));
   const body = f.slice(0, f.indexOf('}'));
-  assert.match(body, /top:\s*22px/);
+  assert.match(body, /top:\s*20px/);   // B 改版：卡片内距 20px，和标签同一行
   assert.match(body, /right:\s*60px/);
 });
 
