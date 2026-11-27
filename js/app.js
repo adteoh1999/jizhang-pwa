@@ -18,7 +18,7 @@ import { detectTelegram, closeMiniApp } from './telegram.js';
 import { installTgChrome, setPageBack } from './tg-chrome.js';
 import { tgLogin, tgLink } from './tg-api.js';
 import { runTgBoot, runTgCheck, checkDue, TG_TEXT } from './tg-boot.js';
-import { runTgGone } from './ui/tg-gone.js';
+import { runTgGone, TG_GONE_EXPORT_FAIL } from './ui/tg-gone.js';
 import { renderFatal, renderDbError, renderLoading } from './ui/fatal.js';
 import { HIDE_KEY } from './ui/home.js';
 import { announceLedgerReset } from './ledger-channel.js';
@@ -28,8 +28,8 @@ import { initAnnouncer } from './ui/announce.js';
 import { onUpdateAvailable, markUpdateAvailable, applyUpdate } from './update.js';
 import { createSync, ensureClaimed, createClaimRunner } from './sync.js';
 import { askSyncStart } from './ui/sync-prompt.js';
-import { canShareCsv } from './ui/export-csv.js';
-import { messageDialog, choiceDialog } from './ui/dialogs.js';
+import { canShareCsv, createExporter } from './ui/export-csv.js';
+import { messageDialog, choiceDialog, confirmDialog } from './ui/dialogs.js';
 import { APP_VERSION } from './version.js';
 import { animate, fade, cancelAnims, reducedMotion, clipSupported, DUR, EASE_OUT } from './ui/motion.js';
 
@@ -67,6 +67,8 @@ function tgGone(store, tg, stop = () => {}) {
     choice: choiceDialog, message: messageDialog,
     closeMiniApp: () => closeMiniApp(tg.webApp), announceReset: announceLedgerReset,
     onClosed: () => renderClosed(tg),
+    // 3f（审核 M-1）：能分享 CSV 才给「导出」；分享失败叫人按「先关闭」；有没上传的清除前再问
+    exportable: canShareCsv(), exportCsv: createExporter(store, { tgFallback: TG_GONE_EXPORT_FAIL }), confirm: confirmDialog,
   });
 }
 

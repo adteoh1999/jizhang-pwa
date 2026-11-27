@@ -2,7 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { runTgGone, TG_GONE_TEXT } from '../js/ui/tg-gone.js';
+import { runTgGone, TG_GONE_TEXT, TG_GONE_EXPORT_FAIL } from '../js/ui/tg-gone.js';
+import { LOGIN_TEXT } from '../js/ui/login.js';
 import { createStore } from '../js/store.js';
 import { createMemoryDb } from './helpers/memory-db.js';
 
@@ -14,10 +15,11 @@ async function makeStore({ owner = 'u-A', txs = 0 } = {}) {
   return store;
 }
 
-function goneDeps(store, answers, { wipeOk = [true] } = {}) {
-  const log = { choices: [], stops: 0, wipes: 0, reloads: 0, closed: 0, resets: 0, messages: [], exports: 0 };
+function goneDeps(store, answers, { wipeOk = [true], exportable, confirms = [true] } = {}) {
+  const log = { choices: [], stops: 0, wipes: 0, reloads: 0, closed: 0, resets: 0, messages: [], exports: 0, confirms: [] };
   let a = 0;
   let w = 0;
+  let k = 0;
   return {
     log,
     deps: {
@@ -31,6 +33,8 @@ function goneDeps(store, answers, { wipeOk = [true] } = {}) {
       closeMiniApp: () => { log.closed += 1; },
       announceReset: () => { log.resets += 1; },
       onClosed: () => { log.onClosed = (log.onClosed || 0) + 1; },
+      confirm: async (o) => { log.confirms.push(o); return confirms[Math.min(k++, confirms.length - 1)]; },
+      ...(exportable === undefined ? {} : { exportable }),
     },
   };
 }
@@ -84,6 +88,66 @@ test('runTgGone：Esc 关掉（null）当「先关闭」', async () => {
   const { deps, log } = goneDeps(store, [null]);
   assert.equal(await runTgGone(deps), 'closed');
   assert.equal(log.closed, 1);
+});
+
+// ---------------- 3f：导出 CSV（审核 M-1）、清除前再问（用户 2026-11-28） ----------------
+
+test('3f runTgGone：有没上传的账＋能分享 → 导出 CSV（不关窗）→ 清除（红）→ 先关闭（焦点）；提示改成可先导出', async () => {
+  const store = await makeStore({ owner: null, txs: 2 });
+  const { deps, log } = goneDeps(store, ['close'], { exportable: true });
+  await runTgGone(deps);
+  const c = log.choices[0];
+  assert.deepEqual(c.buttons.map((b) => b.label), ['导出 CSV', '清除', '先关闭']);
+  assert.equal(c.buttons[0].keepOpen, true);
+  assert.equal(c.buttons[0].onClick, deps.exportCsv);
+  assert.equal(c.buttons[1].destructive, true);
+  assert.equal(c.buttons[2].focus, true);
+  assert.equal(c.buttons.filter((b) => b.focus).length, 1);
+  assert.equal(c.message, '这台设备上的账本会清除。还有 2 笔没上传，清除后会消失。想留着的话，可以先导出 CSV，或按「先关闭」。');
+});
+
+test('3f runTgGone：能分享但没有没上传的账（只有分类没上传或全上传）→ 不出现导出、顺序照旧', async () => {
+  for (const [owner, txs] of [['u-A', 0], [null, 0]]) {
+    const store = await makeStore({ owner, txs });
+    const { deps, log } = goneDeps(store, ['close'], { exportable: true });
+    await runTgGone(deps);
+    assert.deepEqual(log.choices[0].buttons.map((b) => b.label), ['先关闭', '清除'], `owner=${owner}`);
+  }
+});
+
+test('3f runTgGone：有没上传的账 → 按清除先再问一次（沿用换账号那句）；取消回对话框，再按清除＋确定才清', async () => {
+  const store = await makeStore({ owner: null, txs: 1 });
+  const { deps, log } = goneDeps(store, ['clear', 'clear'], { exportable: true, confirms: [false, true] });
+  assert.equal(await runTgGone(deps), 'cleared');
+  assert.equal(log.confirms.length, 2);
+  const q = log.confirms[0];
+  assert.equal(q.title, LOGIN_TEXT.clearTitle);
+  assert.equal(q.message, LOGIN_TEXT.clearMessage);
+  assert.equal(q.confirmLabel, LOGIN_TEXT.clearConfirm);
+  assert.equal(q.destructive, true);
+  assert.equal(log.choices.length, 2, '取消后回到对话框');
+  assert.equal(log.wipes, 1);
+});
+
+test('3f runTgGone：都上传了 → 按清除直接清、不再问', async () => {
+  const store = await makeStore();
+  const { deps, log } = goneDeps(store, ['clear'], { exportable: true });
+  assert.equal(await runTgGone(deps), 'cleared');
+  assert.equal(log.confirms.length, 0);
+});
+
+test('3f TG_GONE_EXPORT_FAIL：分享失败提示叫人按「先关闭」（这个对话框没有「先同步」）；app.js 接上导出与再问', () => {
+  assert.deepEqual({ ...TG_GONE_EXPORT_FAIL }, { title: '这里导出不了', message: '想留着就先按「先关闭」。' });
+  assert.equal(TG_GONE_TEXT.exportLabel, '导出 CSV');
+  const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  const start = src.indexOf('function tgGone(store, tg, stop = () => {}) {');
+  assert.ok(start >= 0, '找到 tgGone');
+  const end = src.indexOf('\n}\n', start);
+  assert.ok(end > start);
+  const body = src.slice(start, end);
+  assert.match(body, /exportable: canShareCsv\(\)/);
+  assert.match(body, /exportCsv: createExporter\(store, \{ tgFallback: TG_GONE_EXPORT_FAIL \}\)/);
+  assert.match(body, /confirm: confirmDialog/);
 });
 
 // ---------------- 全屏画面（js/ui/fatal.js） ----------------
