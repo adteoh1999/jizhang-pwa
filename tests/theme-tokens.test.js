@@ -249,3 +249,52 @@ test('entry-sheet：新增与编辑都标记「本机刚存」，没存成就清
   const iCatch = save.indexOf('catch (e)');
   assert.ok(iCatch > iSave && save.indexOf('unmarkSaved(id)', iCatch) > iCatch, '没存成要清掉');
 });
+
+// ---- T1 墨绿小岛导航栏（B 改版 2026-11-27） ----
+const tabRules = () => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].trim(), body: m[2] })).filter((r) => /\.tab(bar|-ic)/.test(r.sel));
+
+test('导航岛：置中 272px、离底部避开安全区、墨绿底＋原本的模糊、薄荷胶囊', () => {
+  const bar = blockAfter(css, '\n.tabbar {');
+  assert.match(bar, /margin-inline:\s*auto/);
+  assert.match(bar, /width:\s*min\(272px, calc\(100% - 32px\)\)/);
+  assert.match(bar, /bottom:\s*calc\(var\(--tabbar-gap\) \+ var\(--safe-bottom\)\)/);
+  assert.match(bar, /background:\s*var\(--tab-island\)/);
+  assert.match(bar, /backdrop-filter:\s*saturate\(180%\) blur\(20px\)/);
+  assert.match(blockAfter(css, '\n.tabbar-pill {'), /background:\s*var\(--tab-pill\)/);
+  assert.match(css, /--tabbar-h:\s*62px/);
+  for (const t of [light, mediaDark, attrDark]) {
+    for (const n of ['--tab-island', '--tab-pill', '--tab-on', '--tab-off', '--tab-shadow']) assert.ok(t[n], `missing ${n}`);
+    assert.ok(!('--tab-glass' in t), '--tab-glass 拿掉');
+  }
+  assert.ok(!css.includes('--tab-glass'));
+});
+
+test('导航岛字色：选中 --tab-on、未选 --tab-off；焦点框在深色岛与薄荷胶囊上都看得见', () => {
+  assert.match(blockAfter(css, '\n.tabbar-item {'), /color:\s*var\(--tab-off\)/);
+  const body = (sel) => tabRules().filter((r) => r.sel === sel).map((r) => r.body).join('\n');
+  assert.match(body('.tabbar-item[aria-selected="true"]'), /color:\s*var\(--tab-on\)/);
+  assert.match(body('.tabbar-item:focus-visible'), /outline-color:\s*var\(--tab-off\)/);
+  assert.match(body('.tabbar-item[aria-selected="true"]:focus-visible'), /outline-color:\s*var\(--tab-on\)/);
+});
+
+test('导航图示：线条／实心只切 opacity；没有 CSS stroke-width 盖掉 SVG 的 1.8；减弱动态一起关', () => {
+  for (const r of tabRules()) assert.ok(!/stroke-width/.test(r.body), `${r.sel} 不能设 stroke-width`);
+  const solid = tabRules().find((r) => r.sel === '.tab-ic-solid');
+  assert.ok(solid, '.tab-ic-solid');
+  assert.match(solid.body, /opacity:\s*0/);
+  const groups = tabRules().find((r) => r.sel.includes('.tab-ic-line') && /transition/.test(r.body));
+  assert.ok(groups, 'tab-ic transition');
+  assert.match(groups.body, /transition:\s*opacity 0\.18s ease/);
+  assert.ok(!/transform/.test(groups.body.match(/transition:[^;]*/)[0]), '图示切换只动 opacity');
+  const on = tabRules().filter((r) => r.sel.startsWith('.tabbar-item[aria-selected="true"] .tab-ic'));
+  assert.ok(on.some((r) => /\.tab-ic-line/.test(r.sel) && /opacity:\s*0/.test(r.body)), '选中时线条版藏');
+  assert.ok(on.some((r) => /\.tab-ic-solid/.test(r.sel) && /opacity:\s*1/.test(r.body)), '选中时实心版出');
+  const rm = blockAfter(css, '@media (prefers-reduced-motion: reduce) {', css.indexOf('\n.tabbar-pill {'));
+  assert.match(rm, /\.tab-ic-line/);
+  assert.match(rm, /\.tab-ic-solid/);
+});
+
+test('增加对比度／降低透明度：导航岛改不透明 #0E2A20（三个后备选择器都有）', () => {
+  const hits = [...css.matchAll(/--tab-island:\s*#0E2A20;/g)];
+  assert.equal(hits.length, 3);
+});

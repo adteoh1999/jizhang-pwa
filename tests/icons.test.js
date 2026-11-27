@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ICON_NAMES, ICON_DATA, CATEGORY_ICON_CHOICES, ICON_LABELS, iconKey } from '../js/ui/icons.js';
+import { ICON_NAMES, ICON_DATA, CATEGORY_ICON_CHOICES, ICON_LABELS, iconKey, TAB_ICON_DATA } from '../js/ui/icons.js';
 
 const REQUIRED = [
   'food', 'transport', 'shopping', 'bills', 'fun', 'other',
   'salary', 'bonus', 'side', 'other_income',
   'pet', 'health', 'home', 'gift', 'travel', 'education', 'coffee', 'phone',
-  'house', 'chart', 'gear', 'tab-home', 'tab-stats', 'tab-settings', 'plus', 'chevron-left', 'chevron-right', 'trash', 'share', 'square-arrow-up', 'eye', 'eye-off', 'check',
+  'house', 'chart', 'gear', 'plus', 'chevron-left', 'chevron-right', 'trash', 'share', 'square-arrow-up', 'eye', 'eye-off', 'check',
 ];
 
 test('all required icon names exist', () => {
@@ -106,4 +106,59 @@ test('iconKey keeps coloured names and resolves unknown names to other', () => {
 
 test('iconKey maps non-category glyph names to other colours', () => {
   assert.equal(iconKey('house'), 'other');
+});
+
+// ---- 导航栏图示（B 改版 2026-11-27）：线条版（没选中）＋实心版（选中），只切 opacity ----
+const TAB_KEYS = ['tab-home', 'tab-stats', 'tab-settings'];
+const PATH_RE = /^[MmLlHhVvCcSsQqTtAaZz0-9\s.,-]+$/;
+
+test('TAB_ICON_DATA：三个导航图示，各有线条版与实心版，路径合法、被冻结；旧的单版图示拿掉', () => {
+  assert.deepEqual(Object.keys(TAB_ICON_DATA).sort(), [...TAB_KEYS].sort());
+  assert.ok(Object.isFrozen(TAB_ICON_DATA));
+  for (const k of TAB_KEYS) {
+    const d = TAB_ICON_DATA[k];
+    assert.ok(Object.isFrozen(d), k);
+    assert.ok(d.line.length > 0, `${k} line`);
+    assert.ok(d.solid.length + d.solidFlat.length > 0, `${k} solid`);
+    for (const p of [...d.line, ...d.solid, ...d.solidFlat]) {
+      assert.match(p, PATH_RE, k);
+      assert.match(p.trim(), /^[Mm]/, k);
+    }
+    assert.ok(!ICON_NAMES.includes(k), `${k} 不再放在单版图示里`);
+  }
+});
+
+test('tabIcon()：24 格、线宽 1.8、两组 <g>（线条／实心）；实心「只填色」的路径不描边', async () => {
+  const { tabIcon } = await import('../js/ui/icons.js');
+  const saved = globalThis.document;
+  globalThis.document = fakeDocument();
+  try {
+    const svg = tabIcon('tab-stats');
+    assert.equal(svg.attrs.viewBox, '0 0 24 24');
+    assert.equal(svg.attrs.width, '24');
+    assert.equal(svg.attrs['stroke-width'], '1.8');
+    assert.equal(svg.attrs.fill, 'none');
+    assert.equal(svg.attrs['aria-hidden'], 'true');
+    const [line, solid] = svg.children;
+    assert.equal(svg.children.length, 2);
+    assert.equal(line.tag, 'g');
+    assert.equal(line.attrs.class, 'tab-ic-line');
+    assert.equal(solid.attrs.class, 'tab-ic-solid');
+    assert.equal(line.children.length, TAB_ICON_DATA['tab-stats'].line.length);
+    for (const p of solid.children) {
+      assert.equal(p.attrs.fill, 'currentColor');
+      assert.equal(p.attrs['fill-rule'], 'evenodd');
+      assert.equal(p.attrs.stroke, 'none');   // 圆饼实心版只填色（自己算好外缘，留出缝）
+    }
+    const home = tabIcon('tab-home');
+    for (const p of home.children[1].children) {
+      assert.equal(p.attrs.fill, 'currentColor');
+      assert.equal(p.attrs.stroke, undefined);   // 房子实心版：描边＋填色（继承 svg 的 stroke，转角才圆）
+    }
+    // 未知名称退回首页图示
+    assert.equal(tabIcon('nope').children[0].children[0].attrs.d, TAB_ICON_DATA['tab-home'].line[0]);
+    assert.equal(tabIcon('toString').children[0].children[0].attrs.d, TAB_ICON_DATA['tab-home'].line[0]);
+  } finally {
+    if (saved === undefined) delete globalThis.document; else globalThis.document = saved;
+  }
 });

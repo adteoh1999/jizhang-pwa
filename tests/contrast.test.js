@@ -5,7 +5,7 @@ import { light, attrDark } from './helpers/css-tokens.js';
 // 不透明底：[前景 token, 背景 token, 最低值]
 const PAIRS = [
   ['--ink-2', '--drawer', 4.5], ['--income', '--drawer', 4.5],
-  ['--tab-off', '--drawer', 3], ['--btn-fg', '--btn-bg', 4.5]   /* 2026-11-27 用户同意：白字压 #098354＝4.79，门槛 7→4.5（WCAG AA） */, ['--red-text', '--drawer', 4.5],
+['--btn-fg', '--btn-bg', 4.5]   /* 2026-11-27 用户同意：白字压 #098354＝4.79，门槛 7→4.5（WCAG AA） */, ['--red-text', '--drawer', 4.5],
   // 直接压在整页晨雾上的次要字（统计页、设置页）：渐变的四个色都要过
   ['--ink-2', '--sky-top', 4.5], ['--ink-2', '--sky-mid', 4.5],
   ['--ink-2', '--sky-low', 4.5], ['--ink-2', '--sky-bottom', 4.5],
@@ -14,6 +14,8 @@ const PAIRS = [
   ['--login-error', '--sky-low', 4.5], ['--login-error', '--sky-bottom', 4.5],
   // B 改版（2026-11-27）中性元件：「储存」深绿字、单色分类图示、统计条（非文字 ≥3）
   ['--accent-text', '--drawer', 4.5], ['--icon-ink', '--drawer', 3], ['--bar', '--drawer', 3],
+  // T1 墨绿小岛：选中深色字压薄荷胶囊
+  ['--tab-on', '--tab-pill', 4.5],
 ];
 
 // 半透明叠层：[前景, [最底的不透明底, 往上叠的半透明层…], 最低值]
@@ -21,7 +23,9 @@ const PAIRS = [
 const GREY_PILL = [['--ink-2', ['--drawer', '--ink-tint'], 4.5]];
 // 登录页（2d）：输入框（--field）压在整页背景上，框内文字 ink、次要字 ink-2
 // 卡后光晕（--card-glow）压在背景上：上面若有页面字（月份等）也要 ≥4.5
+// T1 墨绿小岛：未选字（10.5px）压在「白抽屉＋半透明墨绿岛」上（岛下最亮的情况），用户 2026-11-27 要求达 4.5
 const STACKS = GREY_PILL
+  .concat([['--tab-off', ['--drawer', '--tab-island'], 4.5]])
   .concat(['--sky-top', '--sky-mid', '--sky-low', '--sky-bottom'].flatMap((sky) => [
     ['--ink', [sky, '--field'], 4.5], ['--ink-2', [sky, '--field'], 4.5],
     ['--ink-2', [sky, '--card-glow'], 4.5],

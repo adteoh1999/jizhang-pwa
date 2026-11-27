@@ -84,8 +84,12 @@
   --btn2-bg: #FFFFFF;
   --btn2-edge: rgba(10, 12, 18, 0.08);
   --accent-text: #098354;
-  --tab-glass: rgba(255, 255, 255, 0.72);
-  --tab-off: rgba(10, 12, 18, 0.6);
+  /* T1 墨绿小岛导航栏（浅深同一个岛）：未选字 .66 是为了压在「白抽屉＋岛」上仍 ≥4.5（用户 2026-11-27 要求） */
+  --tab-island: rgba(9, 34, 25, 0.84);
+  --tab-pill: #C4E6D6;
+  --tab-on: #062219;
+  --tab-off: rgba(232, 242, 236, 0.66);
+  --tab-shadow: inset 0 0 0 1px rgba(196, 230, 214, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 6px rgba(6, 35, 26, 0.18), 0 18px 36px -14px rgba(6, 35, 26, 0.55);
 
   --fill: rgba(120, 120, 128, 0.2);
   --ink-tint: rgba(10, 12, 18, 0.08);
@@ -130,7 +134,8 @@
     --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
     --seg-thumb: #2C3330; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
-    --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
+    --tab-island: rgba(16, 44, 34, 0.86); --tab-pill: #C4E6D6; --tab-on: #062219; --tab-off: rgba(232, 242, 236, 0.66);
+    --tab-shadow: inset 0 0 0 1px rgba(196, 230, 214, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 36px -14px rgba(0, 0, 0, 0.8);
     --fill: rgba(120, 120, 128, 0.36);
     --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
     --press-bg: #222926; --separator: rgba(255, 255, 255, 0.16);
@@ -162,7 +167,8 @@
   --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
   --seg-thumb: #2C3330; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
-  --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
+  --tab-island: rgba(16, 44, 34, 0.86); --tab-pill: #C4E6D6; --tab-on: #062219; --tab-off: rgba(232, 242, 236, 0.66);
+  --tab-shadow: inset 0 0 0 1px rgba(196, 230, 214, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 36px -14px rgba(0, 0, 0, 0.8);
   --fill: rgba(120, 120, 128, 0.36);
   --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
   --press-bg: #222926; --separator: rgba(255, 255, 255, 0.16);
@@ -188,7 +194,7 @@
 
   --radius-card: 12px;
   --hit: 44px;          /* 最小点击区 44x44 pt */
-  --tabbar-h: 68px;     /* 胶囊标签栏高度 */
+  --tabbar-h: 62px;     /* T1 墨绿小岛高度 */
   --tabbar-gap: 12px;   /* 胶囊下方间距 */
   --navbar-h: 44px;
   --margin: 16px;       /* iPhone 版面边距 */
@@ -286,11 +292,11 @@ button:disabled { cursor: default; }
 }
 /* 增加对比度 / 降低透明度：各种材质改不透明（结余卡的光球与玻璃在 §15 另外处理） */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #F9F9F7; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
-  :root[data-theme="dark"] { --glass: #171C1A; --tab-glass: #171C1A; --bar-material: #0D1412; --alert-material: #171C1A; --sheet-material: #171C1A; }
+  :root { --glass: #FFFFFF; --tab-island: #0E2A20; --bar-material: #F9F9F7; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
+  :root[data-theme="dark"] { --glass: #171C1A; --tab-island: #0E2A20; --bar-material: #0D1412; --alert-material: #171C1A; --sheet-material: #171C1A; }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark), (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --glass: #171C1A; --tab-glass: #171C1A; --bar-material: #0D1412; --alert-material: #171C1A; --sheet-material: #171C1A; }
+  :root:not([data-theme="light"]) { --glass: #171C1A; --tab-island: #0E2A20; --bar-material: #0D1412; --alert-material: #171C1A; --sheet-material: #171C1A; }
 }
 
 h1, h2, p { margin: 0; }
@@ -368,33 +374,36 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   white-space: nowrap;
 }
 
-/* ---------- 5. Tab Bar ---------- */
+/* ---------- 5. Tab Bar：T1 墨绿小岛（B 改版 2026-11-27） ----------
+   置中的深墨绿玻璃岛，浅深色同一个岛；选中＝薄荷胶囊、深色字形与字。
+   岛只有 272px 宽、置中，所以不再用左右安全区（横屏时离边很远，影响可忽略）；底部照旧避开横条（--safe-bottom，含 Telegram）。
+   模糊仍是原本这一处（全 App 4 处，测试锁）。 */
 .tabbar {
   position: fixed;
-  left: calc(max(16px, var(--safe-left)));
-  right: calc(max(16px, var(--safe-right)));
-  max-width: 520px;   /* iPad / 桌面不拉满 */
+  left: 0;
+  right: 0;
+  width: min(272px, calc(100% - 32px));
   margin-inline: auto;
   bottom: calc(var(--tabbar-gap) + var(--safe-bottom));
   z-index: 50;
   display: grid;
   grid-template-columns: repeat(var(--n, 3), 1fr);
   height: var(--tabbar-h);
-  padding: 6px;
-  border-radius: 34px;
-  background: var(--tab-glass);
+  padding: 5px;
+  border-radius: 31px;
+  background: var(--tab-island);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
-  border: 1px solid var(--hairline);
-  box-shadow: 0 10px 30px -12px var(--glass-shade);
+  box-shadow: var(--tab-shadow);
 }
-/* 黑色胶囊随选中项滑动，带一点回弹 */
+/* 薄荷胶囊随选中项滑动，带一点回弹 */
 .tabbar-pill {
   position: absolute;
-  top: 6px; bottom: 6px; left: 6px;
-  width: calc((100% - 12px) / var(--n, 3));
-  border-radius: 28px;
-  background: var(--btn-bg);
+  top: 5px; bottom: 5px; left: 5px;
+  width: calc((100% - 10px) / var(--n, 3));
+  border-radius: 26px;
+  background: var(--tab-pill);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
   transform: translateX(calc(var(--i, 0) * 100%));
   transition: transform 0.25s var(--spring);
 }
@@ -406,24 +415,30 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 3px;
-  border-radius: 28px;
+  gap: 2px;
+  border-radius: 26px;
   color: var(--tab-off);
   transition: color 0.2s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.tabbar-item svg { stroke-width: 2.3; transition: transform 0.2s var(--spring); }
-.tabbar-item[aria-selected="true"] { color: var(--btn-fg); }
+.tabbar-item svg { transition: transform 0.2s var(--spring); }   /* 线宽由 SVG 自己的 1.8 决定，这里不能设 stroke-width */
+.tabbar-item[aria-selected="true"] { color: var(--tab-on); }
 .tabbar-item[aria-selected="true"] svg { transform: scale(1.06); }
 .tabbar-item:active svg { transform: scale(0.88); }
-.tabbar-item:focus-visible { outline-offset: -4px; }
-.tabbar-item[aria-selected="true"]:focus-visible { outline-color: var(--btn-fg); }
+.tabbar-item:focus-visible { outline-offset: -4px; outline-color: var(--tab-off); }   /* 全域焦点框是 --ink，压在深色岛上看不见 */
+.tabbar-item[aria-selected="true"]:focus-visible { outline-color: var(--tab-on); }
+/* 图示：没选中＝线条版、选中＝实心版，只切 opacity */
+.tab-ic-line,
+.tab-ic-solid { transition: opacity 0.18s ease; }
+.tab-ic-solid { opacity: 0; }
+.tabbar-item[aria-selected="true"] .tab-ic-line { opacity: 0; }
+.tabbar-item[aria-selected="true"] .tab-ic-solid { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
-  .tabbar-pill, .tabbar-item, .tabbar-item svg { transition: none; }
+  .tabbar-pill, .tabbar-item, .tabbar-item svg, .tab-ic-line, .tab-ic-solid { transition: none; }
 }
 
 .tabbar-label {
-  font-size: 11px;      /* Tab Bar 标签固定小字级，不跟 Dynamic Type 放大，避免撑破 */
+  font-size: 10.5px;    /* Tab Bar 标签固定小字级，不跟 Dynamic Type 放大，避免撑破 */
   font-weight: 600;
   line-height: 11px;
 }

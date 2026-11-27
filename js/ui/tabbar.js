@@ -1,6 +1,6 @@
 // 底部 Tab Bar：mountTabBar(root, { tabs: [{id,label,icon}], onSelect(id) })
 import { h } from './dom.js';
-import { icon } from './icons.js';
+import { tabIcon } from './icons.js';
 
 /** 胶囊停靠的位置（0 起算）；未知 id 退回 0。 */
 export function pillIndex(tabs, id) {
@@ -16,7 +16,7 @@ export function mountTabBar(root, { tabs, onSelect, selected = tabs[0].id }) {
         type: 'button', class: 'tabbar-item', role: 'tab', 'data-tab': t.id,
         id: `tab-${t.id}`, 'aria-controls': `screen-${t.id}`, 'aria-label': t.label,
         on: { click: () => onSelect(t.id) },
-      }, icon(t.icon, 26), h('span', { class: 'tabbar-label', 'aria-hidden': 'true' }, t.label));
+      }, tabIcon(t.icon), h('span', { class: 'tabbar-label', 'aria-hidden': 'true' }, t.label));
       buttons.set(t.id, btn);
       return btn;
     })]);
