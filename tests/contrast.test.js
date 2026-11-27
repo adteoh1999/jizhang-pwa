@@ -12,6 +12,8 @@ const PAIRS = [
   // 登录页（2d）错误字直接压在晨雾上
   ['--login-error', '--sky-top', 4.5], ['--login-error', '--sky-mid', 4.5],
   ['--login-error', '--sky-low', 4.5], ['--login-error', '--sky-bottom', 4.5],
+  // B 改版（2026-11-27）中性元件：「储存」深绿字、单色分类图示、统计条（非文字 ≥3）
+  ['--accent-text', '--drawer', 4.5], ['--icon-ink', '--drawer', 3], ['--bar', '--drawer', 3],
 ];
 
 // 半透明叠层：[前景, [最底的不透明底, 往上叠的半透明层…], 最低值]

@@ -41,40 +41,11 @@ test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from 
   }
 });
 
-test('category bar: gradient lives on .stats-bar-fill (old [data-icon] override gone); ::before never inherits', () => {
-  assert.ok(!css.includes('.stats-bar-fill[data-icon]'), 'old override would hide the gradient');
-  const fill = blockAfter(css, '\n.stats-bar-fill {');
-  assert.match(fill, /linear-gradient\(90deg, var\(--bar-fade\) calc\(100% - var\(--bar-w, 100%\)\), transparent 100%\), var\(--cat-fg, var\(--secondary-label\)\)/);
-  const before = blockAfter(css, '\n.stats-bar-fill::before {');
-  assert.ok(!/inherit/.test(before));
-  assert.match(before, /var\(--bar-fade\)/);   // 弹过头露出的是最淡色，不是最深色
-  assert.match(blockAfter(css, '\n.stats-bar {'), /height:\s*8px/);
-});
-
-test('category tokens: --bar-fade dark equals the drawer colour at .5; --stats-track in every theme block', () => {
-  for (const t of [light, mediaDark, attrDark]) {
-    assert.ok(t['--bar-fade'] && t['--stats-track'], 'missing tokens');
-  }
-  assert.equal(attrDark['--drawer'], '#171C1A');
-  assert.equal(attrDark['--bar-fade'], 'rgba(23, 28, 26, 0.5)');
-});
-
-test('category rows JS: data-icon on the row, bar width shared with slideX, RM split + sr-only', () => {
+test('category rows JS: data-icon on the row, bar width shared with slideX, RM split + sr-only（单色化后 data-icon 留着无样式）', () => {
   assert.match(statsJs, /slideX\(r\.ratio, 6\)/);
   assert.match(statsJs, /barWidth\(r\.ratio, 6\)/);
   assert.match(statsJs, /'--bar-w'/);
   assert.match(statsJs, /class: 'stats-row', 'data-icon': iconAttr/);
   assert.match(statsJs, /class: 'stats-row-pct'/);
   assert.match(statsJs, /class: 'stats-row-amount', 'aria-hidden': 'true'[^\n]*\n\s*h\('span', \{ class: 'sr-only' \}, formatRM\(/);
-});
-
-test('pill colours carry grey fallbacks; high contrast turns the bar solid', () => {
-  const pill = blockAfter(css, '\n.stats-row-pct {');
-  assert.match(pill, /background:\s*var\(--cat-bg, var\(--ink-tint\)\)/);
-  assert.match(pill, /color:\s*var\(--cat-ink, var\(--ink-2\)\)/);
-  const fb = blockAfter(css, '\n@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {', css.indexOf('\n.stats-bar-fill::before {'));
-  const solid = selectorsWith(fb, /background:\s*var\(--cat-fg, var\(--secondary-label\)\)/);
-  for (const sel of ['.stats-bar-fill', '.stats-bar-fill::before']) {
-    assert.ok(solid.includes(sel), `${sel} must be solid in high contrast`);
-  }
 });

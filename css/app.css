@@ -39,7 +39,6 @@
   --ink-3: rgba(10, 12, 18, 0.32);
   --glass: rgba(255, 255, 255, 0.52);
   --glass-edge: rgba(20, 60, 45, 0.12);   /* 近白底上要用淡灰绿边，白边会消失 */
-  --group-edge: rgba(20, 60, 45, 0.07);   /* 设置页等白色分组卡的外框（底色近白，没框会消失） */
   --glass-shade: rgba(20, 60, 45, 0.10);
   --drawer: #FFFFFF;
   --hairline: rgba(10, 12, 18, 0.08);
@@ -55,7 +54,6 @@
   --income: #1663C7;               /* 收入蓝（不跟深绿撞色；玻璃卡上 ≥4.9:1） */
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
-  --glass-sheen: rgba(255, 255, 255, 0.18);
   /* B 深绿卡（首页结余卡、统计摘要卡、欢迎页示意卡）：浅深相同的深绿；卡上字一律用 --card-*（tests/green-card.test.js）。
      对比度以「卡底＋两层光泽最亮处」计算，调光泽或字色都要先跑测试 */
   --card-1: #0F4A35;
@@ -75,9 +73,17 @@
   --card-glow: rgba(9, 131, 84, 0.16);            /* 卡后一团淡深绿 */
   /* 中性白面板（走势图卡、欢迎页账单小卡）的柔和投影 */
   --panel-shadow: 0 10px 24px -16px rgba(10, 12, 18, 0.25);
-  /* 统计页分类条：轨道、渐层淡端（浅色往白淡；深色往抽屉色淡，＝ --drawer 的 .5，测试锁住） */
+  /* 统计页分类条：轨道、单色条（B 改版不再用分类色与渐层） */
   --stats-track: rgba(10, 12, 18, 0.07);
-  --bar-fade: rgba(255, 255, 255, 0.55);
+  --bar: #2F3431;
+  /* B 改版中性元件：单色分类图示、iOS 原生分段控件滑块、首页「记一笔」次要按钮、深绿字（只放纯白底上，4.79） */
+  --icon-ink: #2F3431;
+  --icon-line: rgba(10, 12, 18, 0.1);
+  --seg-thumb: #FFFFFF;
+  --seg-shadow: 0 1px 2px rgba(10, 12, 18, 0.08), 0 3px 10px rgba(10, 12, 18, 0.08);
+  --btn2-bg: #FFFFFF;
+  --btn2-edge: rgba(10, 12, 18, 0.08);
+  --accent-text: #098354;
   --tab-glass: rgba(255, 255, 255, 0.72);
   --tab-off: rgba(10, 12, 18, 0.6);
 
@@ -107,13 +113,12 @@
     color-scheme: dark;
     --sky-top: #0D1412; --sky-mid: #0E1412; --sky-low: #0F1513; --sky-bottom: #0F1614;
     --ink: #F2F5F3; --ink-2: rgba(232, 242, 236, 0.66); --ink-3: rgba(232, 242, 236, 0.34);
-    --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --group-edge: transparent; --glass-shade: rgba(0, 0, 0, 0.35);
+    --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
     --drawer: #171C1A; --hairline: rgba(255, 255, 255, 0.08);
     --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #6AAEFF; --red: rgb(255, 66, 69);
     --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
     --track: rgba(255, 255, 255, 0.14);
-    --glass-sheen: rgba(255, 255, 255, 0.18);
     --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
     --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
     --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
@@ -121,7 +126,10 @@
     --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
     --card-glow: rgba(9, 131, 84, 0.22);
     --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
-    --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(23, 28, 26, 0.5);
+    --stats-track: rgba(255, 255, 255, 0.1); --bar: rgba(242, 245, 243, 0.82);
+    --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
+    --seg-thumb: #2C3330; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
     --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
     --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
@@ -137,13 +145,12 @@
   color-scheme: dark;
   --sky-top: #0D1412; --sky-mid: #0E1412; --sky-low: #0F1513; --sky-bottom: #0F1614;
   --ink: #F2F5F3; --ink-2: rgba(232, 242, 236, 0.66); --ink-3: rgba(232, 242, 236, 0.34);
-  --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --group-edge: transparent; --glass-shade: rgba(0, 0, 0, 0.35);
+  --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
   --drawer: #171C1A; --hairline: rgba(255, 255, 255, 0.08);
   --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #6AAEFF; --red: rgb(255, 66, 69);
   --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
   --track: rgba(255, 255, 255, 0.14);
-  --glass-sheen: rgba(255, 255, 255, 0.18);
   --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
   --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
   --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
@@ -151,7 +158,10 @@
   --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
   --card-glow: rgba(9, 131, 84, 0.22);
   --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
-  --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(23, 28, 26, 0.5);
+  --stats-track: rgba(255, 255, 255, 0.1); --bar: rgba(242, 245, 243, 0.82);
+  --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
+  --seg-thumb: #2C3330; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
   --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
   --fill: rgba(120, 120, 128, 0.36);
   --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
@@ -745,7 +755,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   color: var(--ink);
   touch-action: manipulation;
 }
-.modal-sheet-action.is-bold { font-weight: 600; }
+.modal-sheet-action.is-bold { font-weight: 600; color: var(--accent-text); }   /* 必须在 :disabled 之前（同优先级，禁用时才变灰） */
 .modal-sheet-action:disabled { color: var(--ink-3); }
 .modal-sheet.is-saving .modal-sheet-body { pointer-events: none; }   /* 已存好、退场中：不能再改 */
 .modal-sheet-action:active:not(:disabled) { opacity: 0.5; }
@@ -776,19 +786,20 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   min-height: var(--hit);
   margin: 6px 0;
   padding: 3px;
-  border-radius: 22px;
-  background: var(--glass);
-  border: 1px solid var(--glass-edge);
+  border-radius: 12px;
+  background: var(--seg-track);   /* B 改版：iOS 原生分段控件（灰轨道＋白滑块），不用深绿 */
+  border: 1px solid transparent;
 }
-.segmented::before { /* 选中的胶囊底块 */
+.segmented::before { /* 选中的滑块 */
   content: "";
   position: absolute;
   top: 3px;
   bottom: 3px;
   left: 3px;
   width: calc(50% - 3px);
-  border-radius: 19px;
-  background: var(--btn-bg);
+  border-radius: 9px;
+  background: var(--seg-thumb);
+  box-shadow: var(--seg-shadow);
   transition: transform 0.25s var(--ease-out);
 }
 .segmented[data-selected="income"]::before { transform: translateX(100%); }
@@ -796,15 +807,13 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   position: relative;
   z-index: 1;
   min-height: 36px;
-  border-radius: 19px;
+  border-radius: 9px;
   font: var(--font-subhead);
   font-weight: 600;
   color: var(--ink);
   transition: color 0.2s ease;
 }
-.segment[aria-checked="true"] { color: var(--btn-fg); }
-/* 抽屉是白底：轨道改用 ink 淡色，去掉玻璃边（深色时 ink-tint 同样可见） */
-.modal-sheet .segmented { background: var(--ink-tint); border-color: transparent; }
+.segment[aria-checked="true"] { color: var(--ink); }
 .segment::after { content: ""; position: absolute; inset: -4px 0; } /* 36pt 按钮的点击区扩到 44pt */
 .segment:focus-visible { outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
@@ -879,9 +888,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  color: var(--ink);
-  background: var(--ink-tint);
+  border-radius: 12px;   /* B 改版：单色线条图示＋淡框（不要彩色圆圈） */
+  color: var(--icon-ink);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--icon-line);
   transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .cat-tile-name {
@@ -894,9 +904,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 /* 选中：圆标外一圈 2px ink 外框，中间留 2px 抽屉色间隙（彩色圆标上才看得清）。
    注意：间隙色假设图格放在 --drawer 上（记一笔面板的分类格就是）；换底色要同步改。 */
-.cat-tile[aria-pressed="true"] .cat-tile-icon { box-shadow: 0 0 0 2px var(--drawer), 0 0 0 4px var(--btn-bg); }
+.cat-tile[aria-pressed="true"] .cat-tile-icon { background: var(--btn-bg); color: var(--btn-fg); box-shadow: none; }   /* 选中：实心深绿（这页的深绿重点） */
 .cat-tile[aria-pressed="true"] .cat-tile-name { color: var(--ink); font-weight: 600; }
-.cat-tile:active .cat-tile-icon { filter: brightness(0.92); }
+.cat-tile:active .cat-tile-icon { background: var(--press-bg); }
 .cat-tile:focus-visible { outline-offset: 0; }
 .cat-tile-badge {
   margin-top: -4px;
@@ -1208,20 +1218,22 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   .wl-card::before,
   .wl-hero::before { display: none; }
 }
-/* ---------- 主按钮：黑色胶囊 ---------- */
+/* ---------- 首页「记一笔」 ---------- */
 .home-add {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   width: 100%;
-  min-height: 54px;
-  margin-top: 16px;
-  border-radius: 27px;
-  background: var(--btn-bg);
-  color: var(--btn-fg);
+  min-height: 50px;
+  margin-top: 18px;
+  border-radius: 16px;
+  background: var(--btn2-bg);   /* B 改版：次要按钮（这页的深绿重点是卡片），只有「＋」是深绿 */
+  color: var(--ink);
+  box-shadow: 0 0 0 1px var(--btn2-edge), var(--panel-shadow);
   font: var(--font-headline);
 }
+.home-add svg { color: var(--accent-text); }
 .home-add:focus-visible { outline-offset: 3px; }
 
 /* ---------- 账单抽屉：满版宽、上圆角，最少撑到画面底部 ---------- */
@@ -1315,12 +1327,13 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  color: var(--ink);
-  background: var(--ink-tint);
+  border-radius: 12px;   /* B 改版：单色线条图示＋淡框（不要彩色圆圈） */
+  color: var(--icon-ink);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--icon-line);
 }
-.home-row .home-row-icon { width: 44px; height: 44px; }
-.home-row-icon.is-muted { color: var(--secondary-label); background: var(--fill); }
+.home-row .home-row-icon { width: 40px; height: 40px; }
+.home-row-icon.is-muted { color: var(--ink-2); background: var(--fill); box-shadow: none; }   /* 已删除 / 未分类：灰实心底 */
 .home-row-text {
   flex: 1;
   min-width: 0;
@@ -1558,12 +1571,12 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   content: "";
   position: absolute;
   top: 0;
-  left: calc(78px + var(--safe-left));
+  left: calc(74px + var(--safe-left));
   right: calc(20px + var(--safe-right));
   height: 1px;
   background: var(--hairline);
 }
-.stats-row .home-row-icon { width: 44px; height: 44px; }
+.stats-row .home-row-icon { width: 40px; height: 40px; }
 .stats-row-text { flex: 1; min-width: 0; display: grid; gap: 9px; }
 .stats-row-line1,
 .stats-row-line2 { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -1587,22 +1600,21 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   position: relative;
   display: block;
   flex: 1;
-  height: 8px;
-  border-radius: 4px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--stats-track);
   overflow: hidden;
 }
 /* v2.3 分类条「滑入」：固定 100% 宽，translateX 往左藏（只走合成）。左端由轨道圆角裁切 → 两端都圆。
-   同色渐层（v2.4，不用 color-mix）：分类色上叠一层「淡 → 透明」，淡色一直铺到看得到的那段起点
-   （--bar-w＝JS 的 barWidth，与 slideX 同一个值），所以短条也看得到由淡到深，左端永远是最淡色。 */
+   B 改版：单色 --bar（不再用分类色与渐层）。 */
 .stats-bar-fill {
   position: absolute;
   inset: 0;
   width: 100%;
-  border-radius: 0 4px 4px 0;
-  background: linear-gradient(90deg, var(--bar-fade) calc(100% - var(--bar-w, 100%)), transparent 100%), var(--cat-fg, var(--secondary-label));
+  border-radius: 0 3px 3px 0;
+  background: var(--bar);
 }
-/* 往左延伸补弹过头的缝：明写成最淡色（不能 inherit，否则贴着主条的是最深色） */
+/* 往左延伸补弹过头的缝 */
 .stats-bar-fill::before {
   content: "";
   position: absolute;
@@ -1610,27 +1622,18 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   bottom: 0;
   right: 100%;
   width: 100%;
-  background: linear-gradient(var(--bar-fade), var(--bar-fade)), var(--cat-fg, var(--secondary-label));
+  background: var(--bar);
 }
 .stats-body { display: flex; flex-direction: column; flex: 1 0 auto; }   /* 换月份时整块滑动 */
-/* 百分比小胶囊：底＝分类淡色，字＝加深的分类色（灰色列：ink 淡底、次要字） */
+/* 百分比：纯灰字（B 改版不再用分类色胶囊） */
 .stats-row-pct {
   flex: none;
-  min-width: 3.3em;
-  box-sizing: border-box;
-  padding: 0.2em 0.55em;
-  border-radius: 999px;
-  text-align: center;
-  font: 600 0.7059rem/1.2 var(--font-family);   /* 12/17 */
+  min-width: 2.8em;
+  text-align: right;
+  font: 500 0.7059rem/1.2 var(--font-family);   /* 12/17 */
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  background: var(--cat-bg, var(--ink-tint));
-  color: var(--cat-ink, var(--ink-2));
-}
-/* 增加对比度 / 降低透明度：分类条改回纯色（写在分类条规则之后才压得过） */
-@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  .stats-bar-fill,
-  .stats-bar-fill::before { background: var(--cat-fg, var(--secondary-label)); }
+  color: var(--ink-2);
 }
 
 /* =====================================================================
@@ -1659,7 +1662,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   padding: 0;
   border-radius: var(--radius-card);
   background: var(--bg-grouped-secondary);
-  box-shadow: 0 0 0 1px var(--group-edge);
+  box-shadow: 0 0 0 1px var(--hairline);
   overflow: hidden;
   isolation: isolate;
 }
@@ -1888,73 +1891,12 @@ button.update-action {
 }
 button.update-action::after { content: ""; position: absolute; inset: -12px -8px; }
 
-/* ===== 分类颜色（Task 2）：[data-icon] 设定 --cat-bg / --cat-fg，任何元件都可套用 =====
-   --cat-ink（v2.4）：统计页百分比胶囊的字色＝--cat-fg 每通道 ×0.72（浅色在 --cat-bg 上 ≥4.5:1）；深色直接用 --cat-fg（下面两条通用规则） */
-[data-icon="food"] { --cat-bg: #FFE4CF; --cat-fg: #C85A08; --cat-ink: #904106; }
-[data-icon="transport"] { --cat-bg: #D8E8FF; --cat-fg: #1D63BF; --cat-ink: #15478A; }
-[data-icon="shopping"] { --cat-bg: #FFDCE8; --cat-fg: #B92E62; --cat-ink: #852147; }
-[data-icon="bills"] { --cat-bg: #D3F0EA; --cat-fg: #137767; --cat-ink: #0E564A; }
-[data-icon="fun"] { --cat-bg: #E8DFFF; --cat-fg: #6040C4; --cat-ink: #452E8D; }
-[data-icon="other"] { --cat-bg: #E6E8EC; --cat-fg: #4A5160; --cat-ink: #353A45; }
-[data-icon="salary"] { --cat-bg: #D8F2DC; --cat-fg: #1F7D36; --cat-ink: #165A27; }
-[data-icon="bonus"] { --cat-bg: #FFF0BF; --cat-fg: #9A6B00; --cat-ink: #6F4D00; }
-[data-icon="side"] { --cat-bg: #DDE1FF; --cat-fg: #3E4CBF; --cat-ink: #2D378A; }
-[data-icon="other_income"] { --cat-bg: #DCEBE6; --cat-fg: #2D6B57; --cat-ink: #204D3F; }
-[data-icon="pet"] { --cat-bg: #F3DCF6; --cat-fg: #8A3FB0; --cat-ink: #632D7F; }
-[data-icon="health"] { --cat-bg: #FFDAD8; --cat-fg: #C0262D; --cat-ink: #8A1B20; }
-[data-icon="home"] { --cat-bg: #EFE6D2; --cat-fg: #7A5B12; --cat-ink: #58420D; }
-[data-icon="gift"] { --cat-bg: #F9D9F2; --cat-fg: #A4289A; --cat-ink: #761D6F; }
-[data-icon="travel"] { --cat-bg: #D0EDF8; --cat-fg: #0E6F94; --cat-ink: #0A506B; }
-[data-icon="education"] { --cat-bg: #E3F0C4; --cat-fg: #52700E; --cat-ink: #3B510A; }
-[data-icon="coffee"] { --cat-bg: #EBDCCF; --cat-fg: #7A4A2A; --cat-ink: #58351E; }
-[data-icon="phone"] { --cat-bg: #DDF1D0; --cat-fg: #2F7A1C; --cat-ink: #225814; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) [data-icon="food"] { --cat-bg: rgba(255, 140, 50, 0.18); --cat-fg: #FFA35C; }
-  :root:not([data-theme="light"]) [data-icon="transport"] { --cat-bg: rgba(70, 150, 255, 0.18); --cat-fg: #7DB4FF; }
-  :root:not([data-theme="light"]) [data-icon="shopping"] { --cat-bg: rgba(255, 90, 150, 0.18); --cat-fg: #FF8DB6; }
-  :root:not([data-theme="light"]) [data-icon="bills"] { --cat-bg: rgba(40, 200, 170, 0.18); --cat-fg: #5FD9C0; }
-  :root:not([data-theme="light"]) [data-icon="fun"] { --cat-bg: rgba(150, 110, 255, 0.2); --cat-fg: #B49BFF; }
-  :root:not([data-theme="light"]) [data-icon="other"] { --cat-bg: rgba(134, 143, 162, 0.19); --cat-fg: #AEB4C1; }
-  :root:not([data-theme="light"]) [data-icon="salary"] { --cat-bg: rgba(60, 200, 100, 0.18); --cat-fg: #6EDB8C; }
-  :root:not([data-theme="light"]) [data-icon="bonus"] { --cat-bg: rgba(255, 200, 40, 0.18); --cat-fg: #FFD25C; }
-  :root:not([data-theme="light"]) [data-icon="side"] { --cat-bg: rgba(110, 125, 255, 0.2); --cat-fg: #9FA9FF; }
-  :root:not([data-theme="light"]) [data-icon="other_income"] { --cat-bg: rgba(120, 160, 140, 0.19); --cat-fg: #A3C2B2; }
-  :root:not([data-theme="light"]) [data-icon="pet"] { --cat-bg: rgba(170, 81, 215, 0.19); --cat-fg: #C68BE4; }
-  :root:not([data-theme="light"]) [data-icon="health"] { --cat-bg: rgba(236, 60, 68, 0.19); --cat-fg: #F27D82; }
-  :root:not([data-theme="light"]) [data-icon="home"] { --cat-bg: rgba(160, 145, 90, 0.19); --cat-fg: #CDBE8E; }
-  :root:not([data-theme="light"]) [data-icon="gift"] { --cat-bg: rgba(229, 67, 216, 0.19); --cat-fg: #EE81E5; }
-  :root:not([data-theme="light"]) [data-icon="travel"] { --cat-bg: rgba(43, 195, 253, 0.19); --cat-fg: #72D7FD; }
-  :root:not([data-theme="light"]) [data-icon="education"] { --cat-bg: rgba(186, 247, 49, 0.19); --cat-fg: #D1FA75; }
-  :root:not([data-theme="light"]) [data-icon="coffee"] { --cat-bg: rgba(150, 110, 85, 0.19); --cat-fg: #C4A28C; }
-  :root:not([data-theme="light"]) [data-icon="phone"] { --cat-bg: rgba(98, 231, 65, 0.19); --cat-fg: #97EF80; }
-  :root:not([data-theme="light"]) [data-icon] { --cat-ink: var(--cat-fg, var(--secondary-label)); }
-}
-:root[data-theme="dark"] [data-icon="food"] { --cat-bg: rgba(255, 140, 50, 0.18); --cat-fg: #FFA35C; }
-:root[data-theme="dark"] [data-icon="transport"] { --cat-bg: rgba(70, 150, 255, 0.18); --cat-fg: #7DB4FF; }
-:root[data-theme="dark"] [data-icon="shopping"] { --cat-bg: rgba(255, 90, 150, 0.18); --cat-fg: #FF8DB6; }
-:root[data-theme="dark"] [data-icon="bills"] { --cat-bg: rgba(40, 200, 170, 0.18); --cat-fg: #5FD9C0; }
-:root[data-theme="dark"] [data-icon="fun"] { --cat-bg: rgba(150, 110, 255, 0.2); --cat-fg: #B49BFF; }
-:root[data-theme="dark"] [data-icon="other"] { --cat-bg: rgba(134, 143, 162, 0.19); --cat-fg: #AEB4C1; }
-:root[data-theme="dark"] [data-icon="salary"] { --cat-bg: rgba(60, 200, 100, 0.18); --cat-fg: #6EDB8C; }
-:root[data-theme="dark"] [data-icon="bonus"] { --cat-bg: rgba(255, 200, 40, 0.18); --cat-fg: #FFD25C; }
-:root[data-theme="dark"] [data-icon="side"] { --cat-bg: rgba(110, 125, 255, 0.2); --cat-fg: #9FA9FF; }
-:root[data-theme="dark"] [data-icon="other_income"] { --cat-bg: rgba(120, 160, 140, 0.19); --cat-fg: #A3C2B2; }
-:root[data-theme="dark"] [data-icon="pet"] { --cat-bg: rgba(170, 81, 215, 0.19); --cat-fg: #C68BE4; }
-:root[data-theme="dark"] [data-icon="health"] { --cat-bg: rgba(236, 60, 68, 0.19); --cat-fg: #F27D82; }
-:root[data-theme="dark"] [data-icon="home"] { --cat-bg: rgba(160, 145, 90, 0.19); --cat-fg: #CDBE8E; }
-:root[data-theme="dark"] [data-icon="gift"] { --cat-bg: rgba(229, 67, 216, 0.19); --cat-fg: #EE81E5; }
-:root[data-theme="dark"] [data-icon="travel"] { --cat-bg: rgba(43, 195, 253, 0.19); --cat-fg: #72D7FD; }
-:root[data-theme="dark"] [data-icon="education"] { --cat-bg: rgba(186, 247, 49, 0.19); --cat-fg: #D1FA75; }
-:root[data-theme="dark"] [data-icon="coffee"] { --cat-bg: rgba(150, 110, 85, 0.19); --cat-fg: #C4A28C; }
-:root[data-theme="dark"] [data-icon="phone"] { --cat-bg: rgba(98, 231, 65, 0.19); --cat-fg: #97EF80; }
-:root[data-theme="dark"] [data-icon] { --cat-ink: var(--cat-fg, var(--secondary-label)); }
-
-.home-row-icon[data-icon] { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
-.cat-tile[data-icon] .cat-tile-icon { color: var(--cat-fg, var(--secondary-label)); background: var(--cat-bg, var(--fill)); }
 
 /* 高对比：卡片 / 金额列 / 分段控件不再靠淡色底区分，放在文件末尾，才压得过前面的 border-color: transparent；加一圈 token 描边（无阴影） */
 @media (prefers-contrast: more) {
-  .entry-card:not(.cat-card), .entry-amount-row, .modal-sheet .segmented { border: 1px solid var(--ink-2); }
+  .entry-card:not(.cat-card), .entry-amount-row, .segmented { border: 1px solid var(--ink-2); }
+  .segmented::before { box-shadow: inset 0 0 0 1px var(--ink-2); }
+  .home-row-icon, .cat-tile-icon, .wl-tx-ic { box-shadow: inset 0 0 0 1px var(--ink-2); }
   .stepper-button, .invite-action.is-secondary { border: 1px solid var(--ink-2); }
 }
 
@@ -2052,7 +1994,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 }
 .wl-layer-tx1 .wl-tx { transform: rotate(2deg); }
 .wl-layer-tx2 .wl-tx { transform: rotate(-1.5deg) scale(0.96); opacity: 0.94; /* 0.94：整组半透明叠在背景上，字仍 ≥4.5:1（tests/welcome-contrast） */ }
-.wl-tx-ic { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--cat-bg, var(--ink-tint)); color: var(--cat-fg, var(--ink)); }
+.wl-tx-ic { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: transparent; box-shadow: inset 0 0 0 1px var(--icon-line); color: var(--icon-ink); }
 .wl-tx-t { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .wl-tx-name { font: 500 16px/1.25 var(--font-family); white-space: nowrap; }
 .wl-tx-note { font: 400 13px/1.38 var(--font-family); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
