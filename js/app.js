@@ -2,7 +2,7 @@
 // Telegram Mini App（3b-9）：同时判断平台；在 Telegram 里改走 runTgBoot（凭 initData 问服务器），
 // 进 App 后在线就确认一次连接，回前景最多 30 分钟一次；服务器说已解除连接 → runTgGone。
 // 最后注册 Service Worker（离线 + 更新提示）。
-import { openDatabase } from './db.js';
+import { openDatabase, whenSlow } from './db.js';
 import { createStore } from './store.js';
 import { h } from './ui/dom.js';
 import { mountTabBar } from './ui/tabbar.js';
@@ -344,7 +344,8 @@ async function boot() {
     }
     // 开库与判断平台同时进行（判断平台最多等 SDK 8 秒；一般浏览器马上回 pwa）。
     // Telegram：SDK 一载完就套主题、接返回键（3c-2），不等资料库，第一个画面就是 Telegram 的深浅色
-    const [db, tg] = await Promise.all([openDatabase(), detectTelegram().then((t) => {
+    // 开库超过 1 秒（例如别的分页占着、正在升级）→ 显示「正在准备资料…」，不让画面一直空白
+    const [db, tg] = await Promise.all([whenSlow(openDatabase(), 1000, () => renderLoading(root, '正在准备资料…')), detectTelegram().then((t) => {
       if (t.mode === 'telegram') installTgChrome(t.webApp, { nav: { depth, canPop, popLayer, onDepthChange } });
       return t;
     })]);

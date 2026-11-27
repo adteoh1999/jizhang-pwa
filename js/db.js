@@ -75,6 +75,17 @@ export function openDatabase(name = 'jizhang', {
   });
 }
 
+/**
+ * promise 超过 ms 还没好就叫 onSlow 一次（例如开库被别的分页挡着时，画面显示「正在准备资料…」而不是空白，审核 M-2）。
+ * 结果、错误照原样回。
+ */
+export function whenSlow(promise, ms, onSlow, { setTimer = (fn, t) => setTimeout(fn, t), clearTimer = (t) => clearTimeout(t) } = {}) {
+  let done = false;
+  const timer = setTimer(() => { if (!done) onSlow(); }, ms);
+  const finish = () => { done = true; clearTimer(timer); };
+  return promise.then((v) => { finish(); return v; }, (e) => { finish(); throw e; });
+}
+
 const WRITE_KEYS = ['remove', 'clear', 'meta', 'clearMeta', 'expect'];
 const promisify = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 

@@ -7,7 +7,7 @@ import { icon } from './icons.js';
 import { confirmDialog, messageDialog } from './dialogs.js';
 import { showToast } from './toast.js';
 import { openCategoriesPage } from './categories-page.js';
-import { openKeywordsPage, keywordCountDetail } from './keywords-page.js';
+import { openKeywordsPage, keywordCountDetail, keywordsFooter } from './keywords-page.js';
 import { APP_VERSION } from '../version.js';
 import { onUpdateAvailable, applyUpdate } from '../update.js';
 import { forgetSession, getValidSession } from '../auth.js';
@@ -533,7 +533,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
     section('分类', [
       buttonRow('管理分类', () => openCategoriesPage(store, { from: 'settings' }), { chevron: true }),
       keywordsRow,
-    ], '在 Telegram 记账时，备注或店名有你的关键词，就一定记成对应的分类（需要先连接 Telegram）。'),
+    ], keywordsFooter(!!telegram)),
     section('数据', [
       buttonRow('导出 CSV', onExport, { action: true, chevron: true }),
       buttonRow('导入 CSV', () => fileInput.click(), { action: true, chevron: true }),

@@ -39,10 +39,13 @@ function botKwContinues(src: string, at: number, step: 1 | -1, edge: string): bo
   return false;
 }
 
-// 来源 src 里有没有关键词 k（都先转小写）。英文／数字那一端要整个词；中文等其他字元那一端照「包含就算」。
+// 比对前两边都做：NFKC（全形英数当半形）、连续空白（含换行）压成一个空格、转小写（审核 M-8）
+const botKwPrep = (x: string) => x.normalize('NFKC').replace(/\s+/g, ' ').toLowerCase();
+
+// 来源 src 里有没有关键词 k。英文／数字那一端要整个词；中文等其他字元那一端照「包含就算」。
 export function botKeywordHits(src: string, k: string): boolean {
-  const s = src.toLowerCase();
-  const kw = k.toLowerCase();
+  const s = botKwPrep(src);
+  const kw = botKwPrep(k).trim();
   if (kw === '') return false;
   const first = kw[0];
   const last = kw[kw.length - 1];

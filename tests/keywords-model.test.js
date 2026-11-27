@@ -17,6 +17,12 @@ test('常数：最多 20 字、200 个', () => {
   assert.equal(KEYWORD_LIMIT, 200);
 });
 
+test('审核 M-8：normalizeKeyword 把中间连续的空白（含全形空白、不换行空白）压成一个空格；tab 仍算控制字元', () => {
+  assert.equal(normalizeKeyword('Jaya  Grocer'), 'jaya grocer');
+  assert.equal(normalizeKeyword('Jaya　\u00A0Grocer'), 'jaya grocer');
+  assert.equal(checkKeyword('jaya\tgrocer', { active: [], selfKeyword: null }), 'bad');
+});
+
 test('normalizeKeyword：去头尾空白（含全形空白、tab）、转小写、去零宽字元', () => {
   assert.equal(normalizeKeyword('  GrabFood '), 'grabfood');
   assert.equal(normalizeKeyword('　猫粮\t'), '猫粮');

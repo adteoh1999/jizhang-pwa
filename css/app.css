@@ -1857,7 +1857,7 @@ button.inset-row:active { background: var(--press-bg); }
 }
 .kw-cat-icon { flex: none; display: inline-flex; color: var(--icon-ink); }
 .kw-cat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kw-cat.is-gone { color: var(--red-text); white-space: nowrap; }
+.kw-cat.is-gone { color: var(--red-text); white-space: nowrap; flex: none; max-width: none; } /* 不缩、不受 45% 限制（审核 M-16） */
 .kw-empty { padding: 28px 24px 8px; text-align: center; color: var(--secondary-label); }
 .kw-empty-title { margin: 0 0 8px; font: var(--font-headline); color: var(--label); }
 .kw-empty-text { margin: 0; font: var(--font-subhead); line-height: 1.5; }

@@ -56,6 +56,15 @@ test('botKeywordHits：中文包含就算；英文／数字那一端要整个词
   for (const [src, k, want] of cases) assert.equal(botKeywordHits(src, k), want, `${src} / ${k}`);
 });
 
+test('审核 M-8：多个空白／换行当一个空白；全形英数当半形（NFKC）', () => {
+  assert.equal(botKeywordHits('JAYA  GROCER 45', 'jaya grocer'), true);
+  assert.equal(botKeywordHits('Jaya\nGrocer SDN BHD', 'jaya grocer'), true);
+  assert.equal(botKeywordHits('ＧＲＡＢ　１２.５０', 'grab'), true);
+  assert.equal(botKeywordHits('Grab 12.50', 'ｇｒａｂ'), true);
+  assert.equal(botKeywordHits('ＧＲＡＢＦＯＯＤ', 'grab'), false, '全形也照「整个词」');
+  assert.equal(botKeywordHits('午餐 １２.５０', '12'), false);
+});
+
 test('App 存的关键词（normalizeKeyword）在 bot 一定比对得到原本的写法（两边规则一致）', () => {
   for (const s of ['GrabFood', 'MR.DIY', '猫粮', 'Straße', 'İstanbul', 'Jaya Grocer', '7-Eleven', 'ÀÉÎ']) {
     assert.equal(botKeywordHits(`${s} 12`, normalizeKeyword(s)), true, s);

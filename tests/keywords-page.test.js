@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   keywordRows, keywordErrorText, keywordEditorStart, keywordSaveEnabled, keywordCountDetail, KEYWORD_HELP,
+  keywordsFooter, keywordErrorTarget, categoryAfterKindSwitch, focusAfterEdit,
 } from '../js/ui/keywords-page.js';
+import { css, blockAfter } from './helpers/css-tokens.js';
 import { deleteCategoryMessage } from '../js/ui/categories-page.js';
 
 const CATS = {
@@ -76,11 +78,46 @@ test('删除分类的确认文字：有关键词指向它 → 说会失效', () 
   assert.equal(deleteCategoryMessage(2), '删除后，旧的记录仍保留这个分类名称。有 2 个关键词指向这个分类，会失效');
 });
 
+test('审核 M-15：组尾说明——Telegram 里不写「需要先连接 Telegram」（已经连了）', () => {
+  assert.equal(keywordsFooter(false), '在 Telegram 记账时，备注或店名有你的关键词，就一定记成对应的分类（需要先连接 Telegram）。');
+  assert.equal(keywordsFooter(true), '在 Telegram 记账时，备注或店名有你的关键词，就一定记成对应的分类。');
+});
+
+test('审核 M-10：「请选一个分类」显示在分类区，不放在关键词框下（读屏不会以为是关键词写错）', () => {
+  assert.equal(keywordErrorTarget('category'), 'category');
+  for (const c of ['empty', 'long', 'bad', 'dup', 'limit']) assert.equal(keywordErrorTarget(c), 'keyword');
+});
+
+test('审核 M-13：切换收支清掉分类；切回起始收支时还原起始分类', () => {
+  const start = { kind: 'expense', categoryId: 'transport' };
+  assert.equal(categoryAfterKindSwitch('income', start), null);
+  assert.equal(categoryAfterKindSwitch('expense', start), 'transport');
+  assert.equal(categoryAfterKindSwitch('expense', { kind: 'expense', categoryId: null }), null);
+});
+
+test('审核 M-11：编辑关闭后焦点——存了就放到那一列；没有那列就「新增」；「新增」停用（满 200）就返回键', () => {
+  assert.equal(focusAfterEdit({ savedRowExists: true, addDisabled: true }), 'row');
+  assert.equal(focusAfterEdit({ savedRowExists: false, addDisabled: false }), 'add');
+  assert.equal(focusAfterEdit({ savedRowExists: false, addDisabled: true }), 'back');
+});
+
+test('审核 M-16：「分类已删除」不受 45% 宽度限制、不缩（320 宽大字级不压到箭头）', () => {
+  const b = blockAfter(css, '\n.kw-cat.is-gone {');
+  assert.match(b, /max-width:\s*none/);
+  assert.match(b, /flex:\s*none/);
+});
+
+test('审核 M-12／M-14：满 200 的停用按钮关联说明；分类已删除提示关联到分类格（读屏会念）', () => {
+  const k = src('js/ui/keywords-page.js');
+  assert.match(k, /addMain\.setAttribute\('aria-describedby', limitNote\.id\)/);
+  assert.match(k, /grid\.setAttribute\('aria-describedby', notice\.id\)/);
+});
+
 test('接线：设置页「分类」组有「关键词」列与组尾说明；sw.js 离线清单有 keywords-page.js', () => {
   const s = src('js/ui/settings.js');
   assert.match(s, /openKeywordsPage\(store\)/);
   assert.match(s, /'关键词'/);
-  assert.match(s, /在 Telegram 记账时，备注或店名有你的关键词，就一定记成对应的分类（需要先连接 Telegram）。/);
+  assert.match(s, /keywordsFooter\(!!telegram\)/);
   assert.match(src('sw.js'), /'\.\/js\/ui\/keywords-page\.js'/);
 });
 

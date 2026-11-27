@@ -95,7 +95,8 @@ export const KEYWORD_LIMIT = 200;
 const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g; // trim() 不去、看不见、会让关键词永远对不上
 
 export function normalizeKeyword(raw) {
-  return String(raw ?? '').replace(ZERO_WIDTH, '').trim().toLowerCase().trim();
+  // 中间连续的空白（含全形空白、不换行空白）压成一个空格（审核 M-8）；tab、换行不是 Zs，照样算控制字元
+  return String(raw ?? '').replace(ZERO_WIDTH, '').replace(/\p{Zs}+/gu, ' ').trim().toLowerCase().trim();
 }
 
 /**

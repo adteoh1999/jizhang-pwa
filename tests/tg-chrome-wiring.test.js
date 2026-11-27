@@ -23,7 +23,8 @@ test('CSS：--safe-* = max(env(safe-area-inset-*), var(--jz-inset-*, 0px))（PWA
 test('app.js：SDK 一载完（detectTelegram 回来）就装 tg-chrome，不等资料库；注入 nav', () => {
   const s = code('js/app.js');
   assert.match(s, /import \{ installTgChrome, setPageBack \} from '\.\/tg-chrome\.js';/);
-  assert.match(s, /Promise\.all\(\[openDatabase\(\), detectTelegram\(\)\.then\(\(t\) => \{[^}]*t\.mode === 'telegram'[^}]*installTgChrome\(t\.webApp, \{ nav: \{ depth, canPop, popLayer, onDepthChange \} \}\)/);
+  // 3e 审核 M-2：开库外面包 whenSlow（超过 1 秒显示「正在准备资料…」），仍与 detectTelegram 并行
+  assert.match(s, /Promise\.all\(\[whenSlow\(openDatabase\(\), 1000, \(\) => renderLoading\(root, '正在准备资料…'\)\), detectTelegram\(\)\.then\(\(t\) => \{[^}]*t\.mode === 'telegram'[^}]*installTgChrome\(t\.webApp, \{ nav: \{ depth, canPop, popLayer, onDepthChange \} \}\)/);
   assert.match(s, /import \{ onDepthChange, depth, canPop, popLayer \} from '\.\/ui\/nav\.js';/);
 });
 

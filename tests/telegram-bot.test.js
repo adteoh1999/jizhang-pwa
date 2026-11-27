@@ -376,8 +376,11 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
 
   test(`${label}：3e 关键词 rpc 失败 → 退次数、现在记不了、没叫 AI（不能偷偷只用 AI）`, async () => {
     const f = routes({ svc_bot_keywords: () => jsonRes(500, {}) });
-    await run(update({ text: 'Grab 6.9' }), f);
+    const { logs } = await run(update({ text: 'Grab 6.9' }), f);
     assert.equal(sent(f)[0].text, R.BOT_DOWN);
+    // 审核 M-6：日志分得出是关键词坏了（不是分类）
+    assert.ok(logs.some((l) => l.includes('[telegram-bot] keywords:')), JSON.stringify(logs));
+    assert.ok(!logs.some((l) => l.includes('[telegram-bot] categories:')), JSON.stringify(logs));
     assert.equal(rpcBody(f, 'svc_bot_ai_refund').length, 1);
     assert.equal(aiCalls(f).length, 0);
   });

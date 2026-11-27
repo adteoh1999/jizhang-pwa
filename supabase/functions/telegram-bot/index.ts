@@ -355,15 +355,16 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
   // ---- 叫 AI ----
   // 分类与用户关键词一起读（并行）。关键词读不到 → 跟分类读不到一样「现在记不了」：
   // 关键词一定优先于 AI，不能偷偷只用 AI 分类（3e）
-  let cats: ReturnType<typeof botMergeCategories> | null;
-  let keywords: ReturnType<typeof botParseKeywords> | null;
-  try {
-    [cats, keywords] = await Promise.all([tbCategories(ctx), tbKeywords(ctx)]);
-  } catch (e) {
-    tbLog('categories', tbErr(e));
+  // 日志分开记是哪一个坏了（审核 M-6）
+  const [catsR, kwsR] = await Promise.allSettled([tbCategories(ctx), tbKeywords(ctx)]);
+  if (catsR.status === 'rejected' || kwsR.status === 'rejected') {
+    if (catsR.status === 'rejected') tbLog('categories', tbErr(catsR.reason));
+    if (kwsR.status === 'rejected') tbLog('keywords', tbErr(kwsR.reason));
     await tbRefund(ctx, useId);
     return await tbEnd(ctx, BOT_DOWN);
   }
+  const cats = catsR.value;
+  const keywords = kwsR.value;
   if (cats === null || keywords === null) {
     await tbRefund(ctx, useId);
     await tbFinish(ctx);

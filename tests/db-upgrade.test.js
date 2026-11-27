@@ -2,7 +2,8 @@
 // 用假的 indexedDB（行为照规范：已存在的 store 再建会丢 ConstraintError）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { openDatabase, STORES } from '../js/db.js';
+import { openDatabase, STORES, whenSlow } from '../js/db.js';
+import { readFileSync } from 'node:fs';
 
 function fakeIdb({ existing = [] } = {}) {
   const log = [];
@@ -33,6 +34,28 @@ function fakeTimers() {
     fire: () => { for (const t of pending) if (!t.done) { t.done = true; t.fn(); } },
   };
 }
+
+test('审核 M-2：whenSlow——超过时间还没好才叫 onSlow；先好就不叫；结果照原样回', async () => {
+  const t = fakeTimers();
+  let slow = 0;
+  let resolveIt;
+  const p = whenSlow(new Promise((r) => { resolveIt = r; }), 1000, () => { slow++; }, { setTimer: t.setTimer, clearTimer: t.clearTimer });
+  t.fire();
+  assert.equal(slow, 1);
+  resolveIt('db');
+  assert.equal(await p, 'db');
+  const t2 = fakeTimers();
+  let slow2 = 0;
+  assert.equal(await whenSlow(Promise.resolve('fast'), 1000, () => { slow2++; }, { setTimer: t2.setTimer, clearTimer: t2.clearTimer }), 'fast');
+  t2.fire();
+  assert.equal(slow2, 0);
+  await assert.rejects(whenSlow(Promise.reject(new Error('坏')), 1000, () => {}, { setTimer: t2.setTimer, clearTimer: t2.clearTimer }), /坏/);
+});
+
+test('审核 M-2：App 开库等超过 1 秒显示「正在准备资料…」（不是空白）', () => {
+  const app = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /whenSlow\(openDatabase\(\), 1000, \(\) => renderLoading\(root, '正在准备资料…'\)\)/);
+});
 
 test('STORES：三张资料表', () => {
   assert.deepEqual(STORES, ['transactions', 'categories', 'category_keywords']);

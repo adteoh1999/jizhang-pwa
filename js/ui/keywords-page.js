@@ -61,11 +61,28 @@ export function keywordSaveEnabled(cur, start) {
 /** 设置页「关键词」列右边：0 个不显示数字。 */
 export const keywordCountDetail = (n) => (n > 0 ? `${n} 个` : '');
 
+/** 设置页「分类」组尾说明：Telegram 里已经连接，不再写「需要先连接 Telegram」（审核 M-15）。 */
+export const keywordsFooter = (isTelegram) => (isTelegram
+  ? '在 Telegram 记账时，备注或店名有你的关键词，就一定记成对应的分类。'
+  : '在 Telegram 记账时，备注或店名有你的关键词，就一定记成对应的分类（需要先连接 Telegram）。');
+
+/** 错误显示在哪（审核 M-10）：没选分类 → 分类区；其他 → 关键词框下。 */
+export const keywordErrorTarget = (code) => (code === 'category' ? 'category' : 'keyword');
+
+/** 切换支出／收入后要选哪个分类（审核 M-13）：切回起始收支 → 还原起始分类；否则清掉。 */
+export const categoryAfterKindSwitch = (kind, start) => (kind === start.kind ? start.categoryId : null);
+
+/** 编辑 sheet 关闭后焦点放哪（审核 M-11）：存了而且那列在 → 那一列；否则「新增」；「新增」停用（满 200）→ 返回键。 */
+export const focusAfterEdit = ({ savedRowExists, addDisabled }) => {
+  if (savedRowExists) return 'row';
+  return addDisabled ? 'back' : 'add';
+};
+
 /**
  * 新增 / 编辑关键词的 sheet。必须在点击事件里同步呼叫（输入框 focus 才会弹出键盘）。
  * openKeywordEditor(store, { keyword?（编辑的那一列）, onClosed? })
  */
-export function openKeywordEditor(store, { keyword: rec = null, onClosed } = {}) {
+export function openKeywordEditor(store, { keyword: rec = null, onSaved, onClosed } = {}) {
   const uid = `kwed-${++seq}`;
   const byId = (id) => store.categoryById(id);
   const start = keywordEditorStart(rec, byId);
@@ -116,16 +133,28 @@ export function openKeywordEditor(store, { keyword: rec = null, onClosed } = {})
   // ---------- 支出 / 收入＋分类格 ----------
   const seg = kindSegmented({
     value: kind,
-    onChange: (k) => { kind = k; categoryId = null; notice.hidden = true; renderGrid(); updateSave(); },
+    onChange: (k) => { kind = k; categoryId = categoryAfterKindSwitch(k, start); hideNotice(); renderGrid(); updateSave(); },
   });
-  const notice = h('p', { class: 'field-error kw-notice', role: 'status', hidden: !start.notice }, start.notice || '');
+  // 分类区的提示：原本的分类已删除（一开始就有）或「请选一个分类」（按储存时）；关联到分类格，读屏会念（审核 M-14）
+  const notice = h('p', { class: 'field-error kw-notice', id: `${uid}-cat-notice`, role: 'status', hidden: true });
   const grid = h('div', { class: 'cat-grid', role: 'group', 'aria-labelledby': `${uid}-cat-label` });
+  function showNotice(text) {
+    notice.textContent = text;
+    notice.hidden = false;
+    grid.setAttribute('aria-describedby', notice.id);
+  }
+  function hideNotice() {
+    notice.hidden = true;
+    notice.textContent = '';
+    grid.removeAttribute('aria-describedby');
+  }
+  if (start.notice) showNotice(start.notice);
   function renderGrid() {
     const hadFocus = grid.contains(document.activeElement) ? document.activeElement.dataset.cat : null;
     grid.replaceChildren(...store.categories(kind).map((c) => h('button', {
       type: 'button', class: 'cat-tile', 'data-cat': c.id, 'data-icon': iconKey(c.icon),
       'aria-pressed': c.id === categoryId ? 'true' : 'false', 'aria-label': c.name,
-      on: { click: () => { categoryId = c.id; notice.hidden = true; clearError(); renderGrid(); updateSave(); } },
+      on: { click: () => { categoryId = c.id; hideNotice(); clearError(); renderGrid(); updateSave(); } },
     },
     h('span', { class: 'cat-tile-icon' }, icon(c.icon, 22)),
     h('span', { class: 'cat-tile-name' }, c.name))));
@@ -173,20 +202,21 @@ export function openKeywordEditor(store, { keyword: rec = null, onClosed } = {})
     saving = true;
     sheet.rightButton.disabled = true;
     try {
-      await store.saveKeyword({ keyword: input.value, categoryId, previous: rec ? rec.keyword : null });
+      const saved = await store.saveKeyword({ keyword: input.value, categoryId, previous: rec ? rec.keyword : null });
+      if (onSaved) onSaved(saved);
     } catch (e) {
       saving = false;
       updateSave();
-      if (e instanceof ValidationError && e.field.startsWith('keyword-')) {
-        const code = e.field.slice('keyword-'.length);
+      const code = e instanceof ValidationError ? (e.field.startsWith('keyword-') ? e.field.slice('keyword-'.length) : e.field) : null;
+      if (code && keywordErrorTarget(code) === 'keyword') {
         const dup = code === 'dup' ? store.keywords().find((k) => k.keyword === normalizeKeyword(input.value)) : null;
         const dupCat = dup ? byId(dup.category_id) : null;
         showError(keywordErrorText(code, { dupCategoryName: dupCat && !dupCat.deleted ? dupCat.name : null }));
-      } else if (e instanceof ValidationError && e.field === 'category') {
+      } else if (code === 'category') { // 分类刚好在别处被删掉：提示放分类区，不动关键词框（审核 M-10）
         categoryId = null;
         renderGrid();
         updateSave();
-        showError(keywordErrorText('category'), { focusInput: false });
+        showNotice(keywordErrorText('category'));
       } else {
         console.error(e);
         messageDialog({ title: '储存失败', message: '请稍后再试一次。' });
@@ -252,12 +282,12 @@ export function openKeywordsPage(store) {
   // ---------- 新增（独立一组，在最上面） ----------
   const addMain = h('button', {
     type: 'button', class: 'cat-row-main',
-    on: { click: () => openKeywordEditor(store, { onClosed: afterEditorClosed }) },
+    on: { click: () => openKeywordEditor(store, { onSaved: noteSaved, onClosed: afterEditorClosed }) },
   },
   h('span', { class: 'cat-row-plus', 'aria-hidden': 'true' }, icon('plus', 20)),
   h('span', { class: 'cat-row-name' }, '新增关键词'));
   const addGroup = h('ul', { class: 'inset-group cat-list kw-add', role: 'list' }, h('li', { class: 'cat-row cat-row-add' }, addMain));
-  const limitNote = h('p', { class: 'settings-footer', hidden: true }, `最多 ${KEYWORD_LIMIT} 个关键词，删掉一些才能再加。`);
+  const limitNote = h('p', { class: 'settings-footer', id: `${uid}-limit`, hidden: true }, `最多 ${KEYWORD_LIMIT} 个关键词，删掉一些才能再加。`);
 
   // ---------- 清单 ----------
   const list = h('ul', { class: 'inset-group cat-list kw-list', role: 'list', 'aria-label': '关键词' });
@@ -268,9 +298,17 @@ export function openKeywordsPage(store) {
     '备注或店名含关键词（不分大小写），bot 就一定记成那个分类，不管 AI 怎么认。两个都对上时，用比较长的那个。');
   const rows = new Map(); // keyword → { li, main, sig }
 
-  // 编辑 sheet 关闭后：开启者已不在（那列被删掉）→ 焦点放到「新增关键词」
+  // 编辑 sheet 关闭后：焦点不在页里（开启者那列被删掉或改名换掉）→ 存了就放到新的那一列；
+  // 否则「新增关键词」；满 200 时它停用 → 返回键（审核 M-11）
+  let lastSaved = null;
+  function noteSaved(rec) { lastSaved = rec ? rec.keyword : null; }
   function afterEditorClosed() {
-    if (!closed && !page.contains(document.activeElement)) addMain.focus({ preventScroll: true });
+    const saved = lastSaved;
+    lastSaved = null;
+    if (closed || page.contains(document.activeElement)) return;
+    const row = saved ? rows.get(saved) : null;
+    const where = focusAfterEdit({ savedRowExists: !!row, addDisabled: addMain.disabled });
+    (where === 'row' ? row.main : where === 'add' ? addMain : backBtn).focus({ preventScroll: true });
   }
 
   function renderList() {
@@ -278,6 +316,8 @@ export function openKeywordsPage(store) {
     const full = kws.length >= KEYWORD_LIMIT;
     addMain.disabled = full;
     limitNote.hidden = !full;
+    if (full) addMain.setAttribute('aria-describedby', limitNote.id); // 读屏念得到为什么不能按（审核 M-12）
+    else addMain.removeAttribute('aria-describedby');
     empty.hidden = kws.length > 0;
     list.hidden = kws.length === 0;
     footer.hidden = kws.length === 0;
@@ -292,7 +332,7 @@ export function openKeywordsPage(store) {
         rec = { li: null, main: null, sig: '', kw: k };
         rec.main = h('button', {
           type: 'button', class: 'cat-row-main kw-row-main',
-          on: { click: () => openKeywordEditor(store, { keyword: rec.kw, onClosed: afterEditorClosed }) },
+          on: { click: () => openKeywordEditor(store, { keyword: rec.kw, onSaved: noteSaved, onClosed: afterEditorClosed }) },
         });
         rec.li = h('li', { class: 'cat-row', 'data-keyword': k.keyword }, rec.main);
         rows.set(k.keyword, rec);
@@ -317,7 +357,7 @@ export function openKeywordsPage(store) {
     const same = wanted.length === list.children.length && wanted.every((el, i) => list.children[i] === el);
     if (!same) list.replaceChildren(...wanted);
     if (hadFocus && document.activeElement !== hadFocus) {
-      (list.contains(hadFocus) ? hadFocus : addMain).focus({ preventScroll: true });
+      (list.contains(hadFocus) ? hadFocus : addMain.disabled ? backBtn : addMain).focus({ preventScroll: true });
     }
   }
 
