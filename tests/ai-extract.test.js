@@ -153,3 +153,15 @@ test('审核：分类清单带多余栏位（例如 user_id）不会进请求', 
   const b = aiBuildRequest({ today: '2026-11-26', cats: [{ id: 'food', name: '餐饮', kind: 'expense', user_id: 'uid-secret-123' }], text: 'x 1' });
   assert.ok(!JSON.stringify(b).includes('uid-secret-123'));
 });
+
+// 2026-11-27：成功时一并回传用量（只取 input_tokens、output_tokens 两个非负整数；给测试图评估算花费）
+test('aiExtract：有 usage 就回 usage（只取两个数字）；没有或不合格就不带', async () => {
+  let f = fakeFetch([[API, () => jsonRes(200, reply({ usage: { input_tokens: 4012, output_tokens: 88, cache_read_input_tokens: 0, secret: 'x' } }))]]);
+  let r = await aiExtract(f, KEY, {}, 1000);
+  assert.deepEqual(r, { ok: true, data: GOOD, usage: { input_tokens: 4012, output_tokens: 88 } });
+  for (const usage of [{ input_tokens: -1, output_tokens: 2 }, { input_tokens: '9', output_tokens: 2 }, null, 'x']) {
+    f = fakeFetch([[API, () => jsonRes(200, reply({ usage }))]]);
+    r = await aiExtract(f, KEY, {}, 1000);
+    assert.deepEqual(r, { ok: true, data: GOOD }, JSON.stringify(usage));
+  }
+});

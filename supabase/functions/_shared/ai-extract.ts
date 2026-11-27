@@ -71,8 +71,9 @@ export function aiBuildRequest(input: {
   };
 }
 
+export type AiUsage = { input_tokens: number; output_tokens: number };
 export type AiResult =
-  | { ok: true; data: unknown }
+  | { ok: true; data: unknown; usage?: AiUsage }
   | { ok: false; why: 'http'; status: number; errType?: string }
   | { ok: false; why: 'timeout' | 'refusal' | 'max_tokens' | 'format' };
 
@@ -111,9 +112,17 @@ export async function aiExtract(fetchFn: typeof fetch, key: string, body: unknow
   if (typeof data.model !== 'string' || !data.model.startsWith(AI_MODEL)) return { ok: false, why: 'format' };
   const block = Array.isArray(data.content) ? data.content.find((b: any) => b && b.type === 'text' && typeof b.text === 'string') : null;
   if (!block) return { ok: false, why: 'format' };
+  let parsed: unknown;
   try {
-    return { ok: true, data: JSON.parse(block.text) };
+    parsed = JSON.parse(block.text);
   } catch {
     return { ok: false, why: 'format' };
   }
+  // 用量（算花费用）：只取两个非负整数，其他栏位不带出去
+  const u = data.usage;
+  const n = (v: unknown) => Number.isSafeInteger(v) && (v as number) >= 0;
+  if (u && typeof u === 'object' && n(u.input_tokens) && n(u.output_tokens)) {
+    return { ok: true, data: parsed, usage: { input_tokens: u.input_tokens, output_tokens: u.output_tokens } };
+  }
+  return { ok: true, data: parsed };
 }
