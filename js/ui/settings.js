@@ -34,7 +34,7 @@ export function syncLabel(st, { showSyncing = false } = {}) {
   if (st.state === 'other-owner') return { text: '账本属于另一个账号', action: null };
   if (st.state === 'unclaimed') return { text: '尚未开始同步 · 开始', action: 'start' };
   if (st.state === 'stopped') return { text: '已停止', action: null };
-  if (st.errors > 0) return { text: st.txErrors > 0 ? `有 ${st.txErrors} 笔无法同步` : '有分类无法同步', action: 'errors' };
+  if (st.errors > 0) return { text: st.txErrors > 0 ? `有 ${st.txErrors} 笔无法同步` : '有分类或关键词无法同步', action: 'errors' };
   if (st.state === 'offline') return { text: n > 0 ? `离线 · 待上传 ${n} 笔` : '离线', action: null };
   if (st.state === 'error') return { text: n > 0 ? `稍后重试 · 待上传 ${n} 笔` : '稍后重试', action: null };
   if (st.state === 'syncing' && showSyncing) return { text: '同步中…', action: null };
@@ -94,8 +94,8 @@ export function syncDiagParts(diag, { now = Date.now(), realtime = null } = {}) 
 }
 
 const ERROR_LIST_MAX = 8;
-/** 「无法同步」明细（纯函数）：账目「日期 · 分类 · 金额」（已删除标出）、分类「分类 · 名称」；最多列 8 行。 */
-export function syncErrorMessage({ txs = [], cats = [] }, categoryById) {
+/** 「无法同步」明细（纯函数）：账目「日期 · 分类 · 金额」（已删除标出）、分类「分类 · 名称」、关键词「关键词 · grab」；最多列 8 行。 */
+export function syncErrorMessage({ txs = [], cats = [], kws = [] }, categoryById) {
   const all = [
     ...txs.map((t) => {
       const c = categoryById(t.category_id);
@@ -103,6 +103,7 @@ export function syncErrorMessage({ txs = [], cats = [] }, categoryById) {
       return `${t.occurred_on} · ${c ? c.name : '未分类'} · ${amount}${t.deleted ? '（已删除）' : ''}`;
     }),
     ...cats.map((c) => `分类 · ${c.name}`),
+    ...kws.map((k) => `关键词 · ${k.keyword}`),
   ];
   const lines = all.slice(0, ERROR_LIST_MAX);
   if (all.length > ERROR_LIST_MAX) lines.push(`还有 ${all.length - ERROR_LIST_MAX} 项`);

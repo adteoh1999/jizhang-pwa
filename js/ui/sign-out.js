@@ -44,7 +44,7 @@ export const SIGNOUT_TEXT = Object.freeze({
 });
 const T = SIGNOUT_TEXT;
 
-/** 有没同步时的标题（纯函数）：有账目写笔数，只有分类改动写「还有改动没同步」。 */
+/** 有没同步时的标题（纯函数）：有账目写笔数，只有分类或关键词（3e）改动写「还有改动没同步」。 */
 export const unsyncedTitle = (txCount) => (txCount > 0 ? `还有 ${txCount} 笔没同步` : '还有改动没同步');
 
 // 不能「先同步」的原因（null＝可以）

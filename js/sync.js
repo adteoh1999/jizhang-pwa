@@ -77,7 +77,9 @@ export const FOREGROUND_FORCE_MS = 30_000; // 回前景时不管退避、马上�
 export const LOCK_RETRY_MS = 10_000; // 别的分页在同步：稍后再看一次（不算失败）
 const ALL_BAD_MIN = 10;   // 逐笔时至少这么多笔、全是资料错、没有一笔成功 → 当系统错误（前后端不一致），一笔都不标
 const ALL_BAD_STOP = 20;  // 连续这么多笔全错、没有成功 → 提早停
-const TABLES = ['categories', 'transactions']; // 先分类、再账目（上传与拉取都是）
+// 先分类、再账目、最后关键词（上传与拉取都是）。关键词放最后（用户 2026-11-27 决定）：
+// 关键词请求出错时整轮停，但账目这轮已经传完、拉完，不会被连累。
+const TABLES = ['categories', 'transactions', 'category_keywords'];
 const cursorKey = (table) => `cursor:${table}`;
 const SYNC_LOCK = 'jizhang-sync';
 

@@ -50,7 +50,7 @@ const ts = (sec, us = 0) => `2026-11-25T${String(8 + Math.floor(sec / 3600)).pad
 function fakePostgrest(tables = {}, { onGet } = {}) {
   // 默认分类预先在服务器上（真账号认领后就是这样）
   const cats = tables.categories || defaultCategories().map((c, i) => ({ ...c, server_updated_at: ts(i) }));
-  const data = { transactions: [...(tables.transactions || [])], categories: [...cats] };
+  const data = { transactions: [...(tables.transactions || [])], categories: [...cats], category_keywords: [...(tables.category_keywords || [])] };
   const gets = [];
   const posts = [];
   let clockUs = 0;
@@ -128,14 +128,14 @@ test('keyset（Review Focus 5）：2500 列、第 1000/1001 列 server_updated_a
   assert.equal(cur.id, fakeUuid(7499));
 });
 
-test('拉取顺序：先上传、再拉 categories、再拉 transactions', async () => {
+test('拉取顺序：先上传、再拉 categories、再拉 transactions、最后拉 category_keywords（3e）', async () => {
   const server = fakePostgrest();
   const order = [];
   const spy = async (url, init = {}) => { order.push(`${init.method || 'GET'} ${new URL(url).pathname.split('/').pop()}`); return server(url, init); };
   const { sync, store } = await setup({ server: spy });
   await store.saveTransaction({ kind: 'expense', amountMinor: 1, categoryId: 'food', occurredOn: '2026-11-20', note: '' });
   await sync.syncNow();
-  assert.deepEqual(order.filter((x, i) => x !== order[i - 1]), ['POST transactions', 'GET categories', 'GET transactions']);
+  assert.deepEqual(order.filter((x, i) => x !== order[i - 1]), ['POST transactions', 'GET categories', 'GET transactions', 'GET category_keywords']);
 });
 
 test('拉回较新的远端改动 → 盖掉本地已同步的列；拉回的旧版不盖掉本地未上传（sync_error）的改动', async () => {

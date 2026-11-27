@@ -58,8 +58,8 @@ test('syncErrorMessage：列出账目（日期 · 分类 · 金额，已删除�
   assert.match(syncErrorMessage({ txs: [{ ...tx, category_id: 'gone' }], cats: [] }, cat), /未分类/);
 });
 
-test('只有分类出错 → 「有分类无法同步」；账目与分类都有 → 照账目笔数', () => {
-  assert.deepEqual(L({ errors: 1, txErrors: 0 }), ['有分类无法同步', 'errors']);
+test('只有分类或关键词出错 → 「有分类或关键词无法同步」；账目与分类都有 → 照账目笔数', () => {
+  assert.deepEqual(L({ errors: 1, txErrors: 0 }), ['有分类或关键词无法同步', 'errors']);
   assert.deepEqual(L({ errors: 2, txErrors: 1 }), ['有 1 笔无法同步', 'errors']);
 });
 
