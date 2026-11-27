@@ -17,7 +17,7 @@ export const DELETE_TEXT = Object.freeze({
   offlineTitle: '需要网络才能删除账号',
   offlineMessage: '请连上网络后再试。',
   firstTitle: '删除账号和全部数据？',
-  firstMessage: '会永久删除你在这台设备和云端的所有记录、分类、关键词和设置，无法复原。',
+  firstMessage: '删掉后，这台手机和服务器上的账、分类、关键词、设置都会没了，Telegram 也会断开，救不回来。', // 3f 用户定
   exportLabel: '先导出 CSV',
   continueLabel: '继续删除',
   cancelLabel: '取消',
@@ -32,6 +32,8 @@ export const DELETE_TEXT = Object.freeze({
   switchedTitle: '账号已更换',
   switchedMessage: '请重新整理后再试。',
   failTitle: '没能删除账号',
+  // 3f（审核 M-2）：服务器可能已删了资料（含 Telegram 连接）但账号没删成；只说状况、不承诺下一步
+  failTgNote: 'Telegram 连接可能已经断了。',
   timeoutTitle: '没收到回应',
   timeoutMessage: '没收到服务器的回应，账号可能已经删除，请重新整理后再试一次。',
   doneTitle: '账号已删除',
@@ -173,7 +175,8 @@ async function flow({
     else if (why === 'switched') await fail(T.switchedTitle, T.switchedMessage);
     else if (r.timeout) await fail(T.timeoutTitle, T.timeoutMessage);
     else if (r.status === 401) await fail(T.reloginTitle, T.reloginMessage);
-    else await fail(T.failTitle, r.error);
+    // 5xx 才可能是「资料已删、账号没删成」（服务器删到一半）；断网（status 0）请求没到服务器，不加
+    else await fail(T.failTitle, r.status >= 500 ? `${r.error}\n${T.failTgNote}` : r.error);
     reload();
     return 'fail';
   }

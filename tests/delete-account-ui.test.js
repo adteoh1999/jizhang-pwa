@@ -74,7 +74,8 @@ test('第一步：标题、内文、三个按钮（先导出 CSV 不关窗／继
   await runDeleteAccount(deps);
   const o = dialogs.lastChoice;
   assert.equal(o.title, '删除账号和全部数据？');
-  assert.equal(o.message, '会永久删除你在这台设备和云端的所有记录、分类、关键词和设置，无法复原。');
+  // 3f（审核 M-3，用户 2026-11-28 定）：口语、提到 Telegram 会断开
+  assert.equal(o.message, '删掉后，这台手机和服务器上的账、分类、关键词、设置都会没了，Telegram 也会断开，救不回来。');
   assert.deepEqual(o.buttons.map((b) => b.label), ['先导出 CSV', '继续删除', '取消']);
   assert.equal(o.buttons[0].keepOpen, true);
   assert.equal(o.buttons[1].destructive, true);
@@ -123,11 +124,12 @@ test('成功：正在删除（挡住画面）→ 拿 session → 停同步与 Re
   assert.equal(await store.getMeta('lastUserId'), undefined);
 });
 
-test('服务器失败：不清本机、显示服务器的中文、重新整理（让同步重新开始）', async () => {
+test('服务器失败：不清本机、显示服务器的中文＋Telegram 可能已断（3f 审核 M-2）、重新整理（让同步重新开始）', async () => {
   const { store, log, dialogs, deps } = await setup({ deleteRes: () => res(500, { error: '暂时无法删除，请稍后再试' }) });
   assert.equal(await runDeleteAccount(deps), 'fail');
   assert.equal(dialogs.lastMessage.title, '没能删除账号');
-  assert.equal(dialogs.lastMessage.message, '暂时无法删除，请稍后再试');
+  assert.equal(dialogs.lastMessage.message, '暂时无法删除，请稍后再试\nTelegram 连接可能已经断了。');
+  assert.equal(DELETE_TEXT.failTgNote, 'Telegram 连接可能已经断了。');
   assert.equal(store.transactions().length, 1);
   assert.deepEqual(await store.getMeta('session'), SESSION);
   assert.ok(!ran(log, 'storage.remove') && !ran(log, 'announce'));
