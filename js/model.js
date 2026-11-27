@@ -87,6 +87,48 @@ export function buildCategory(input, existing, { now, uuid }) {
   };
 }
 
+// ---------- 关键词（3e）：Telegram bot 记账时，文字或店名含关键词就一定记成这个分类 ----------
+// 服务器 CHECK：keyword = lower(btrim(keyword)) and char_length(keyword) between 1 and 20（码点数）。
+// JS trim() 去的空白比 btrim 多，转小写后的结果 Postgres lower() 不会再变 → 这里通过的，服务器一定收。
+export const KEYWORD_MAX = 20;
+export const KEYWORD_LIMIT = 200;
+const ZERO_WIDTH = /[​-‍⁠﻿]/g; // trim() 不去、看不见、会让关键词永远对不上
+
+export function normalizeKeyword(raw) {
+  return String(raw ?? '').replace(ZERO_WIDTH, '').trim().toLowerCase().trim();
+}
+
+/**
+ * 检查关键词（先正规化，再以码点算字数）。active：没删除的关键词；selfKeyword：编辑中的那个（新增时 null）。
+ * 回 null（可以存）或 'empty' | 'long' | 'bad'（控制字元）| 'dup' | 'limit'。
+ */
+export function checkKeyword(raw, { active, selfKeyword }) {
+  const k = normalizeKeyword(raw);
+  if (k === '') return 'empty';
+  if ([...k].length > KEYWORD_MAX) return 'long';
+  if (/\p{Cc}/u.test(k)) return 'bad';
+  if (active.some((r) => r.keyword === k && r.keyword !== selfKeyword)) return 'dup';
+  if (selfKeyword == null && active.length >= KEYWORD_LIMIT) return 'limit';
+  return null;
+}
+
+/** 关键词列：id 就是关键词本身（服务器主键是 (user_id, keyword)）。existing：同一个关键词的旧列（复活已删除的）。 */
+export function buildKeyword(input, existing, { now }) {
+  const keyword = normalizeKeyword(input.keyword);
+  const bad = checkKeyword(keyword, { active: [], selfKeyword: null });
+  if (bad) throw new ValidationError('keyword', bad);
+  const cat = input.categoryId;
+  if (typeof cat !== 'string' || cat.length < 1 || cat.length > 64) throw new ValidationError('category');
+  return {
+    id: keyword,
+    keyword,
+    category_id: cat,
+    updated_at: nextUpdatedAt(existing && existing.updated_at, now),
+    deleted: false,
+    dirty: 1,
+  };
+}
+
 // sync_error（同步标记的坏资料）在用户再改动时清掉，让它重新上传一次
 export function markDeleted(rec, now) {
   const { sync_error: _drop, ...rest } = rec;
