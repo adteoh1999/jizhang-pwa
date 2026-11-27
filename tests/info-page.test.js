@@ -43,7 +43,7 @@ test('info-page.js：文字一律 textContent（不用 innerHTML）、步骤用 
   const src = read('../js/ui/info-page.js');
   assert.doesNotMatch(src, /innerHTML|insertAdjacentHTML/);
   assert.match(src, /h\('ol'/);
-  assert.match(src, /h\('a', \{[^}]*href: page\.action\.href[^}]*target: '_blank'[^}]*rel: 'noopener'/);
+  assert.match(src, /h\('a', \{[^}]*href: page\.action\.href[^}]*target: '_blank'[^}]*rel: 'noopener noreferrer'/); // 最终审核：不带来源网址
   assert.match(src, /trapFocus\(/);
   assert.match(src, /pushLayer\(/);
 });
@@ -77,4 +77,10 @@ test('说明页样式：段落在白卡片里；「打开 @adjizhangbot」是这
   const mh = rule[1].match(/min-height: (\d+)px;/);
   assert.ok(mh && Number(mh[1]) >= 44, '按钮至少 44px 高');
   assert.match(rule[1], /text-decoration: none;/);
+});
+
+test('3f 最终审核：步骤与按钮的长字（@adjizhangbot）在超大字级可断行', async () => {
+  const { css } = await import('./helpers/css-tokens.js');
+  assert.match(css, /\.info-steps \{[^}]*overflow-wrap: anywhere;/);
+  assert.match(css.match(/\.info-action \{([^}]*)\}/)[1], /overflow-wrap: anywhere;/);
 });

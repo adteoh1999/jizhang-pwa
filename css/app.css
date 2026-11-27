@@ -1783,7 +1783,7 @@ button.inset-row:active { background: var(--press-bg); }
   box-shadow: 0 0 0 1px var(--hairline);
 }
 .info-para { margin: 12px 0; font: var(--font-body); color: var(--label); overflow-wrap: anywhere; }
-.info-steps { margin: 0 0 12px; padding-left: 1.4em; font: var(--font-body); color: var(--label); }
+.info-steps { margin: 0 0 12px; padding-left: 1.4em; font: var(--font-body); color: var(--label); overflow-wrap: anywhere; }
 .info-steps li + li { margin-top: 6px; }
 .info-action {
   display: flex;
@@ -1797,6 +1797,8 @@ button.inset-row:active { background: var(--press-bg); }
   color: var(--btn-fg);
   font: var(--font-headline);
   text-decoration: none;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 .info-action:active { opacity: 0.7; }
 .info-note { padding-top: 10px; }
@@ -2102,6 +2104,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .login-sub { font: var(--font-body); line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
 .login-body .login-sub { margin-bottom: 24px; }
 .login-sub .nowrap { display: inline-block; white-space: normal; } /* 句尾整组换行；过宽（大字级 / 窄屏）才在段内换行 */
+.login-footnote .nowrap { display: inline-block; white-space: normal; } /* 3f 隐私小字：同上（超大字级不横向溢出） */
 .login-primary {
   width: 100%;
   min-height: 52px;

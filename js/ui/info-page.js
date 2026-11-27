@@ -55,7 +55,7 @@ export function openInfoPage(kind, { from = '设置' } = {}) {
       h('div', { class: 'info-card' },
         h('p', { class: 'info-para' }, page.lead),
         h('ol', { class: 'info-steps' }, page.steps.map((t) => h('li', null, t)))),
-      h('a', { class: 'info-action', href: page.action.href, target: '_blank', rel: 'noopener' }, page.action.label),
+      h('a', { class: 'info-action', href: page.action.href, target: '_blank', rel: 'noopener noreferrer' }, page.action.label),
       ...page.notes.map((t) => h('p', { class: 'settings-footer info-note' }, t)),
     ];
   const body = h('div', { class: 'nav-page-body' }, content);

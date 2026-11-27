@@ -226,3 +226,16 @@ test('renderFatal：没给 buttonLabel → 不放按钮（Telegram 内建浏览�
     globalThis.Node = prevNode;
   }
 });
+
+test('3f 最终审核 I-1：有没上传的改动但不能导出（不能分享，或只有分类没上传）→ 再确认不问「CSV 存好了吗」', async () => {
+  for (const [opts, owner, txs, cat] of [[{ exportable: false }, null, 2, false], [{ exportable: true }, 'u-A', 0, true]]) {
+    const store = await makeStore({ owner, txs });
+    if (cat) await store.saveCategory({ kind: 'expense', name: '宠物' }); // 只有分类没上传：txCount 0、any true
+    assert.equal(store.unsyncedInfo({ all: !owner }).any, true, '前提：有没上传的改动');
+    const { deps, log } = goneDeps(store, ['clear'], opts);
+    assert.equal(await runTgGone(deps), 'cleared');
+    assert.equal(log.confirms.length, 1, JSON.stringify(opts));
+    assert.equal(log.confirms[0].message, LOGIN_TEXT.clearMessageNoExport);
+    assert.equal(log.confirms[0].title, LOGIN_TEXT.clearTitle);
+  }
+});

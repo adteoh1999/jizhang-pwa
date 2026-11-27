@@ -335,3 +335,7 @@ test('3f 登录页：隐私小字在邮箱表单之后（沿用 .login-footnote�
   // 靠左、footnote 字级、次要色（跟重发那一行对齐）
   assert.match(css, /\.login-spam \{[^}]*font: var\(--font-footnote\);[^}]*color: var\(--ink-2\);/);
 });
+
+test('3f 最终审核 I-2：隐私小字的 .nowrap 有后备（过宽才在段内换行，超大字级不横向溢出）', () => {
+  assert.match(css, /\.login-footnote \.nowrap \{ display: inline-block; white-space: normal; \}/);
+});

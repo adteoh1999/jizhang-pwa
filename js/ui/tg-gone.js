@@ -55,7 +55,9 @@ export async function runTgGone(deps) {
     // 有没上传的改动：再问一次（沿用换账号的句子）；取消 → 回到对话框
     if (info.any && deps.confirm) {
       const sure = await deps.confirm({
-        title: LOGIN_TEXT.clearTitle, message: LOGIN_TEXT.clearMessage, confirmLabel: LOGIN_TEXT.clearConfirm, destructive: true,
+        // 没有「导出」时不问「CSV 存好了吗」（最终审核 I-1，同 askReset）
+        title: LOGIN_TEXT.clearTitle, message: canExport ? LOGIN_TEXT.clearMessage : LOGIN_TEXT.clearMessageNoExport,
+        confirmLabel: LOGIN_TEXT.clearConfirm, destructive: true,
       });
       if (!sure) continue;
     }
