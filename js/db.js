@@ -10,7 +10,8 @@ const BLOCKED_MSG = '资料库被其他分页占用，请关闭其他分页后�
  * 开资料库。idb、计时器可注入（测试用）。
  * 升级按 oldVersion 分段（不能无条件建全部 store：旧用户会 ConstraintError）。
  * blocked（别的分页还开着旧连线）：先等 BLOCKED_WAIT_MS；那段时间开成功就照常用，等不到才显示「请关闭其他分页」。
- * 超时之后才开成功的连线没人要 → 马上关掉，并发 jizhang:db-versionchange（不留会挡住下次升级的连线）。
+ * 超时之后才开成功的连线没人要 → 马上关掉（不留会挡住下次升级的连线）。画面已经是「请关闭其他分页后重新整理」，
+ * 不再发 jizhang:db-versionchange（真浏览器测试：会叠出第二段「需要重新载入」）。
  */
 export function openDatabase(name = 'jizhang', {
   idb = globalThis.indexedDB, blockedWaitMs = BLOCKED_WAIT_MS,
@@ -59,7 +60,6 @@ export function openDatabase(name = 'jizhang', {
       const db = req.result;
       if (settled) { // 已经显示「请关闭其他分页」：这条连线没人用，关掉
         try { db.close(); } catch { /* 已关 */ }
-        globalThis.window?.dispatchEvent(new CustomEvent('jizhang:db-versionchange'));
         return;
       }
       settled = true;
