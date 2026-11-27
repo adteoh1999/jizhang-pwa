@@ -5,7 +5,14 @@ import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
 export const UPLOAD_COLUMNS = Object.freeze({
   transactions: Object.freeze(['id', 'kind', 'amount_minor', 'category_id', 'occurred_on', 'note', 'created_at', 'updated_at', 'deleted']),
   categories: Object.freeze(['id', 'kind', 'name', 'icon', 'sort', 'updated_at', 'deleted']),
+  category_keywords: Object.freeze(['keyword', 'category_id', 'updated_at', 'deleted']),
 });
+// 每张表的主键栏位（3e）：关键词表没有 id，主键是 (user_id, keyword)。本地把 id 当 keyword 的别名，
+// 只在这里设定：上传 on_conflict、回传与拉取用 PostgREST 别名 id:keyword、排序与 keyset 用 keyword。
+export const TABLE_KEY = Object.freeze({ transactions: 'id', categories: 'id', category_keywords: 'keyword' });
+const keyOf = (table) => TABLE_KEY[table];
+// select 的 id：主键就是 id → 'id'；否则 PostgREST 别名 'id:<主键>'
+const idSelect = (table) => (keyOf(table) === 'id' ? 'id' : `id:${keyOf(table)}`);
 const DEFAULT_TIMEOUT_MS = 15_000;
 export const SELECT_TIMEOUT_MS = 20_000;
 export const PAGE_SIZE = 1000;
@@ -19,7 +26,7 @@ const pick = (row, cols) => Object.fromEntries(cols.map((c) => [c, row[c]]));
 export async function upsertRows(fetchFn, table, rows, accessToken, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const cols = UPLOAD_COLUMNS[table];
   if (!cols) throw new Error(`未知的表：${table}`);
-  const url = `${SUPABASE_URL}/rest/v1/${table}?on_conflict=user_id,id&columns=${cols.join(',')}&select=id,updated_at`;
+  const url = `${SUPABASE_URL}/rest/v1/${table}?on_conflict=user_id,${keyOf(table)}&columns=${cols.join(',')}&select=${idSelect(table)},updated_at`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -60,10 +67,12 @@ const q = (v) => `%22${encodeURIComponent(String(v).replace(/[\\"]/g, '\\$&'))}%
 export async function selectPage(fetchFn, table, { after = null, since = null } = {}, accessToken, { timeoutMs = SELECT_TIMEOUT_MS } = {}) {
   const cols = UPLOAD_COLUMNS[table];
   if (!cols) throw new Error(`未知的表：${table}`);
-  let url = `${SUPABASE_URL}/rest/v1/${table}?select=${[...cols, 'server_updated_at'].join(',')}`
-    + `&order=server_updated_at.asc,id.asc&limit=${PAGE_SIZE}`;
-  if (after) {
-    url += `&or=(server_updated_at.gt.${q(after.ts)},and(server_updated_at.eq.${q(after.ts)},id.gt.${q(after.id)}))`;
+  const key = keyOf(table);
+  const sel = [...cols, 'server_updated_at', ...(key === 'id' ? [] : [idSelect(table)])];
+  let url = `${SUPABASE_URL}/rest/v1/${table}?select=${sel.join(',')}`
+    + `&order=server_updated_at.asc,${key}.asc&limit=${PAGE_SIZE}`;
+  if (after) { // after.id：上一页最后一列的 id（关键词表就是 keyword）
+    url += `&or=(server_updated_at.gt.${q(after.ts)},and(server_updated_at.eq.${q(after.ts)},${key}.gt.${q(after.id)}))`;
   } else if (since) {
     url += `&server_updated_at=gt.${encodeURIComponent(since)}`;
   }
