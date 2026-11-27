@@ -97,6 +97,27 @@ test('blocked 等 8 秒还没开 → 显示「请关闭其他分页」；之后�
   assert.equal(f.log.at(-1), 'close');
 });
 
+test('超时后才开成功：只关连线，不再发 jizhang:db-versionchange（真浏览器测试：会叠第二段「需要重新载入」）', async () => {
+  const f = fakeIdb({ existing: ['transactions', 'categories', 'meta'] });
+  const t = fakeTimers();
+  const events = [];
+  const had = 'window' in globalThis;
+  const prev = globalThis.window;
+  globalThis.window = { dispatchEvent: (e) => events.push(e.type) };
+  try {
+    const p = openDatabase('t', { idb: f.idb, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    f.reqs[0].onblocked();
+    t.fire();
+    await assert.rejects(p);
+    f.reqs[0].onupgradeneeded({ oldVersion: 1 });
+    f.reqs[0].onsuccess();
+    assert.equal(f.log.at(-1), 'close');
+    assert.deepEqual(events, []);
+  } finally {
+    if (had) globalThis.window = prev; else delete globalThis.window;
+  }
+});
+
 test('旧程式遇到新资料库（VersionError）→ 请用户重新整理更新', async () => {
   const f = fakeIdb();
   const p = openDatabase('t', { idb: f.idb });
