@@ -309,3 +309,29 @@ test('审核：askReset exportable:false（Telegram 里）→ 没有「导出 CS
   assert.deepEqual(seen.buttons.map((b) => b.label), [LOGIN_TEXT.switchClear, LOGIN_TEXT.switchCancel]);
   assert.doesNotMatch(seen.message, /导出/);
 });
+
+// ---------- 3f：隐私小字、垃圾邮件提示（用户 2026-11-28 定稿） ----------
+test('3f 登录页：隐私小字在邮箱表单之后（沿用 .login-footnote）；验证码页「信也可能在垃圾邮件里」在重发那一行下面', () => {
+  const src = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
+  assert.equal(LOGIN_TEXT.privacyNote, '你的账会存在服务器上，管理的人在后台看得到。详细看 设置 › 关于。');
+  assert.equal(LOGIN_TEXT.privacyNoteTail, '详细看 设置 › 关于。');
+  // 320 宽截图：「到。」落单 → 第一句句尾「看得到。」也不拆
+  assert.match(src, /const privacyNoteParts = \(\) => \{[\s\S]*?splitTail\(T\.privacyNote, T\.privacyNoteTail\)[\s\S]*?withTail\(head, '看得到。'\)[\s\S]*?class: 'nowrap' \}, tail\)/); // 折行时整段不拆开（截图：「设置 › 关于」被拆两行）
+  assert.equal(LOGIN_TEXT.spamHint, '信也可能在垃圾邮件里。');
+  const stmt = (head) => {
+    const a = src.indexOf(head);
+    assert.ok(a >= 0, `找到 ${head}`);
+    const b = src.indexOf(';\n', a);
+    assert.ok(b > a);
+    return src.slice(a, b);
+  };
+  const email = stmt('const emailBody = h(');
+  assert.ok(email.indexOf('emailForm') >= 0 && email.indexOf("h('p', { class: 'login-footnote' }, privacyNoteParts())") > email.indexOf('emailForm'), '隐私小字在表单之后');
+  const code = stmt('const codeForm = h(');
+  const resend = code.indexOf("h('p', { class: 'login-resend' }, resendText, resendBtn)");
+  const spam = code.indexOf("h('p', { class: 'login-spam' }, T.spamHint)");
+  assert.ok(resend >= 0 && spam > resend, '垃圾邮件提示在重发那一行之后');
+  assert.ok(spam < code.indexOf('codeStatus.notice'), '在状态与按钮之前');
+  // 靠左、footnote 字级、次要色（跟重发那一行对齐）
+  assert.match(css, /\.login-spam \{[^}]*font: var\(--font-footnote\);[^}]*color: var\(--ink-2\);/);
+});

@@ -31,6 +31,10 @@ export const LOGIN_TEXT = Object.freeze({
   codeTitle: '输入验证码',
   codeLabel: '6 位数验证码',
   codeAuto: '输满 6 位会自动登录。',
+  // 3f（用户 2026-11-28 定稿）：口语、简短
+  privacyNote: '你的账会存在服务器上，管理的人在后台看得到。详细看 设置 › 关于。',
+  privacyNoteTail: '详细看 设置 › 关于。',
+  spamHint: '信也可能在垃圾邮件里。',
   codeButton: '进入记账',
   signingIn: '正在登录…',
   resendButton: '重新发送验证码',
@@ -236,6 +240,11 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     const [head, t] = splitTail(text, tail);
     return t ? [head, h('span', { class: 'nowrap' }, t)] : [head];
   };
+  // 3f 隐私小字：「详细看 设置 › 关于。」整段不拆；第一句句尾「看得到。」也不拆（320 宽「到。」落单）
+  const privacyNoteParts = () => {
+    const [head, tail] = splitTail(T.privacyNote, T.privacyNoteTail);
+    return [...withTail(head, '看得到。'), h('span', { class: 'nowrap' }, tail)];
+  };
   const safariHint = () => (extras.safari
     ? h('div', { class: 'install-hint login-hint', role: 'note' },
       h('span', { class: 'install-hint-icon' }, icon('square-arrow-up', 20)),
@@ -288,7 +297,8 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
   emailForm.addEventListener('submit', (e) => { e.preventDefault(); flow.submitEmail(emailInput.value, inviteInput.value); });
   // Safari 提示放在 .login-body 里：键盘上移时和标题一起移动，不会叠在一起
   const emailBody = h('div', { class: 'login-body' }, safariHint(), backBtn('返回'), emailTitle,
-    h('p', { class: 'login-sub' }, withTail(T.emailSub, T.emailSubTail), extras.tgHint ? [h('br'), T.tgEmailHint] : null), emailForm);
+    h('p', { class: 'login-sub' }, withTail(T.emailSub, T.emailSubTail), extras.tgHint ? [h('br'), T.tgEmailHint] : null), emailForm,
+    h('p', { class: 'login-footnote' }, privacyNoteParts()));
   const emailStep = h('section', { class: 'login-step', 'data-step': 'email', 'aria-labelledby': 'login-title-email' }, emailBody);
 
   // ---------- 3. 验证码 ----------
@@ -313,6 +323,7 @@ export function mountLogin(root, { store, fetchFn, onSignedIn, now = () => Date.
     h('div', { class: 'login-code' }, h('div', { class: 'login-cells', 'aria-hidden': 'true' }, cells), codeInput),
     h('span', { class: 'sr-only', id: 'login-code-auto' }, T.codeAuto),
     h('p', { class: 'login-resend' }, resendText, resendBtn),
+    h('p', { class: 'login-spam' }, T.spamHint),
     codeStatus.notice, codeStatus.error, enterBtn);
   codeInput.addEventListener('input', () => { flow.inputCode(codeInput.value).catch((e) => console.error(e)); });
   // 游标固定在最后（6 格只显示，不支援从中间插入）
