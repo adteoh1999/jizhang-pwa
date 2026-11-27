@@ -11,6 +11,7 @@
 //   - 按钮（callback）不去重：Telegram 重送同一个按钮时会重放一次，undo → 已删除、confirm／consent 幂等、discard → 过期，都无害。
 //   - 截图只在记忆体；送给 Anthropic 的只有说明、今天日期、分类清单、文字或截图（先去掉 GPS 等拍摄资料，用户决定 8）。
 //   - 日志只记「步骤＋状态码／错误种类」，绝不记讯息文字、截图、AI 回应、file_path、网址、telegram_id。
+//     例外（3f 审核 I-2）：AI 成功时用 console.log 记「AI 用量: 输入 N 输出 N」两个数字，用来核对花费。
 // 打包规则：这个档自己的顶层名字一律 tb／TB_ 开头（BOT_ 是 bot-reply.ts 的）。
 import { secretKey, rpc } from '../_shared/http.ts';
 import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, tgImageDoc, tgDownload, tgSniffImage, tgStripMeta, tgImageSize, tgBase64 } from '../_shared/telegram.ts';
@@ -18,7 +19,7 @@ import { botMergeCategories } from '../_shared/bot-categories.ts';
 import { botParseKeywords, botApplyKeyword } from '../_shared/bot-keywords.ts';
 import { botToday, botCheckExtraction } from '../_shared/bot-extract.ts';
 import { aiKeyOk, aiBuildRequest, aiExtract } from '../_shared/ai-extract.ts';
-import { BOT_NOT_UNDERSTOOD, BOT_FOREIGN, BOT_QUOTA, BOT_DOWN, BOT_IMAGE_BAD, BOT_UNLINKED_START, BOT_HELP, BOT_CONSENT, BOT_CONSENT_OK, BOT_SKIPPED, BOT_ANS_EXPIRED, BOT_ANS_DELETED, BOT_ANS_CAT_CHANGED, BOT_ANS_UNDONE, BOT_ANS_RECORDED, botAnsCategory, botRecordedText, botUndoneText, botSimilarText, botBigText, botCategoryPrompt, botRecordedKeyboard, botAskKeyboard, botConsentKeyboard, botUnlinkedKeyboard, botCategoryKeyboard, botCatHash, botParseCallback } from '../_shared/bot-reply.ts';
+import { BOT_NOT_UNDERSTOOD, BOT_FOREIGN, BOT_QUOTA, BOT_QUOTA_SITE, BOT_DOWN, BOT_IMAGE_BAD, BOT_UNLINKED_START, BOT_HELP, BOT_CONSENT, BOT_CONSENT_OK, BOT_SKIPPED, BOT_ANS_EXPIRED, BOT_ANS_DELETED, BOT_ANS_CAT_CHANGED, BOT_ANS_UNDONE, BOT_ANS_RECORDED, botAnsCategory, botRecordedText, botUndoneText, botSimilarText, botBigText, botCategoryPrompt, botRecordedKeyboard, botAskKeyboard, botConsentKeyboard, botUnlinkedKeyboard, botCategoryKeyboard, botCatHash, botParseCallback } from '../_shared/bot-reply.ts';
 
 type TbDeps = {
   env: (k: string) => string | undefined;
@@ -45,6 +46,7 @@ const TB_AI_MIN_LEFT_MS = 9000;       // 剩下的时间不够叫 AI 就不叫�
 const TB_AFTER_AI_MS = 6000;          // AI 之后要留给记账（4 秒）与回复的时间
 
 const tbLog = (step: string, detail: string) => console.error(`[telegram-bot] ${step}: ${detail}`);
+const tbInfo = (step: string, detail: string) => console.log(`[telegram-bot] ${step}: ${detail}`);
 // rpc 抛的讯息是自己写的固定文字（函数名＋状态码），可以记；其他错误一律只记「失败」
 const tbErr = (e: unknown) => (e instanceof Error && e.message.startsWith('rpc ') ? e.message : '失败');
 const tbStatus = (status: number) => new Response(null, { status });
@@ -347,7 +349,10 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
       await tbFinish(ctx);
       return tbStatus(200);
     }
-    if (reserve?.why === 'site') tbLog('ai_reserve', 'site');
+    if (reserve?.why === 'site') {
+      tbLog('ai_reserve', 'site');
+      return await tbEnd(ctx, BOT_QUOTA_SITE);
+    }
     return await tbEnd(ctx, BOT_QUOTA);
   }
   const useId = reserve.use_id;
@@ -391,6 +396,9 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     tbLog('AI', ai.why);
     return await tbEnd(ctx, ai.why === 'timeout' ? BOT_DOWN : BOT_NOT_UNDERSTOOD);
   }
+
+  // 用量只有两个数字（aiExtract 已确认是数字）；不是错误，用 console.log
+  if (ai.usage) tbInfo('AI 用量', `输入 ${ai.usage.input_tokens} 输出 ${ai.usage.output_tokens}`);
 
   // ---- 程式检查 ----
   const check = botCheckExtraction(ai.data, { source, text: text ?? '', caption, today: ctx.today, cats });

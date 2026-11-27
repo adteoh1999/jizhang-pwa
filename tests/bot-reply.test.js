@@ -20,6 +20,7 @@ test('固定文案逐字（用户已同意）', () => {
   assert.equal(R.BOT_FOREIGN, '目前只支援 RM，这笔请手动记');
   assert.equal(R.BOT_QUOTA, 'AI 记账次数用完了（每人 24 小时内 30 次），请晚点再试，或打开 App 手动记。');
   assert.equal(R.BOT_DOWN, '现在记不了，请稍后再试，或打开 App 手动记。');
+  assert.equal(R.BOT_QUOTA_SITE, '今天大家的 AI 记账次数用完了，晚点再试，或打开 App 手动记。'); // 3f 用户定（审核 I-1）
   assert.equal(R.BOT_IMAGE_BAD, '这张图片读不了，请传截图（JPG／PNG，5 MB 以内）。');
   assert.equal(R.BOT_UNLINKED_START, '请先点下方按钮打开记账、用邮箱登录。');
   assert.equal(R.BOT_SKIPPED, '好，这笔不记。');

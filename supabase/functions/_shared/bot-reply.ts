@@ -6,6 +6,8 @@ export const BOT_NOT_UNDERSTOOD = '没看懂这笔帐，请传付款截图，或
 export const BOT_FOREIGN = '目前只支援 RM，这笔请手动记';
 export const BOT_QUOTA = 'AI 记账次数用完了（每人 24 小时内 30 次），请晚点再试，或打开 App 手动记。';
 export const BOT_DOWN = '现在记不了，请稍后再试，或打开 App 手动记。';
+// 全站 24 小时次数用完（3f 审核 I-1，用户 2026-11-28 定）：不说成个人用完
+export const BOT_QUOTA_SITE = '今天大家的 AI 记账次数用完了，晚点再试，或打开 App 手动记。';
 export const BOT_IMAGE_BAD = '这张图片读不了，请传截图（JPG／PNG，5 MB 以内）。';
 export const BOT_UNLINKED_START = '请先点下方按钮打开记账、用邮箱登录。';
 export const BOT_SKIPPED = '好，这笔不记。';

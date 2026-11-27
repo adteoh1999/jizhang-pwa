@@ -66,9 +66,10 @@ const req = (body, { secret = SECRET, method = 'POST' } = {}) => new Request(`${
 
 async function quiet(fn) {
   const logs = [];
+  const levels = []; // 与 logs 同顺序：哪一种 console（3f：用量行要是 log、不是 error）
   const orig = { log: console.log, warn: console.warn, error: console.error, info: console.info };
-  for (const k of Object.keys(orig)) console[k] = (...a) => logs.push(a.map(String).join(' '));
-  try { return { r: await fn(), logs }; } finally { Object.assign(console, orig); }
+  for (const k of Object.keys(orig)) console[k] = (...a) => { logs.push(a.map(String).join(' ')); levels.push(k); };
+  try { return { r: await fn(), logs, levels }; } finally { Object.assign(console, orig); }
 }
 
 const sent = (f) => f.callsTo('/sendMessage').map((c) => c.body);
@@ -83,9 +84,9 @@ const assertCleanLogs = (logs) => { for (const s of SECRETS) for (const l of log
 for (const [label, mod] of await loadBoth('telegram-bot')) {
   const run = async (body, f, { env = ENV_OBJ, deps = {}, envFn, ...opts } = {}) => {
     const e = envFn ?? ((k) => env[k]);
-    const { r: res, logs } = await quiet(() => mod.handleTelegramBot(req(body, opts), { env: e, fetch: f, ...deps }));
+    const { r: res, logs, levels } = await quiet(() => mod.handleTelegramBot(req(body, opts), { env: e, fetch: f, ...deps }));
     assertCleanLogs(logs);
-    return { status: res.status, logs };
+    return { status: res.status, logs, levels };
   };
 
   // ---------- 密钥 ----------
@@ -292,12 +293,32 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     assert.equal(f.callsTo('/getFile').length, 0);
   });
 
+  // ---------- AI 用量日志（3f 审核 I-2：只记两个数字，用 console.log） ----------
+  test(`${label}：AI 成功且有 usage → 记一行「AI 用量」（只有数字、不是 error）；没有 usage → 不记、照常记账`, async () => {
+    const withUsage = () => jsonRes(200, { model: 'claude-haiku-5-5', stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify(aiOut()) }], usage: { input_tokens: 4321, output_tokens: 87 } });
+    let f = routes({ ai: withUsage });
+    let r = await run(update({ text: '早餐 6.9' }), f);
+    const at = r.logs.findIndex((l) => l.includes('AI 用量'));
+    assert.ok(at >= 0, '要有用量行');
+    const line = r.logs[at];
+    assert.equal(r.levels[at], 'log', '用量行不是错误');
+    assert.match(line, /4321/);
+    assert.match(line, /87/);
+    assert.ok(!line.includes('早餐'), '用量行不含讯息内容');
+    assert.ok(rpcBody(f, 'svc_bot_record').length === 1, '照常记账');
+    f = routes();
+    r = await run(update({ text: '早餐 6.9' }), f);
+    assert.equal(r.logs.some((l) => l.includes('AI 用量')), false);
+    assert.equal(rpcBody(f, 'svc_bot_record').length, 1);
+  });
+
   // ---------- 次数 ----------
-  test(`${label}：次数用完（个人／全站）→ 次数用完、没叫 AI；gone → 不回`, async () => {
+  test(`${label}：次数用完（个人／全站）→ 各自的句子、没叫 AI；gone → 不回`, async () => {
     for (const why of ['user', 'site']) {
       const f = routes({ svc_bot_ai_reserve: () => jsonRes(200, { ok: false, why }) });
       const r = await run(update({ text: '早餐 6.9' }), f);
-      assert.equal(sent(f)[0].text, R.BOT_QUOTA);
+      assert.equal(sent(f)[0].text, why === 'site' ? R.BOT_QUOTA_SITE : R.BOT_QUOTA); // 3f 审核 I-1：全站用完另一句
       assert.equal(aiCalls(f).length, 0);
       if (why === 'site') assert.ok(r.logs.some((l) => l.includes('site')));
     }
