@@ -11,6 +11,7 @@ import { aiKeyOk, aiBuildRequest, aiExtract } from '../_shared/ai-extract.ts';
 type EvDeps = { env: (k: string) => string | undefined; fetch: typeof fetch };
 
 const EV_B64_MAX = 8 * 1024 * 1024;
+const EV_IMAGE_MAX = 5 * 1024 * 1024;   // 跟 telegram-bot 的 TB_IMAGE_MAX 一样
 const EV_EDGE = 8000;
 const EV_AI_MS = 25000;
 const evJson = (status: number, obj: unknown) => new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
@@ -27,8 +28,9 @@ export async function handleAiEval(req: Request, deps: EvDeps): Promise<Response
     let body: any;
     try { body = await req.json(); } catch { return evJson(400, { error: 'json' }); }
     const today = body?.today;
-    const caption = typeof body?.caption === 'string' ? body.caption.slice(0, 500) : '';
-    if (typeof today !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return evJson(400, { error: 'today' });
+    const caption = typeof body?.caption === 'string' ? body.caption.trim() : '';   // 跟 bot 一样 trim
+    const t = typeof today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(today) ? Date.parse(today + 'T00:00:00Z') : NaN;
+    if (!Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== today) return evJson(400, { error: 'today' });
     if (typeof body.image !== 'string' || body.image.length > EV_B64_MAX) return evJson(400, { error: 'image_size' });
 
     let raw: Uint8Array;
@@ -39,6 +41,7 @@ export async function handleAiEval(req: Request, deps: EvDeps): Promise<Response
     } catch {
       return evJson(400, { error: 'image_b64' });
     }
+    if (raw.length > EV_IMAGE_MAX) return evJson(200, { error: 'image_bad' });
     const mediaType = tgSniffImage(raw);
     const bytes = mediaType ? tgStripMeta(raw, mediaType) : null;
     const size = bytes && mediaType ? tgImageSize(bytes, mediaType) : null;

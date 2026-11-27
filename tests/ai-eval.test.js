@@ -18,7 +18,9 @@ const B64 = Buffer.from(JPEG).toString('base64');
 
 test('ai-eval 只 import _shared 的四个档，不碰资料库（没有 rpc、没有 SUPABASE 变数）', () => {
   const src = readFileSync(new URL('../supabase/functions/ai-eval/index.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(src, /rpc|SUPABASE_|http\.ts|user\.ts/);
+  const imports = [...src.matchAll(/from '([^']+)'/g)].map((m) => m[1]).sort();
+  assert.deepEqual(imports, ['../_shared/ai-extract.ts', '../_shared/bot-categories.ts', '../_shared/bot-extract.ts', '../_shared/telegram.ts']);
+  assert.doesNotMatch(src, /rpc\(|SUPABASE_/);
 });
 
 for (const [label, mod] of await loadBoth('ai-eval')) {
@@ -65,9 +67,42 @@ for (const [label, mod] of await loadBoth('ai-eval')) {
   test(`${label}：今天不是 YYYY-MM-DD、图太大（base64 超过 8 MB）、不是 POST → 400／405、没叫 AI`, async () => {
     const f = fakeFetch([['api.anthropic.com', () => aiOk()]]);
     assert.equal((await run({ image: B64, today: '27/11/2026' }, f)).status, 400);
+    assert.equal((await run({ image: B64, today: '2026-13-40' }, f)).status, 400);   // 审核：不存在的日期也先挡
     assert.equal((await run({ image: 'A'.repeat(8 * 1024 * 1024 + 4), today: '2026-11-27' }, f)).status, 400);
     const g = await mod.handleAiEval(new Request('https://p/x', { method: 'GET' }), { env: (k) => ENV[k], fetch: f });
     assert.equal(g.status, 405);
     assert.equal(f.calls.length, 0);
+  });
+}
+
+// 审核（ai-eval）：跟 bot 一致的补测
+for (const [label, mod] of await loadBoth('ai-eval')) {
+  const run = async (body, f) => {
+    const res = await mod.handleAiEval(req(body), { env: (k) => ENV[k], fetch: f });
+    return { status: res.status, json: await res.json() };
+  };
+  test(`${label}：审核：原始档超过 5 MB（bot 的上限）→ image_bad、没叫 AI`, async () => {
+    const big = new Uint8Array(5 * 1024 * 1024 + 1);
+    big.set(JPEG.slice(0, -2));
+    big.set([0xff, 0xd9], big.length - 2);
+    const f = fakeFetch([['api.anthropic.com', () => aiOk()]]);
+    assert.deepEqual((await run({ image: Buffer.from(big).toString('base64'), today: '2026-11-27' }, f)).json, { error: 'image_bad' });
+    assert.equal(f.calls.length, 0);
+  });
+  test(`${label}：审核：说明文字跟 bot 一样先 trim（「 午餐 」→ 备注「午餐」）`, async () => {
+    const f = fakeFetch([['api.anthropic.com', () => aiOk()]]);
+    const r = await run({ image: B64, today: '2026-11-27', caption: '  午餐  ' }, f);
+    assert.equal(r.json.check.draft.note, '午餐');
+    assert.ok(f.calls[0].body.messages[0].content[1].text.endsWith(JSON.stringify('午餐')));
+  });
+  test(`${label}：审核：意外错误 → 500 固定字、不带错误内容`, async () => {
+    const f = () => { throw Object.assign(new Error('秘密 sk-ant-xxx'), { name: 'Weird' }); };
+    const r = await run({ image: B64, today: '2026-11-27' }, f);
+    assert.ok(r.status === 200 || r.status === 500);
+    assert.doesNotMatch(JSON.stringify(r.json), /秘密|sk-ant/);
+    const envBoom = (k) => { if (k === 'ANTHROPIC_API_KEY') throw new Error('秘密'); return ENV[k]; };
+    const res = await mod.handleAiEval(req({ image: B64, today: '2026-11-27' }), { env: envBoom, fetch: f });
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { error: 'unexpected' });
   });
 }
