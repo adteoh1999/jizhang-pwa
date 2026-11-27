@@ -50,3 +50,11 @@ test('每个没有后备值的 var(--x) 都有定义（CSS 宣告或 JS setPrope
   const missing = [...usedWithoutFallback(css)].filter((n) => !declared.has(n) && !js.has(n));
   assert.deepEqual(missing, []);
 });
+
+// 反方向：宣告了却没人用的变数（改版后留下的死 token）。JS 里以字串出现（var(--x) 或 '--x'）也算有用。
+test('没有宣告了却没人用的变数', () => {
+  const used = new Set([...css.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
+  const jsSrc = jsFiles('js/').map((f) => readFileSync(new URL(f, root), 'utf8')).join('\n');
+  const unused = [...declaredInCss(css)].filter((n) => !used.has(n) && !jsSrc.includes(n));
+  assert.deepEqual(unused, []);
+});

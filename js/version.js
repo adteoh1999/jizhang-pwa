@@ -1,2 +1,2 @@
 // App 版本：必须与 sw.js 的 VERSION 相同（Task 13 有测试比对）
-export const APP_VERSION = 'v3.3-2026-11-26';
+export const APP_VERSION = 'v3.4-2026-11-27';

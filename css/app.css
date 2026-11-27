@@ -53,7 +53,6 @@
   --login-error: #B4000F;
   --income: #1663C7;               /* 收入蓝（不跟深绿撞色；玻璃卡上 ≥4.9:1） */
   --red: rgb(255, 56, 60);          /* systemRed */
-  --track: rgba(10, 12, 18, 0.10);
   /* B 深绿卡（首页结余卡、统计摘要卡、欢迎页示意卡）：浅深相同的深绿；卡上字一律用 --card-*（tests/green-card.test.js）。
      对比度以「卡底＋两层光泽最亮处」计算，调光泽或字色都要先跑测试 */
   --card-1: #0F4A35;
@@ -122,7 +121,6 @@
     --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
     --income: #6AAEFF; --red: rgb(255, 66, 69);
     --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
-    --track: rgba(255, 255, 255, 0.14);
     --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
     --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
     --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
@@ -155,7 +153,6 @@
   --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
   --income: #6AAEFF; --red: rgb(255, 66, 69);
   --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
-  --track: rgba(255, 255, 255, 0.14);
   --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
   --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
   --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
