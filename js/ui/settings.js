@@ -22,6 +22,7 @@ import { runDeleteAccount, dangerRows, busyRowHandler } from './delete-account.j
 import { refreshOwnerFlag, readOwnerFlag } from '../owner-check.js';
 import { openInvitesPage } from './invites-page.js';
 import { runSignOut, SIGNOUT_TEXT } from './sign-out.js';
+import { openInfoPage } from './info-page.js';
 
 /**
  * 设置页「同步」列的文字（纯函数）。回 {text, action}；action：可点时做什么（'relogin' | 'errors' | 'start' | 'reload'），不能点为 null。
@@ -119,7 +120,7 @@ export function tgRowDetail(tg) {
 
 /**
  * 账号区要显示的列（纯函数）。没有 session → 不显示账号区。
- *   PWA：邮箱 →（tg 有资料才有）Telegram → 同步 →（已连接才有）解除 Telegram 连接（红）→ 登出。
+ *   PWA：邮箱 →（tg 有资料才有）Telegram → 在 Telegram 记账（3f）→ 同步 →（已连接才有）解除 Telegram 连接（红）→ 登出。
  *   Telegram：邮箱 → Telegram（还没读到先显示「已连接」，免得列表跳动）→ 同步 → 解除连接（红）；没有登出。
  */
 export function accountRows(session, { platform = 'pwa', tg = null } = {}) {
@@ -127,6 +128,8 @@ export function accountRows(session, { platform = 'pwa', tg = null } = {}) {
   const isTg = platform === 'telegram';
   const rows = [{ kind: 'email', label: '邮箱', detail: session.email || '' }];
   if (isTg || tg) rows.push({ kind: 'tg', label: 'Telegram', detail: tgRowDetail(tg) });
+  // 3f：PWA／浏览器才有「在 Telegram 记账」说明页入口；Telegram 状态还没读到（离线）也显示
+  if (!isTg) rows.push({ kind: 'tg-help', label: '在 Telegram 记账' });
   rows.push({ kind: 'sync', label: '同步' });
   if (isTg) {
     rows.push({ kind: 'tg-unlink', label: '解除连接' });
@@ -400,6 +403,9 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       .finally(() => { unlinking = false; });
   }
 
+  // 3f：只建一次、重建账号区时重复使用（从 Telegram 回来会重建，关说明页时焦点才回得来）
+  const tgHelpBtn = buttonRow('在 Telegram 记账', () => openInfoPage('telegram'), { chevron: true });
+
   const accountSection = () => {
     const rows = accountRows(session, { platform, tg: tgState }).map((r) => {
       if (r.kind === 'email' || r.kind === 'tg') {
@@ -413,8 +419,12 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
         if (!tgUnlinkBtn.hasAttribute('aria-disabled')) tgUnlinkLabel.textContent = r.label;
         return tgUnlinkBtn;
       }
-      if (!signOutBtn) signOutBtn = h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: onSignOut } }, signOutLabel);
-      return signOutBtn;
+      if (r.kind === 'tg-help') return tgHelpBtn;
+      if (r.kind === 'signout') {
+        if (!signOutBtn) signOutBtn = h('button', { type: 'button', class: 'inset-row is-destructive', on: { click: onSignOut } }, signOutLabel);
+        return signOutBtn;
+      }
+      return null;
     }).flat().filter(Boolean);
     return rows.length ? section('账号', rows, sync ? syncDiag : null) : null;
   };
@@ -538,7 +548,7 @@ export function mountSettings(root, store, { session = null, sync = null, onStar
       buttonRow('导出 CSV', onExport, { action: true, chevron: true }),
       buttonRow('导入 CSV', () => fileInput.click(), { action: true, chevron: true }),
     ]),
-    section('关于', [versionRow, envRow], '账本先存在这台设备，登录后会在背景同步到你的账号。'),
+    section('关于', [versionRow, envRow, buttonRow('隐私说明', () => openInfoPage('privacy'), { chevron: true })], '账本先存在这台设备，登录后会在背景同步到你的账号。'),
     ...[dangerSection()].filter(Boolean),
     fileInput,
   );

@@ -5,7 +5,8 @@ import { pushLayer } from './nav.js';
 
 let seq = 0;
 
-const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+// 3f：加 a[href]（说明页的「打开 @adjizhangbot」是真的链接，Tab 要按得到）
+export const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
 /** 焦点留在 panel 里（Tab / Shift+Tab 循环）。sheet.js 也用。 */
 export function trapFocus(overlay, panel) {
