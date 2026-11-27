@@ -48,14 +48,15 @@ function botNotePart(note: string): string {
 }
 
 // kind 'income' → 金额前加「+」，标题加「收入」（用户 2026-11-27）；没给或其他值当支出、照旧
-type BotLine = { amountMinor: number; categoryName: string; note: string; occurredOn: string; today: string; kind?: string };
+// keyword（3e）：这笔的分类是用户关键词决定的 → 「已记」回复最后加「 · 关键词 xxx」（纯文字，没有 parse_mode）
+type BotLine = { amountMinor: number; categoryName: string; note: string; occurredOn: string; today: string; kind?: string; keyword?: string };
 
 function botLine(d: BotLine): string {
   return `${d.categoryName} ${d.kind === 'income' ? '+' : ''}${botFormatRM(d.amountMinor)}${botNotePart(d.note)}${d.occurredOn !== d.today ? ` · ${botMonthDay(d.occurredOn)}` : ''}`;
 }
 
 export function botRecordedText(d: BotLine): string {
-  return `✅ 已记${d.kind === 'income' ? '收入' : ''}：${botLine(d)}`;
+  return `✅ 已记${d.kind === 'income' ? '收入' : ''}：${botLine(d)}${d.keyword ? ` · 关键词 ${d.keyword}` : ''}`;
 }
 
 export function botUndoneText(d: BotLine): string {

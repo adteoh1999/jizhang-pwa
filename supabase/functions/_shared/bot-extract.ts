@@ -128,7 +128,7 @@ function botValidDay(day: string): boolean {
 export function botCheckExtraction(
   raw: unknown,
   ctx: { source: 'text' | 'photo'; text: string; caption: string; today: string; cats: BotExCat[] },
-): { draft: BotDraft } | { fail: 'not_record' | 'foreign' } {
+): { draft: BotDraft; merchant: string } | { fail: 'not_record' | 'foreign' } {
   const no = { fail: 'not_record' as const };
   if (!botValidDay(ctx.today)) return no;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return no;
@@ -174,5 +174,6 @@ export function botCheckExtraction(
     if (note === '') note = botCleanMerchant(r.merchant);
   }
 
-  return { draft: { kind, amountMinor, categoryId, occurredOn, note } };
+  // merchant：AI 认出的原始店名（3e 关键词比对用；不用清理过的，免得「mr.diy」的点被换掉）
+  return { draft: { kind, amountMinor, categoryId, occurredOn, note }, merchant: r.merchant as string };
 }

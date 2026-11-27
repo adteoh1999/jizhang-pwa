@@ -47,6 +47,7 @@ function routes(o = {}) {
     rpc('svc_bot_ai_reserve', () => jsonRes(200, { ok: true, use_id: 7 })),
     rpc('svc_bot_ai_refund', () => jsonRes(204)),
     rpc('svc_bot_categories', () => jsonRes(200, [])),
+    rpc('svc_bot_keywords', () => jsonRes(200, [])),
     rpc('svc_bot_record', recordOk),
     rpc('svc_bot_tx', () => jsonRes(200, null)),
     ['/file/bot', o.file ?? (() => new Response(JPEG))],
@@ -347,6 +348,54 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     await run(update({ text: '早餐 6.9' }), f);
     assert.equal(sent(f)[0].text, '✅ 已记：吃饭 RM 6.90（早餐）');
     assert.ok(aiCalls(f)[0].body.messages[0].content[0].text.includes('"name":"吃饭"'));
+  });
+
+  // ---------- 关键词（3e）：一定优先于 AI ----------
+  const KW_GRAB = () => jsonRes(200, [{ keyword: 'grab', category_id: 'transport' }]);
+  test(`${label}：3e 文字含关键词 → 记成关键词的分类（AI 说餐饮也一样）、回复带「 · 关键词 grab」`, async () => {
+    const f = routes({ svc_bot_keywords: KW_GRAB });
+    await run(update({ text: 'Grab 6.9' }), f);
+    assert.equal(rpcBody(f, 'svc_bot_keywords')[0].p_telegram_id, TID);
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_category_id, 'transport');
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_kind, 'expense');
+    assert.equal(sent(f)[0].text, '✅ 已记：交通 RM 6.90（Grab） · 关键词 grab');
+  });
+
+  test(`${label}：3e 截图只有店名对上（AI 原始店名）也算`, async () => {
+    const f = routes({ svc_bot_keywords: KW_GRAB, ai: () => aiReply(aiOut({ merchant: 'GRAB*TRIP KL' })) });
+    await run(update({ photo: PHOTO }), f);
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_category_id, 'transport');
+  });
+
+  test(`${label}：3e AI 认成收入、关键词是支出分类 → 不套用、回复不带关键词`, async () => {
+    const f = routes({ svc_bot_keywords: KW_GRAB, ai: () => aiReply(aiOut({ kind: 'income', category_id: 'side' })) });
+    await run(update({ text: 'Grab 退款 6.9' }), f);
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_category_id, 'side');
+    assert.doesNotMatch(sent(f)[0].text, /关键词/);
+  });
+
+  test(`${label}：3e 关键词 rpc 失败 → 退次数、现在记不了、没叫 AI（不能偷偷只用 AI）`, async () => {
+    const f = routes({ svc_bot_keywords: () => jsonRes(500, {}) });
+    await run(update({ text: 'Grab 6.9' }), f);
+    assert.equal(sent(f)[0].text, R.BOT_DOWN);
+    assert.equal(rpcBody(f, 'svc_bot_ai_refund').length, 1);
+    assert.equal(aiCalls(f).length, 0);
+  });
+
+  test(`${label}：3e 关键词 rpc 回 null（刚好解除连接）→ 跟分类 null 一样：退次数、finish、不回话`, async () => {
+    const f = routes({ svc_bot_keywords: () => jsonRes(200, null) });
+    assert.equal((await run(update({ text: 'Grab 6.9' }), f)).status, 200);
+    assert.equal(sent(f).length, 0);
+    assert.equal(rpcBody(f, 'svc_bot_ai_refund').length, 1);
+    assert.equal(rpcBody(f, 'svc_bot_finish').length, 1);
+    assert.equal(aiCalls(f).length, 0);
+  });
+
+  test(`${label}：3e resend（已记、还没回复）补发不带关键词后缀、不出错`, async () => {
+    const tx = { id: TX, kind: 'expense', amount_minor: 690, category_id: 'transport', occurred_on: TODAY, note: 'Grab', deleted: false };
+    const f = routes({ svc_bot_keywords: KW_GRAB, svc_bot_claim: () => jsonRes(200, { do: 'resend', status: 'recorded', tx }) });
+    assert.equal((await run(update({ text: 'Grab 6.9' }), f)).status, 200);
+    assert.equal(sent(f)[0].text, '✅ 已记：交通 RM 6.90（Grab）');
   });
 
   // ---------- 去重、重送 ----------

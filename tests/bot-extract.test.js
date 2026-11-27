@@ -17,6 +17,12 @@ const textCtx = (text) => ({ source: 'text', text, caption: '', today: TODAY, ca
 const photoCtx = (caption = '') => ({ source: 'photo', text: '', caption, today: TODAY, cats: CATS });
 const draftOf = (r) => { assert.ok('draft' in r, '应该成功：' + JSON.stringify(r)); return r.draft; };
 
+test('3e：成功时另外回传 AI 认出的原始店名（给关键词比对用，不是清理过的）', () => {
+  const r = botCheckExtraction(ai({ merchant: 'MR.DIY / Mid Valley' }), photoCtx(''));
+  assert.equal(r.merchant, 'MR.DIY / Mid Valley');
+  assert.equal(botCheckExtraction(ai(), textCtx('早餐 6.9')).merchant, '');
+});
+
 test('_shared/bot-extract.ts 不 import 别的档（打包规则）', () => {
   const src = readFileSync(new URL('../supabase/functions/_shared/bot-extract.ts', import.meta.url), 'utf8');
   assert.equal(SHARED_IMPORT_FORBIDDEN.test(src), false);

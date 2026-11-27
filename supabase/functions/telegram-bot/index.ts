@@ -15,6 +15,7 @@
 import { secretKey, rpc } from '../_shared/http.ts';
 import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, tgImageDoc, tgDownload, tgSniffImage, tgStripMeta, tgImageSize, tgBase64 } from '../_shared/telegram.ts';
 import { botMergeCategories } from '../_shared/bot-categories.ts';
+import { botParseKeywords, botApplyKeyword } from '../_shared/bot-keywords.ts';
 import { botToday, botCheckExtraction } from '../_shared/bot-extract.ts';
 import { aiKeyOk, aiBuildRequest, aiExtract } from '../_shared/ai-extract.ts';
 import { BOT_NOT_UNDERSTOOD, BOT_FOREIGN, BOT_QUOTA, BOT_DOWN, BOT_IMAGE_BAD, BOT_UNLINKED_START, BOT_HELP, BOT_CONSENT, BOT_CONSENT_OK, BOT_SKIPPED, BOT_ANS_EXPIRED, BOT_ANS_DELETED, BOT_ANS_CAT_CHANGED, BOT_ANS_UNDONE, BOT_ANS_RECORDED, botAnsCategory, botRecordedText, botUndoneText, botSimilarText, botBigText, botCategoryPrompt, botRecordedKeyboard, botAskKeyboard, botConsentKeyboard, botUnlinkedKeyboard, botCategoryKeyboard, botCatHash, botParseCallback } from '../_shared/bot-reply.ts';
@@ -190,6 +191,12 @@ async function tbCategories(ctx: TbCtx): Promise<ReturnType<typeof botMergeCateg
   return server === null ? null : botMergeCategories(server);
 }
 
+// 用户关键词（3e）：null＝这个 telegram 没连接（两个请求之间刚好解除连接）
+async function tbKeywords(ctx: TbCtx): Promise<ReturnType<typeof botParseKeywords> | null> {
+  const server = await tbRpc(ctx, 'svc_bot_keywords', { p_telegram_id: ctx.chatId });
+  return server === null ? null : botParseKeywords(server);
+}
+
 const tbCatName = (cats: { id: string; name: string }[], id: string) => cats.find((c) => c.id === id)?.name ?? '未分类';
 
 // 写入已经成功之后才读分类（只为了显示名字）：失败就用空清单（显示「未分类」），绝不让成功变成「现在记不了」
@@ -207,14 +214,17 @@ const tbTxOk = (t: any): t is TbTx => !!t && typeof t === 'object' && typeof t.i
 
 // record／claim 补发共用：把结果组成回复
 // 形状不对（资料坏掉）一律回 null：不 throw，免得 500 一直被 Telegram 重送
-function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }[]): { text: string; markup: unknown } | null {
+// keyword（3e）：只有当下记账、而且记下的分类就是关键词的分类，「已记」回复才带「 · 关键词 xxx」
+function tbRender(
+  ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }[], kw: { keyword: string; categoryId: string } | null = null,
+): { text: string; markup: unknown } | null {
   if (!out || typeof out !== 'object') return null;
   if (out.status === 'recorded') {
     const tx = out.tx;
     if (!tbTxOk(tx) || tx.deleted) return null;
     return {
       text: botRecordedText({ kind: tx.kind, amountMinor: tx.amount_minor, categoryName: tbCatName(cats, tx.category_id), note: tx.note,
-        occurredOn: tx.occurred_on, today: ctx.today }),
+        occurredOn: tx.occurred_on, today: ctx.today, keyword: kw && kw.categoryId === tx.category_id ? kw.keyword : undefined }),
       markup: botRecordedKeyboard(tx.id),
     };
   }
@@ -230,8 +240,10 @@ function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }
 }
 
 // 送出记账／问句的回复：成功或永久送不了 → replied、200；暂时失败 → 500（重送时 claim 回 resend 补发）
-async function tbDeliver(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }[]): Promise<Response> {
-  const r = tbRender(ctx, out, cats);
+async function tbDeliver(
+  ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }[], kw: { keyword: string; categoryId: string } | null = null,
+): Promise<Response> {
+  const r = tbRender(ctx, out, cats, kw);
   if (!r) {
     await tbReplied(ctx);
     return tbStatus(200);
@@ -341,15 +353,18 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
   const useId = reserve.use_id;
 
   // ---- 叫 AI ----
+  // 分类与用户关键词一起读（并行）。关键词读不到 → 跟分类读不到一样「现在记不了」：
+  // 关键词一定优先于 AI，不能偷偷只用 AI 分类（3e）
   let cats: ReturnType<typeof botMergeCategories> | null;
+  let keywords: ReturnType<typeof botParseKeywords> | null;
   try {
-    cats = await tbCategories(ctx);
+    [cats, keywords] = await Promise.all([tbCategories(ctx), tbKeywords(ctx)]);
   } catch (e) {
     tbLog('categories', tbErr(e));
     await tbRefund(ctx, useId);
     return await tbEnd(ctx, BOT_DOWN);
   }
-  if (cats === null) {
+  if (cats === null || keywords === null) {
     await tbRefund(ctx, useId);
     await tbFinish(ctx);
     return tbStatus(200);
@@ -379,7 +394,10 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
   // ---- 程式检查 ----
   const check = botCheckExtraction(ai.data, { source, text: text ?? '', caption, today: ctx.today, cats });
   if ('fail' in check) return await tbEnd(ctx, check.fail === 'foreign' ? BOT_FOREIGN : BOT_NOT_UNDERSTOOD);
-  const d = check.draft;
+  // 用户关键词优先于 AI 分类（收支相同才套用；来源：文字、截图说明、AI 原始店名）
+  const applied = botApplyKeyword(check.draft, { sources: [text ?? '', caption, check.merchant], keywords, cats });
+  const d = applied.draft;
+  const kw = applied.keyword === null ? null : { keyword: applied.keyword, categoryId: d.categoryId };
 
   // ---- 记账 ----
   let out: TbOutcome;
@@ -402,7 +420,7 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     if (!out) tbLog('record', '没有回传');
     return tbStatus(200);
   }
-  return await tbDeliver(ctx, out, cats);
+  return await tbDeliver(ctx, out, cats, kw);
 }
 
 // ======================= 按钮流程 =======================

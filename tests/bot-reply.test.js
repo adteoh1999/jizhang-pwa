@@ -56,6 +56,15 @@ test('已记：没备注不加括号；不是今天加日期', () => {
   assert.equal(R.botRecordedText({ kind: 'income', amountMinor: 300000, categoryName: '工资', note: '', occurredOn: '2026-11-05', today: TODAY }),
     '✅ 已记收入：工资 +RM 3,000.00 · 11月5日');   // 用户 2026-11-27：收入标明「收入」＋「+」
 });
+test('已记：用了关键词（3e）→ 最后加「 · 关键词 grab」；跟日期、收入一起也对', () => {
+  assert.equal(R.botRecordedText({ kind: 'expense', amountMinor: 1250, categoryName: '交通', note: 'Grab', occurredOn: TODAY, today: TODAY, keyword: 'grab' }),
+    '✅ 已记：交通 RM 12.50（Grab） · 关键词 grab');
+  assert.equal(R.botRecordedText({ kind: 'income', amountMinor: 300000, categoryName: '工资', note: '', occurredOn: '2026-11-05', today: TODAY, keyword: '工资单' }),
+    '✅ 已记收入：工资 +RM 3,000.00 · 11月5日 · 关键词 工资单');
+  // 没给或空字串 → 跟原本一样
+  assert.equal(R.botRecordedText({ kind: 'expense', amountMinor: 690, categoryName: '餐饮', note: '早餐', occurredOn: TODAY, today: TODAY, keyword: '' }),
+    '✅ 已记：餐饮 RM 6.90（早餐）');
+});
 test('已记：备注超过 30 字截断加 …', () => {
   const t = R.botRecordedText({ kind: 'expense', amountMinor: 100, categoryName: '其他', note: '字'.repeat(40), occurredOn: TODAY, today: TODAY });
   assert.equal(t, `✅ 已记：其他 RM 1.00（${'字'.repeat(30)}…）`);
