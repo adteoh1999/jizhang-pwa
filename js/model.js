@@ -92,7 +92,7 @@ export function buildCategory(input, existing, { now, uuid }) {
 // JS trim() 去的空白比 btrim 多，转小写后的结果 Postgres lower() 不会再变 → 这里通过的，服务器一定收。
 export const KEYWORD_MAX = 20;
 export const KEYWORD_LIMIT = 200;
-const ZERO_WIDTH = /[​-‍⁠﻿]/g; // trim() 不去、看不见、会让关键词永远对不上
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g; // trim() 不去、看不见、会让关键词永远对不上
 
 export function normalizeKeyword(raw) {
   return String(raw ?? '').replace(ZERO_WIDTH, '').trim().toLowerCase().trim();

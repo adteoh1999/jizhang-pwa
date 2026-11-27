@@ -73,6 +73,26 @@ test('关键词上传失败（5xx）→ 这轮失败，但账目已经传上去'
   assert.equal(store.syncCounts().pending, 1, '关键词还在等');
 });
 
+test('审核 I-1：关键词上传失败（5xx）→ 这轮还是会拉取，服务器上的账目照样拉回（最后仍回 fail、保留退避）', async () => {
+  const tx = {
+    id: '00000000-0000-4000-8000-000000000088', kind: 'expense', amount_minor: 700, category_id: 'food', occurred_on: '2026-11-27', note: 'bot 记的',
+    created_at: '2026-11-27T08:00:00.000Z', updated_at: '2026-11-27T08:00:00.000Z', deleted: false, server_updated_at: '2026-11-27T08:00:00.000001+00:00',
+  };
+  let txServed = false;
+  const server = fakeServer({
+    post: (table) => (table === 'category_keywords' ? jsonRes(500, { code: 'XX000' }) : null),
+    get: (table) => {
+      if (table === 'transactions' && !txServed) { txServed = true; return jsonRes(200, [tx]); }
+      return jsonRes(200, []);
+    },
+  });
+  const { store, sync } = await setup(server);
+  await store.saveKeyword({ keyword: 'grab', categoryId: 'transport' });
+  assert.equal(await sync.syncNow(), 'fail');
+  assert.deepEqual(store.transactions().map((t) => t.id), [tx.id], 'bot 记的账有拉回');
+  assert.equal(store.syncCounts().pending, 1, '关键词还在等');
+});
+
 test('关键词拉取 4xx → 这轮失败，但账目已经拉回', async () => {
   const tx = {
     id: '00000000-0000-4000-8000-000000000099', kind: 'expense', amount_minor: 500, category_id: 'food', occurred_on: '2026-11-27', note: '',

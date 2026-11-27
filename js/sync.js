@@ -77,8 +77,8 @@ export const FOREGROUND_FORCE_MS = 30_000; // 回前景时不管退避、马上�
 export const LOCK_RETRY_MS = 10_000; // 别的分页在同步：稍后再看一次（不算失败）
 const ALL_BAD_MIN = 10;   // 逐笔时至少这么多笔、全是资料错、没有一笔成功 → 当系统错误（前后端不一致），一笔都不标
 const ALL_BAD_STOP = 20;  // 连续这么多笔全错、没有成功 → 提早停
-// 先分类、再账目、最后关键词（上传与拉取都是）。关键词放最后（用户 2026-11-27 决定）：
-// 关键词请求出错时整轮停，但账目这轮已经传完、拉完，不会被连累。
+// 先分类、再账目、最后关键词（上传与拉取都是）。关键词放最后（用户 2026-11-27 决定），不连累账目：
+// 关键词上传失败 → 照样拉取（审核 I-1），这轮回 fail；关键词拉取失败 → 分类、账目这轮已经拉完。
 const TABLES = ['categories', 'transactions', 'category_keywords'];
 const cursorKey = (table) => `cursor:${table}`;
 const SYNC_LOCK = 'jizhang-sync';
@@ -203,7 +203,8 @@ export function createSync({
     const uploaded = (table, sent, rows) => store.markUploaded(table, sent, rows, { owner: userId });
     const syncError = (table, row, code) => store.markSyncError(table, row.id, code, row.updated_at, { owner: userId });
 
-    for (const table of TABLES) {
+    // 上传一张表：全部成功回 null；否则回这轮的结果（'fail' | 'halt' | …）
+    const uploadTable = async (table) => {
       const rows = await store.pendingRows(table);
       for (let i = 0; i < rows.length; i += BATCH_SIZE) {
         if (dead()) return 'halt';
@@ -245,6 +246,15 @@ export function createSync({
           if ((await syncError(table, row, code)) === null) return ownerGone();
         }
       }
+      return null;
+    };
+    // 关键词上传失败（'fail'）不能挡住拉取（审核 I-1）：照样拉分类、账目（bot 记的账才收得到），这轮最后仍回 fail、保留退避
+    let kwUploadFailed = false;
+    for (const table of TABLES) {
+      const u = await uploadTable(table);
+      if (u === null) continue;
+      if (u === 'fail' && table === 'category_keywords') { kwUploadFailed = true; continue; }
+      return u;
     }
 
     // ---- 拉取（先上传、再拉取：本地改动先进服务器，拉回来的就不会是旧版）----
@@ -259,7 +269,7 @@ export function createSync({
         try { onPulled(); } catch (e) { console.error(e); }
       }
     }
-    return res;
+    return res === 'ok' && kwUploadFailed ? 'fail' : res;
 
     async function pull(acc) {
       const fullAt = await store.getMeta('fullSyncAt');

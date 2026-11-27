@@ -108,6 +108,23 @@ test('applyRemote：关键词列 id＝keyword（服务器原字串）、LWW 照�
   assert.equal(store.keywords().find((k) => k.id === 'grab').category_id, 'food');
 });
 
+test('审核 I-2：服务器拉回、写法不标准的关键词（夹零宽字元）→ 这台也删得掉、改得了', async () => {
+  const { store, db } = await setup();
+  await store.setMetas({ owner_user_id: 'u1' });
+  const raw = 'gr\u200Bab';
+  await store.applyRemote('category_keywords', [{ id: raw, keyword: raw, category_id: 'transport', updated_at: '2026-11-27T09:00:00.000Z', deleted: false }], { owner: 'u1' });
+  assert.deepEqual(store.keywords().map((k) => k.keyword), [raw]);
+  // 改分类（UI 传原字串当 previous）→ 旧的标删除、存成正规化的 grab
+  await store.saveKeyword({ keyword: raw, categoryId: 'food', previous: raw });
+  assert.deepEqual(store.keywords().map((k) => [k.keyword, k.category_id]), [['grab', 'food']]);
+  assert.equal((await db.getAll('category_keywords')).find((r) => r.id === raw).deleted, true);
+  // 另一个直接删除
+  const raw2 = 'mr\u200Bt';
+  await store.applyRemote('category_keywords', [{ id: raw2, keyword: raw2, category_id: 'transport', updated_at: '2026-11-27T09:00:00.000Z', deleted: false }], { owner: 'u1' });
+  await store.deleteKeyword(raw2);
+  assert.deepEqual(store.keywords().map((k) => k.keyword), ['grab']);
+});
+
 test('拉回来的关键词再上传：body 不含 id（服务器没有 id 栏）', async () => {
   const { store } = await setup();
   await store.setMetas({ owner_user_id: 'u1' });

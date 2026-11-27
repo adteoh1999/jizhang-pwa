@@ -2,9 +2,15 @@
 // 服务器 CHECK：keyword = lower(btrim(keyword)) and char_length(keyword) between 1 and 20（码点数）。
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalizeKeyword, checkKeyword, buildKeyword, KEYWORD_MAX, KEYWORD_LIMIT, ValidationError } from '../js/model.js';
 
 const active = (...ks) => ks.map((keyword) => ({ keyword, category_id: 'transport' }));
+
+test('审核 I-3：model.js 原始码里不能有看不见的零宽字元（正则要用 \\u 转义写）', () => {
+  const src = readFileSync(new URL('../js/model.js', import.meta.url), 'utf8');
+  assert.ok(!/[\u200B-\u200D\u2060\uFEFF]/.test(src), '原始码有看不见的字元');
+});
 
 test('常数：最多 20 字、200 个', () => {
   assert.equal(KEYWORD_MAX, 20);

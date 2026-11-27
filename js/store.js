@@ -209,7 +209,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     saveKeyword({ keyword, categoryId, previous = null }) {
       return enqueue(async () => {
         const active = [...kws.values()].filter((k) => !k.deleted);
-        const prev = previous == null ? null : normalizeKeyword(previous);
+        // 先用原字串找（服务器拉回、写法不标准的也找得到，审核 I-2），找不到才用正规化后的
+        const prev = previous == null ? null : (kws.has(previous) ? previous : normalizeKeyword(previous));
         const self = prev !== null && kws.has(prev) && !kws.get(prev).deleted ? prev : null;
         const bad = checkKeyword(keyword, { active, selfKeyword: self });
         if (bad) throw new ValidationError(`keyword-${bad}`);
@@ -225,7 +226,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     },
     deleteKeyword(keyword) {
       return enqueue(async () => {
-        const k = kws.get(normalizeKeyword(keyword));
+        const k = kws.get(keyword) || kws.get(normalizeKeyword(keyword)); // 原字串优先（审核 I-2）
         if (!k) throw new Error('找不到这个关键词');
         if (k.deleted) return;
         await commit({ category_keywords: [markDeleted(k, now())] }, { local: true });
