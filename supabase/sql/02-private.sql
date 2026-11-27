@@ -911,7 +911,9 @@ $$;
 
 -- 记一笔（同一个交易：闸门、相似、大额、写账、记状态）。回传 bot_outcome 的形状，或 {"status":"gone"}。
 -- 闸门：这则 update 必须是这个 telegram 的「处理中」，而且领取时的账号就是现在连着的账号（M4）。
--- 相似（D3）：这个人没删除、同收支、同金额、同一天的账 → 先问。否则截图大额（p_ask_big，D2）→ 先问。
+-- 相似（D3）：这个人没删除、同收支、同金额、同一天的账 → 先问。
+--   也比对 24 小时内还没按的问句（用户决定 1：相簿两张一样的大额截图，第二张改问「已经有一笔差不多的」，similar 是 null）。
+-- 否则截图大额（p_ask_big，D2）→ 先问。
 create or replace function svc.svc_bot_record(
   p_update_id bigint, p_telegram_id bigint, p_kind text, p_amount_minor bigint, p_category_id text,
   p_occurred_on date, p_note text, p_ask_big boolean
@@ -920,6 +922,7 @@ language plpgsql security definer set search_path = '' set lock_timeout = '3s' a
 declare
   v_user    uuid;
   v_similar uuid;
+  v_pend    boolean := false;
   v_id      uuid := gen_random_uuid();
 begin
   if p_update_id is null or p_update_id <= 0 or p_telegram_id is null or p_telegram_id <= 0 then
@@ -941,15 +944,20 @@ begin
    where t.user_id = v_user and not t.deleted and t.kind = p_kind
      and t.amount_minor = p_amount_minor and t.occurred_on = p_occurred_on
    order by t.created_at desc limit 1;
+  if v_similar is null then
+    v_pend := exists (select 1 from private.bot_pending b
+                       where b.user_id = v_user and b.kind = p_kind and b.amount_minor = p_amount_minor
+                         and b.occurred_on = p_occurred_on and b.created_at > now() - interval '24 hours');
+  end if;
 
-  if v_similar is not null or p_ask_big then
+  if v_similar is not null or v_pend or p_ask_big then
     update private.bot_updates set status = 'asked', pending_id = v_id
      where update_id = p_update_id and telegram_id = p_telegram_id and status = 'working' and user_id = v_user;
     if not found then
       return jsonb_build_object('status', 'gone');
     end if;
     insert into private.bot_pending (id, user_id, telegram_id, reason, similar_tx_id, kind, amount_minor, category_id, occurred_on, note)
-    values (v_id, v_user, p_telegram_id, case when v_similar is not null then 'similar' else 'big' end, v_similar,
+    values (v_id, v_user, p_telegram_id, case when v_similar is not null or v_pend then 'similar' else 'big' end, v_similar,
             p_kind, p_amount_minor, p_category_id, p_occurred_on, p_note);
     return private.bot_outcome(v_user, 'asked', null, v_id);
   end if;

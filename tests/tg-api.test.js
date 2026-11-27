@@ -228,7 +228,7 @@ test('tgAdminSetup：失败句子照白名单；网络错 → 需要网络', asy
   const { r } = await quiet(() => tgAdminSetup(async () => { throw new TypeError('x'); }, TOKEN));
   assert.deepEqual(r, { ok: false, error: '需要网络' });
   const seen = await delaysOf(() => tgAdminSetup(fake(() => res(200, { ok: true })), TOKEN));
-  assert.ok(seen.includes(20000));
+  assert.ok(seen.includes(25000));
 });
 
 // ---------------- 3d：tgAdminStatus、tgAdminPause ----------------
@@ -266,7 +266,7 @@ test('审核 T4／S9：status 栏位严格（时间要 ISO、次数不能负、�
   assert.equal(ok.data.lastErrorAt, '2026-11-26T02:05:00.000Z');
 });
 
-test('审核 T4：status、pause 的预设逾时也是 20 秒', async () => {
-  assert.ok((await delaysOf(() => tgAdminStatus(fake(() => res(200, { ok: true, webhook: 'ok', pending: 0, lastErrorAt: null, aiUsed24h: 0 })), TOKEN))).includes(20000));
-  assert.ok((await delaysOf(() => tgAdminPause(fake(() => res(200, { ok: true })), TOKEN))).includes(20000));
+test('审核 T4：status、pause 的预设逾时也是 25 秒（用户决定 11）', async () => {
+  assert.ok((await delaysOf(() => tgAdminStatus(fake(() => res(200, { ok: true, webhook: 'ok', pending: 0, lastErrorAt: null, aiUsed24h: 0 })), TOKEN))).includes(25000));
+  assert.ok((await delaysOf(() => tgAdminPause(fake(() => res(200, { ok: true })), TOKEN))).includes(25000));
 });

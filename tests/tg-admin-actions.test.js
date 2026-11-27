@@ -92,3 +92,20 @@ test('不认得的按钮 → 不做事', async () => {
   assert.equal(await actions.click('nuke'), 'cancel');
   assert.deepEqual(log, []);
 });
+
+// 用户决定 9：webhook 设好了、但 10 分钟内有错误 → 标题提醒
+test('tgStatusText：10 分钟内有错误 → 「已设定，但最近有错误」；超过 10 分钟 → 正常；没设好照旧', () => {
+  const now = Date.parse('2026-11-27T08:00:00.000Z');
+  const d = (lastErrorAt, webhook = 'ok') => ({ webhook, pending: 0, lastErrorAt, aiUsed24h: 0 });
+  assert.equal(tgStatusText(d('2026-11-27T07:51:00.000Z'), now).title, '已设定，但最近有错误');
+  assert.equal(tgStatusText(d('2026-11-27T07:50:00.000Z'), now).title, '已设定，但最近有错误');
+  assert.equal(tgStatusText(d('2026-11-27T07:49:59.000Z'), now).title, '正常');
+  assert.equal(tgStatusText(d(null), now).title, '正常');
+  assert.equal(tgStatusText(d('2026-11-27T07:59:00.000Z', 'wrong_url'), now).title, '没设好，请按「设定 Telegram bot」');
+});
+test('检查：对话框标题用当下时间判断（最近错误 → 提醒）', async () => {
+  const data = { webhook: 'ok', pending: 0, lastErrorAt: new Date(Date.now() - 60000).toISOString(), aiUsed24h: 0 };
+  const { actions, log } = setup({ api: { status: async () => ({ ok: true, data }) } });
+  await actions.click('tg-status');
+  assert.equal(log[log.length - 1][1].title, '已设定，但最近有错误');
+});

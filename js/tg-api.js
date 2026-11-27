@@ -9,7 +9,7 @@ const GENERIC = '暂时无法完成，请稍后再试';
 const LOGIN_TIMEOUT_MS = 15_000;   // 服务器总时限 7.5 秒＋作废 1.5 秒
 const BIND_TIMEOUT_MS = 15_000;    // 服务器最长约 13.5 秒
 const LINK_TIMEOUT_MS = 10_000;
-const ADMIN_TIMEOUT_MS = 20_000;   // 服务器总时限 18 秒（3d：setup 多了 webhook 与指令）
+const ADMIN_TIMEOUT_MS = 25_000;   // 服务器总时限 18 秒＋网络慢的余裕（用户决定 11）
 
 const LOGIN_MESSAGES = ['无法确认 Telegram 身份', '请 1 分钟后再试', '暂时无法登录，请稍后再试', '看不懂这个请求'];
 const LINK_MESSAGES = [

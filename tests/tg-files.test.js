@@ -167,3 +167,90 @@ test('审核：getFile 卡住 → 预算内回 null；getFile 用掉时间后下
 test('审核：宽高是 Infinity／NaN 的尺寸不选', () => {
   assert.equal(tgPickPhoto([{ file_id: 'a', width: Infinity, height: 10 }, { file_id: 'b', width: NaN, height: 10 }]), null);
 });
+
+// ---------- 用户决定 8：送 AI 前去掉图片里的拍摄资料（GPS 等） ----------
+import { tgStripMeta } from '../supabase/functions/_shared/telegram.ts';
+const cat = (...parts) => new Uint8Array(parts.flatMap((p) => [...p]));
+const ascii = (s) => new TextEncoder().encode(s);
+const jseg = (marker, payload) => cat([0xff, marker, (payload.length + 2) >> 8, (payload.length + 2) & 255], payload);
+const SOI = [0xff, 0xd8];
+const EOI = [0xff, 0xd9];
+const APP0 = jseg(0xe0, ascii('JFIF\0\x01\x01\0\0\x01\0\x01\0\0'));
+const DQT = jseg(0xdb, new Uint8Array(65).fill(3));
+const SOS = cat(jseg(0xda, new Uint8Array([1, 1, 0, 0, 63, 0])), [5, 0xff, 0x00, 6, 0xff, 0xd0, 7]);   // 扫描资料（含 FF00、RST）
+const EXIF = jseg(0xe1, ascii('Exif\0\0GPSLatitude 3.1390N 101.6869E'));
+const XMP = jseg(0xe1, ascii('http://ns.adobe.com/xap/1.0/\0<x:xmpmeta>GPS</x:xmpmeta>'));
+const COM = jseg(0xfe, ascii('secret comment'));
+const IPTC = jseg(0xed, ascii('Photoshop 3.0\0location'));
+const ICC = jseg(0xe2, ascii('ICC_PROFILE\0\x01\x01color'));
+const ADOBE = jseg(0xee, ascii('Adobe\0d\0\0\0\0\x01'));
+const hasText = (b, s) => Buffer.from(b).includes(Buffer.from(s));
+
+test('tgStripMeta JPEG：去掉 EXIF、XMP、注解、IPTC；留下 JFIF、色彩（ICC、Adobe）、量化表、影像资料', () => {
+  const dirty = cat(SOI, APP0, EXIF, XMP, COM, IPTC, ICC, ADOBE, DQT, SOS, EOI);
+  const out = tgStripMeta(dirty, 'image/jpeg');
+  assert.deepEqual([...out], [...cat(SOI, APP0, ICC, ADOBE, DQT, SOS, EOI)]);
+  for (const s of ['Exif', 'GPS', 'xmpmeta', 'secret', 'location']) assert.ok(!hasText(out, s), s);
+});
+test('tgStripMeta JPEG：没有拍摄资料 → 内容不变；marker 前的填充 FF 也认得', () => {
+  const clean = cat(SOI, APP0, DQT, SOS, EOI);
+  assert.deepEqual([...tgStripMeta(clean, 'image/jpeg')], [...clean]);
+  const filled = cat(SOI, [0xff], EXIF, APP0, DQT, SOS, EOI);
+  assert.deepEqual([...tgStripMeta(filled, 'image/jpeg')], [...clean]);
+});
+test('tgStripMeta JPEG：坏掉的档（长度超出、没有 SOS、长度 < 2、开头不对）→ null', () => {
+  assert.equal(tgStripMeta(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9]), 'image/jpeg'), null);
+  assert.equal(tgStripMeta(cat(SOI, APP0, DQT), 'image/jpeg'), null);
+  assert.equal(tgStripMeta(cat(SOI, [0xff, 0xe1, 0, 1], SOS), 'image/jpeg'), null);
+  assert.equal(tgStripMeta(cat([0xff, 0xd9], APP0, SOS), 'image/jpeg'), null);
+  assert.equal(tgStripMeta(cat(SOI, [0x12, 0x34], SOS), 'image/jpeg'), null);
+});
+
+const u32be = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const pchunk = (type, data) => cat(u32be(data.length), ascii(type), data, [1, 2, 3, 4]);
+const PSIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const IHDR = pchunk('IHDR', new Uint8Array(13).fill(1));
+const ICCP = pchunk('iCCP', ascii('icc\0\0x'));
+const IDAT = pchunk('IDAT', new Uint8Array([9, 8, 7]));
+const IEND = pchunk('IEND', new Uint8Array(0));
+
+test('tgStripMeta PNG：去掉 eXIf、tEXt、zTXt、iTXt、tIME；留下其他；IEND 后面的东西丢掉', () => {
+  const dirty = cat(PSIG, IHDR, pchunk('eXIf', ascii('MM\0*GPS')), ICCP, pchunk('tEXt', ascii('Comment\0secret')),
+    pchunk('zTXt', ascii('k\0\0z')), pchunk('iTXt', ascii('XML:com.adobe.xmp\0\0\0\0\0GPS')), pchunk('tIME', new Uint8Array(7)),
+    IDAT, IEND, ascii('trailing secret'));
+  const out = tgStripMeta(dirty, 'image/png');
+  assert.deepEqual([...out], [...cat(PSIG, IHDR, ICCP, IDAT, IEND)]);
+  const clean = cat(PSIG, IHDR, IDAT, IEND);
+  assert.deepEqual([...tgStripMeta(clean, 'image/png')], [...clean]);
+});
+test('tgStripMeta PNG：长度超出、没有 IEND → null', () => {
+  assert.equal(tgStripMeta(cat(PSIG, IHDR, u32be(999), ascii('IDAT'), [1, 2]), 'image/png'), null);
+  assert.equal(tgStripMeta(cat(PSIG, IHDR, IDAT), 'image/png'), null);
+});
+
+const u32le = (n) => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+const wchunk = (fourcc, data) => cat(ascii(fourcc), u32le(data.length), data, data.length % 2 ? [0] : []);
+const riff = (...chunks) => { const body = cat(ascii('WEBP'), ...chunks); return cat(ascii('RIFF'), u32le(body.length), body); };
+
+test('tgStripMeta WebP：去掉 EXIF、XMP 区块、VP8X 旗标跟着清掉、RIFF 大小重算；奇数长度有补位', () => {
+  const vp8x = (flags) => wchunk('VP8X', new Uint8Array([flags, 0, 0, 0, 9, 0, 0, 9, 0, 0]));
+  const img = wchunk('VP8 ', new Uint8Array([1, 2, 3, 4, 5]));
+  const dirty = riff(vp8x(0x10 | 0x08 | 0x04), wchunk('ALPH', new Uint8Array([7, 7])), img,
+    wchunk('EXIF', ascii('MM\0*GPS')), wchunk('XMP ', ascii('<x:xmpmeta>GPS</x:xmpmeta>')));
+  const out = tgStripMeta(dirty, 'image/webp');
+  assert.deepEqual([...out], [...riff(vp8x(0x10), wchunk('ALPH', new Uint8Array([7, 7])), img)]);
+  assert.ok(!hasText(out, 'GPS'));
+  const simple = riff(img);
+  assert.deepEqual([...tgStripMeta(simple, 'image/webp')], [...simple]);
+});
+test('tgStripMeta WebP：区块长度超出、RIFF 大小超过档案 → null', () => {
+  assert.equal(tgStripMeta(cat(ascii('RIFF'), u32le(20), ascii('WEBP'), ascii('VP8 '), u32le(999), [1]), 'image/webp'), null);
+  const ok = riff(wchunk('VP8 ', new Uint8Array([1, 2])));
+  const bad = ok.slice();
+  bad[4] = 200;
+  assert.equal(tgStripMeta(bad, 'image/webp'), null);
+});
+test('tgStripMeta：格式和档头对不上、其他格式 → null', () => {
+  assert.equal(tgStripMeta(cat(PSIG, IHDR, IDAT, IEND), 'image/jpeg'), null);
+  assert.equal(tgStripMeta(cat(SOI, APP0, SOS, EOI), 'image/gif'), null);
+});

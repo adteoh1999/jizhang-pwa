@@ -3,15 +3,17 @@
 // 规则（3d 计划 r2）：
 //   - AI 的文字不直接回给用户：回复全由 bot-reply.ts 的固定句子组成；店名已在 bot-extract 清理。
 //   - 「今天」= Telegram 讯息时间（马来西亚日期），不用执行时间。
-//   - 回应码：处理完或永久无法处理 → 200；claim 失败、record 失败、「已记账／已问但回复没送出」→ 5xx 让 Telegram 重送。
+//   - 回应码：处理完或永久无法处理 → 200；claim 失败、record 不确定有没有写进去（逾时、连线错、没有错误代码）、
+//     「已记账／已问但回复没送出」→ 5xx 让 Telegram 重送。record 被资料库明确拒绝（有 Postgres 错误代码 = 已撤回）
+//     → 回「现在记不了」、200（用户决定 3）。回讯息 400／403（封锁 bot 等，重送也没用）当成已回复（用户决定 4）。
 //     注意（D1）：重送若在 2 分钟内到，claim 回 busy → 这则静默结束（不会重复记账）；只有「其实已写入、回应丢了」时，
 //     重送会走 resend 补发回复。
 //   - 按钮（callback）不去重：Telegram 重送同一个按钮时会重放一次，undo → 已删除、confirm／consent 幂等、discard → 过期，都无害。
-//   - 截图只在记忆体；送给 Anthropic 的只有说明、今天日期、分类清单、文字或截图。
+//   - 截图只在记忆体；送给 Anthropic 的只有说明、今天日期、分类清单、文字或截图（先去掉 GPS 等拍摄资料，用户决定 8）。
 //   - 日志只记「步骤＋状态码／错误种类」，绝不记讯息文字、截图、AI 回应、file_path、网址、telegram_id。
 // 打包规则：这个档自己的顶层名字一律 tb／TB_ 开头（BOT_ 是 bot-reply.ts 的）。
 import { secretKey, rpc } from '../_shared/http.ts';
-import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, tgImageDoc, tgDownload, tgSniffImage, tgBase64 } from '../_shared/telegram.ts';
+import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, tgImageDoc, tgDownload, tgSniffImage, tgStripMeta, tgBase64 } from '../_shared/telegram.ts';
 import { botMergeCategories } from '../_shared/bot-categories.ts';
 import { botToday, botCheckExtraction } from '../_shared/bot-extract.ts';
 import { aiKeyOk, aiBuildRequest, aiExtract } from '../_shared/ai-extract.ts';
@@ -128,8 +130,9 @@ async function tbRpc(ctx: TbCtx, name: string, args: unknown, ms = TB_RPC_MS): P
   return await rpc(ctx.deps.fetch, ctx.base, ctx.key, name, args, tbMs(ctx, ms));
 }
 
-// 回一则讯息到这个私聊（纯文字、关预览、引用原讯息）；回传有没有送成
-async function tbSend(ctx: TbCtx, text: string, markup?: unknown): Promise<boolean> {
+// 回一则讯息到这个私聊（纯文字、关预览、引用原讯息）。回传：'sent' 送成；'final' 永久送不了（400／403，例如封锁了 bot，
+// 重送也没用 → 当成已回复）；'fail' 暂时失败（逾时、429、5xx）
+async function tbSend(ctx: TbCtx, text: string, markup?: unknown): Promise<'sent' | 'final' | 'fail'> {
   const payload: Record<string, unknown> = {
     chat_id: ctx.chatId, text,
     link_preview_options: { is_disabled: true },
@@ -137,8 +140,9 @@ async function tbSend(ctx: TbCtx, text: string, markup?: unknown): Promise<boole
   };
   if (markup) payload.reply_markup = markup;
   const r = await tgBotCallResult(ctx.deps.fetch, ctx.bot, 'sendMessage', payload, tbMs(ctx, TB_SEND_MS));
-  if (!r.ok) tbLog('sendMessage', `HTTP ${r.status}`);
-  return r.ok;
+  if (r.ok) return 'sent';
+  tbLog('sendMessage', `HTTP ${r.status}`);
+  return r.status === 400 || r.status === 403 ? 'final' : 'fail';
 }
 
 async function tbTyping(ctx: TbCtx): Promise<void> {
@@ -170,9 +174,9 @@ async function tbRefund(ctx: TbCtx, useId: unknown): Promise<void> {
   }
 }
 
-// 没记账的结尾：回一句（送成就记 replied，与 SQL claim「已回复的处理中不再重领」一致；送不成也照样 200）＋ finish
+// 没记账的结尾：回一句（送成或永久送不了就记 replied，与 SQL claim「已回复的处理中不再重领」一致；送不成也照样 200）＋ finish
 async function tbEnd(ctx: TbCtx, text: string, markup?: unknown): Promise<Response> {
-  if (await tbSend(ctx, text, markup)) await tbReplied(ctx);
+  if ((await tbSend(ctx, text, markup)) !== 'fail') await tbReplied(ctx);
   await tbFinish(ctx);
   return tbStatus(200);
 }
@@ -216,21 +220,21 @@ function tbRender(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }
     if (!tbTxOk(out.pending) || (out.reason !== 'big' && out.reason !== 'similar')) return null;
     if (out.similar !== null && out.similar !== undefined && !tbTxOk(out.similar)) return null;
     const text = out.reason === 'big'
-      ? botBigText(out.pending, tbCatName(cats, out.pending.category_id))
+      ? botBigText(out.pending, tbCatName(cats, out.pending.category_id), ctx.today)
       : botSimilarText(out.similar, out.similar ? tbCatName(cats, out.similar.category_id) : '', ctx.today);
     return { text, markup: botAskKeyboard(out.pending.id, out.reason) };
   }
   return null;
 }
 
-// 送出记账／问句的回复：成功 → replied、200；失败 → 500（重送时 claim 回 resend 补发）
+// 送出记账／问句的回复：成功或永久送不了 → replied、200；暂时失败 → 500（重送时 claim 回 resend 补发）
 async function tbDeliver(ctx: TbCtx, out: TbOutcome, cats: { id: string; name: string }[]): Promise<Response> {
   const r = tbRender(ctx, out, cats);
   if (!r) {
     await tbReplied(ctx);
     return tbStatus(200);
   }
-  if (!(await tbSend(ctx, r.text, r.markup))) return tbStatus(500);
+  if ((await tbSend(ctx, r.text, r.markup)) === 'fail') return tbStatus(500);
   await tbReplied(ctx);
   return tbStatus(200);
 }
@@ -301,11 +305,12 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
   const typing = tbTyping(ctx);
   let photo: { bytes: Uint8Array; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null = null;
   if (source === 'photo') {
-    const bytes = await tgDownload(ctx.deps.fetch, ctx.bot, fileId, TB_IMAGE_MAX, tbMs(ctx, TB_DOWNLOAD_MS));
-    const mediaType = bytes ? tgSniffImage(bytes) : null;
+    const raw = await tgDownload(ctx.deps.fetch, ctx.bot, fileId, TB_IMAGE_MAX, tbMs(ctx, TB_DOWNLOAD_MS));
+    const mediaType = raw ? tgSniffImage(raw) : null;
+    const bytes = raw && mediaType ? tgStripMeta(raw, mediaType) : null;   // 去掉 GPS 等拍摄资料（用户决定 8）
     if (!bytes || !mediaType) {
       await typing;
-      tbLog('下载截图', bytes ? '不是图片' : '失败');
+      tbLog('下载截图', !raw ? '失败' : !mediaType ? '不是图片' : '结构坏掉');
       return await tbEnd(ctx, BOT_IMAGE_BAD);
     }
     photo = { bytes, mediaType };
@@ -360,7 +365,8 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     if (ai.why === 'http') {
       tbLog('AI', `HTTP ${ai.status}${ai.errType ? ' ' + ai.errType : ''}`);
       await tbRefund(ctx, useId);
-      return await tbEnd(ctx, source === 'photo' && ai.errType === 'invalid_request_error' ? BOT_IMAGE_BAD : BOT_DOWN);
+      // 截图遇到 invalid_request_error 也说「现在记不了」：花费上限用完也是这个错误，不能说成图的问题（用户决定 10）
+      return await tbEnd(ctx, BOT_DOWN);
     }
     tbLog('AI', ai.why);
     return await tbEnd(ctx, ai.why === 'timeout' ? BOT_DOWN : BOT_NOT_UNDERSTOOD);
@@ -381,6 +387,9 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     }, TB_RPC_WRITE_MS);
   } catch (e) {
     tbLog('record', tbErr(e));
+    // 有 Postgres 错误代码 = 资料库明确拒绝、整笔已撤回 → 说记不了、不重送（用户决定 3）；其他（逾时等）不确定 → 503 重送
+    const pg = e && typeof e === 'object' ? (e as { pgCode?: unknown }).pgCode : undefined;
+    if (typeof pg === 'string') return await tbEnd(ctx, BOT_DOWN);
     return tbStatus(503);
   }
   if (!out || out.status === 'gone') {

@@ -16,15 +16,19 @@ export const TG_ADMIN_TEXT = Object.freeze({
 });
 const T = TG_ADMIN_TEXT;
 
-/** 「检查 Telegram bot」对话框的文字（纯函数）。时间显示成马来西亚时间 YYYY-MM-DD HH:mm。 */
-export function tgStatusText({ webhook, pending, lastErrorAt, aiUsed24h }) {
+const RECENT_ERROR_MS = 10 * 60 * 1000;
+
+/** 「检查 Telegram bot」对话框的文字（纯函数）。时间显示成马来西亚时间 YYYY-MM-DD HH:mm。
+ *  webhook 正常但 10 分钟内有错误（例如换了密钥没重按设定）→ 标题提醒（用户决定 9）。 */
+export function tgStatusText({ webhook, pending, lastErrorAt, aiUsed24h }, nowMs = Date.now()) {
   let err = '没有';
   if (lastErrorAt) {
     const d = new Date(Date.parse(lastErrorAt) + 8 * 3600 * 1000).toISOString();
     err = `${d.slice(0, 10)} ${d.slice(11, 16)}`;
   }
   return {
-    title: webhook === 'ok' ? '正常' : '没设好，请按「设定 Telegram bot」',
+    title: webhook !== 'ok' ? '没设好，请按「设定 Telegram bot」'
+      : lastErrorAt && nowMs - Date.parse(lastErrorAt) <= RECENT_ERROR_MS ? '已设定，但最近有错误' : '正常',
     message: `待处理讯息：${pending} 则\n最近错误：${err}\n24 小时内 AI 用了：${aiUsed24h === null ? '—' : `${aiUsed24h} 次`}`,
   };
 }

@@ -20,7 +20,8 @@ const PEND = '1c7a4b63-2d3e-4f50-9b1c-1d2e3f4a5b6c';
 const DATE = Date.UTC(2026, 10, 26, 2, 0, 0) / 1000;   // 马来西亚 2026-11-26 10:00
 const TODAY = '2026-11-26';
 const FROM = { id: TID, is_bot: false, first_name: 'Zelda', last_name: 'Quux', username: 'zq_secret_user' };
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9]);
+// 结构完整的小 JPEG（SOI、APP0、SOS＋资料、EOI）：送 AI 前会拆结构去拍摄资料（用户决定 8）
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0x4a, 0x46, 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9]);
 const PHOTO = [{ file_id: 'AgACsecretFileId', file_unique_id: 'u', width: 1170, height: 2532, file_size: 300000 }];
 const FILE_PATH = 'photos/file_secret_9.jpg';
 
@@ -302,14 +303,14 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     assert.equal(sent(f).length, 0);
   });
 
-  test(`${label}：AI 回 500／400 → 退次数、现在记不了；截图遇到 invalid_request_error → 图片读不了`, async () => {
+  test(`${label}：AI 回 500／400 → 退次数、现在记不了；截图遇到 invalid_request_error 也是现在记不了（用户决定 10：花费上限到了不能说成图的问题）`, async () => {
     let f = routes({ ai: () => jsonRes(500, {}) });
     let r = await run(update({ text: '早餐 6.9' }), f);
     assert.equal(sent(f)[0].text, R.BOT_DOWN);
     assert.deepEqual(rpcBody(f, 'svc_bot_ai_refund'), [{ p_telegram_id: TID, p_use_id: 7 }]);
     f = routes({ ai: () => jsonRes(400, { error: { type: 'invalid_request_error', message: '图太大' } }) });
     r = await run(update({ photo: PHOTO }), f);
-    assert.equal(sent(f)[0].text, R.BOT_IMAGE_BAD);
+    assert.equal(sent(f)[0].text, R.BOT_DOWN);
     assert.equal(rpcBody(f, 'svc_bot_ai_refund').length, 1);
     assert.ok(r.logs.some((l) => l.includes('400') && l.includes('invalid_request_error')));
     assert.ok(!r.logs.some((l) => l.includes('图太大')));
@@ -576,5 +577,93 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     f = routes({ ai: () => aiReply(aiOut({ amount: '5' })) });
     await go(update({ text: '5 ' + '字'.repeat(498) }), f);
     assert.equal(aiCalls(f).length, 1);
+  });
+}
+
+// ---------- 用户决定（2026-11-27，12 题照建议） ----------
+for (const [label, mod] of await loadBoth('telegram-bot')) {
+  const run = async (body, f, { env = ENV_OBJ } = {}) => {
+    const { r: res, logs } = await quiet(() => mod.handleTelegramBot(req(body), { env: (k) => env[k], fetch: f }));
+    assertCleanLogs(logs);
+    return { status: res.status, logs };
+  };
+  const GPS_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0x4a, 0x46,
+    0xff, 0xe1, 0, 12, ...new TextEncoder().encode('Exif\0\0GPS1'), 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9]);
+
+  test(`${label}：决定 8：图片档带 GPS → 送 AI 的图已去掉拍摄资料`, async () => {
+    const f = routes({ file: () => new Response(GPS_JPEG) });
+    await run(update({ document: { file_id: 'DocFileId1', mime_type: 'image/jpeg', file_size: 100 } }), f);
+    const data = aiCalls(f)[0].body.messages[0].content[0].source.data;
+    assert.equal(data, Buffer.from(JPEG).toString('base64'));
+    assert.ok(!Buffer.from(data, 'base64').includes(Buffer.from('GPS')));
+  });
+
+  test(`${label}：决定 8：图片结构坏掉（拆不开）→ 图片读不了、没扣次数、没叫 AI`, async () => {
+    const f = routes({ file: () => new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9])) });
+    await run(update({ photo: PHOTO }), f);
+    assert.equal(sent(f)[0].text, R.BOT_IMAGE_BAD);
+    assert.equal(rpcBody(f, 'svc_bot_ai_reserve').length, 0);
+    assert.equal(aiCalls(f).length, 0);
+  });
+
+  test(`${label}：决定 3：记账时资料库明确拒绝（有错误代码）→ 回现在记不了、finish、200（不重送）`, async () => {
+    for (const [status, code] of [[500, '55P03'], [400, 'P0001'], [409, '23505']]) {
+      const f = routes({ svc_bot_record: () => jsonRes(status, { code, message: '早餐 秘密' }) });
+      const r = await run(update({ text: '早餐 6.9' }), f);
+      assert.equal(r.status, 200, code);
+      assert.equal(sent(f)[0].text, R.BOT_DOWN, code);
+      assert.equal(rpcBody(f, 'svc_bot_finish').length, 1, code);
+      assert.ok(r.logs.some((l) => l.includes('record') && l.includes(String(status))), code);
+    }
+  });
+
+  test(`${label}：决定 3：记账时逾时、连线错误、没有错误代码的 5xx → 503（不确定有没有写进去，让 Telegram 重送）`, async () => {
+    for (const rec of [() => { throw new Error('秘密'); }, () => jsonRes(502, {}), () => new Response('<html>早餐</html>', { status: 504 }), hang]) {
+      const f = routes({ svc_bot_record: rec });
+      assert.equal((await run(update({ text: '早餐 6.9' }), f)).status, 503);
+      assert.equal(sent(f).length, 0);
+      assert.equal(rpcBody(f, 'svc_bot_finish').length, 0);
+    }
+  });
+
+  test(`${label}：决定 4：记好了但回讯息 403（封锁 bot）、400 → 当成处理完：记 replied、200`, async () => {
+    for (const st of [403, 400]) {
+      const f = routes({ send: () => jsonRes(st, { ok: false, description: 'Forbidden: bot was blocked by the user' }) });
+      assert.equal((await run(update({ text: '早餐 6.9' }), f)).status, 200, String(st));
+      assert.equal(rpcBody(f, 'svc_bot_replied').length, 1, String(st));
+    }
+    for (const send of [() => jsonRes(429, { ok: false }), () => jsonRes(502, { ok: false }), () => { throw new Error('x'); }]) {
+      const f = routes({ send });
+      assert.equal((await run(update({ text: '早餐 6.9' }), f)).status, 500);
+      assert.equal(rpcBody(f, 'svc_bot_replied').length, 0);
+    }
+  });
+
+  test(`${label}：决定 4：没记账的路回讯息 403 → 也记 replied`, async () => {
+    const f = routes({ send: () => jsonRes(403, { ok: false }) });
+    assert.equal((await run(update({ text: '你好' }), f)).status, 200);
+    assert.equal(rpcBody(f, 'svc_bot_replied').length, 1);
+  });
+
+  test(`${label}：决定 6：大额问句不是今天的账 → 显示日期`, async () => {
+    const f = routes({
+      ai: () => aiReply(aiOut({ amount: '9999', date: '2026-11-25' })),
+      svc_bot_record: (u, i, body) => jsonRes(200, { status: 'asked', reason: 'big', pending: {
+        id: PEND, kind: 'expense', amount_minor: body.p_amount_minor, category_id: 'food', occurred_on: body.p_occurred_on, note: '' }, similar: null }),
+    });
+    await run(update({ photo: PHOTO }), f);
+    assert.equal(sent(f)[0].text, '截图上的金额是 RM 9,999.00（餐饮 · 11月25日），要记吗？');
+  });
+
+  test(`${label}：决定 7：截图说明写「昨天」→ 用昨天（不管图上的日期）；写「今天」→ 今天`, async () => {
+    let f = routes({ ai: () => aiReply(aiOut({ date: '2026-11-20' })) });
+    await run(update({ photo: PHOTO, caption: '昨天 午餐' }), f);
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_occurred_on, '2026-11-25');
+    f = routes({ ai: () => aiReply(aiOut({ date: '2026-11-20' })) });
+    await run(update({ photo: PHOTO, caption: '今天' }), f);
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_occurred_on, TODAY);
+    f = routes({ ai: () => aiReply(aiOut({ date: '2026-11-20' })) });
+    await run(update({ photo: PHOTO, caption: '午餐' }), f);
+    assert.equal(rpcBody(f, 'svc_bot_record')[0].p_occurred_on, '2026-11-20');
   });
 }

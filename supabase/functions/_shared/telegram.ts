@@ -247,3 +247,98 @@ export function tgBase64(b: Uint8Array): string {
   }
   return out;
 }
+
+// ---------- 用户决定 8：送 AI 前去掉图片里的拍摄资料（GPS、相机、注解等） ----------
+// 只拆档案结构、不重新压缩（影像资料原样保留）。结构坏掉一律回 null（当成「图片读不了」，不把原档送出去）。
+//   JPEG：留 APP0（JFIF）、APP2（ICC 色彩）、APP14（Adobe 色彩转换）与所有非 APP 区段；其他 APPn（EXIF／XMP 在 APP1、
+//         IPTC 在 APP13）和 COM 注解拿掉。SOS 之后（影像资料）原样照抄。
+//   PNG ：拿掉 eXIf、tEXt、zTXt、iTXt、tIME；IEND 之后的东西丢掉。
+//   WebP：拿掉 EXIF、XMP 区块，VP8X 的 EXIF／XMP 旗标跟着清掉，RIFF 大小重算。
+const TG_PNG_DROP = new Set(['eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME']);
+
+export function tgStripMeta(b: Uint8Array, mediaType: string): Uint8Array | null {
+  if (!(b instanceof Uint8Array) || tgSniffImage(b) !== mediaType) return null;
+  if (mediaType === 'image/jpeg') return tgStripJpeg(b);
+  if (mediaType === 'image/png') return tgStripPng(b);
+  if (mediaType === 'image/webp') return tgStripWebp(b);
+  return null;
+}
+
+function tgJoin(parts: Uint8Array[]): Uint8Array {
+  let n = 0;
+  for (const p of parts) n += p.byteLength;
+  const out = new Uint8Array(n);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.byteLength; }
+  return out;
+}
+
+function tgStripJpeg(b: Uint8Array): Uint8Array | null {
+  const parts: Uint8Array[] = [b.subarray(0, 2)];
+  let i = 2;
+  for (;;) {
+    if (i >= b.length || b[i] !== 0xff) return null;
+    while (i < b.length && b[i] === 0xff) i++;          // 填充用的 FF
+    if (i >= b.length) return null;
+    const m = b[i];
+    i++;
+    if (m === 0xd8 || m === 0xd9 || m === 0x00) return null;   // SOS 之前不该出现
+    if ((m >= 0xd0 && m <= 0xd7) || m === 0x01) {               // 没有长度的 marker
+      parts.push(new Uint8Array([0xff, m]));
+      continue;
+    }
+    if (i + 2 > b.length) return null;
+    const len = (b[i] << 8) | b[i + 1];
+    if (len < 2 || i + len > b.length) return null;
+    const end = i + len;
+    if (m === 0xda) {                                           // SOS：后面全是影像资料，照抄
+      parts.push(new Uint8Array([0xff, m]), b.subarray(i));
+      return tgJoin(parts);
+    }
+    const isApp = m >= 0xe0 && m <= 0xef;
+    const keep = isApp ? (m === 0xe0 || m === 0xe2 || m === 0xee) : m !== 0xfe;
+    if (keep) parts.push(new Uint8Array([0xff, m]), b.subarray(i, end));
+    i = end;
+  }
+}
+
+function tgStripPng(b: Uint8Array): Uint8Array | null {
+  const parts: Uint8Array[] = [b.subarray(0, 8)];
+  let i = 8;
+  while (i + 12 <= b.length) {
+    const len = ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
+    const end = i + 12 + len;
+    if (end > b.length) return null;
+    const type = String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]);
+    if (!TG_PNG_DROP.has(type)) parts.push(b.subarray(i, end));
+    if (type === 'IEND') return tgJoin(parts);
+    i = end;
+  }
+  return null;
+}
+
+function tgStripWebp(b: Uint8Array): Uint8Array | null {
+  const riffEnd = 8 + (b[4] | (b[5] << 8) | (b[6] << 16) | ((b[7] << 24) >>> 0));
+  if (riffEnd > b.length || riffEnd < 12) return null;
+  const parts: Uint8Array[] = [];
+  let i = 12;
+  while (i < riffEnd) {
+    if (i + 8 > riffEnd) return null;
+    const size = b[i + 4] | (b[i + 5] << 8) | (b[i + 6] << 16) | ((b[i + 7] << 24) >>> 0);
+    const end = i + 8 + size + (size % 2);
+    if (end > riffEnd) return null;
+    const cc = String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]);
+    if (cc === 'VP8X' && size >= 1) {
+      const c = b.slice(i, end);
+      c[8] &= ~0x0c;                                            // 清掉 EXIF（0x08）、XMP（0x04）旗标
+      parts.push(c);
+    } else if (cc !== 'EXIF' && cc !== 'XMP ') {
+      parts.push(b.subarray(i, end));
+    }
+    i = end;
+  }
+  const body = tgJoin(parts);
+  const n = body.byteLength + 4;
+  return tgJoin([new Uint8Array([0x52, 0x49, 0x46, 0x46, n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255,
+    0x57, 0x45, 0x42, 0x50]), body]);
+}

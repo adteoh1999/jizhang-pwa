@@ -1,5 +1,6 @@
 // 站主设定 Telegram bot（3b-5 第一版；3d 加 webhook、指令、status、pause）。
-//   action setup ：setWebhook（排第一：恢复功能优先；带密钥、只收 message 与 callback_query、max_connections 4 限并发）、
+//   action setup ：setWebhook（排第一：恢复功能优先；带密钥、只收 message 与 callback_query、max_connections 4 限并发、
+//                  drop_pending_updates：丢掉积压讯息，暂停期间传的不会在恢复时补记，用户决定 2）、
 //                  选单按钮（打开记账 Mini App）、简短介绍、完整介绍、setMyCommands。可以重按（都是「设成这个值」）。
 //                  webhook 密钥不合格只挡 setup；status、pause 用不到密钥，照样能用（紧急关闭不能被密钥坏掉卡住）。
 //   action status：getWebhookInfo＋24 小时内 AI 次数（不回 Telegram 的错误文字与网址）。
@@ -22,7 +23,7 @@ type Deps = {
 };
 
 const ADMIN_FAIL_MSG = '暂时无法完成，请稍后再试';
-// 超时：前端等 20 秒 → 整个流程总时限 18 秒（查身份 2、查站主 2，Bot API 每步最多 5 秒、缩到剩下的时间）。
+// 超时：前端等 25 秒 → 整个流程总时限 18 秒（查身份 2、查站主 2，Bot API 每步最多 5 秒、缩到剩下的时间）。
 // 实测（2026-11-26）：第一次连 api.telegram.org 超过 1.5 秒（Telegram 其实已设好），所以不再每步固定 1.5 秒。
 const ADMIN_BUDGET_MS = 18000;
 const ADMIN_MIN_STEP_MS = 1000;   // 剩不到 1 秒就当时间用完、不送（送了必然逾时）
@@ -136,7 +137,8 @@ async function tgAdminFlow(req: Request, deps: Deps, reply: (status: number, obj
   const steps: [string, unknown][] = input.action === 'pause'
     ? [['deleteWebhook', { drop_pending_updates: true }]]
     : [
-      ['setWebhook', { url: hookUrl, secret_token: hookSecret, allowed_updates: ['message', 'callback_query'], max_connections: 4 }],
+      ['setWebhook', { url: hookUrl, secret_token: hookSecret, allowed_updates: ['message', 'callback_query'], max_connections: 4,
+        drop_pending_updates: true }],
       ['setChatMenuButton', { menu_button: { type: 'web_app', text: MENU_TEXT, web_app: { url: APP_URL } } }],
       ['setMyShortDescription', { short_description: SHORT_DESC }],
       ['setMyDescription', { description: LONG_DESC }],

@@ -70,8 +70,10 @@ test('相似：今天／别天／已经找不到那笔', () => {
     '11月25日已经有一笔差不多的：餐饮 RM 5.00。还要记这一笔吗？');
   assert.equal(R.botSimilarText(null, '餐饮', TODAY), '已经有一笔差不多的账。还要记这一笔吗？');
 });
-test('大额先问', () => {
-  assert.equal(R.botBigText({ amount_minor: 999900 }, '餐饮'), '截图上的金额是 RM 9,999.00（餐饮），要记吗？');
+test('大额先问：今天的账不显示日期；不是今天（用户决定 6）显示「· 月日」', () => {
+  assert.equal(R.botBigText({ amount_minor: 999900, occurred_on: TODAY }, '餐饮', TODAY), '截图上的金额是 RM 9,999.00（餐饮），要记吗？');
+  assert.equal(R.botBigText({ amount_minor: 999900, occurred_on: '2026-11-25' }, '餐饮', TODAY),
+    '截图上的金额是 RM 9,999.00（餐饮 · 11月25日），要记吗？');
 });
 test('分类选单的提示：超过 30 个才加一句', () => {
   assert.equal(R.botCategoryPrompt(false), '要改成哪个分类？');

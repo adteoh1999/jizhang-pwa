@@ -238,3 +238,13 @@ test('审核：全角金额的备注、千分位文字配 AI 不带逗号', () =
 test('审核：截图说明开头是公式字元', () => {
   assert.equal(draftOf(botCheckExtraction(ai(), photoCtx('=HYPERLINK("x") 午餐'))).note, 'HYPERLINK("x") 午餐');
 });
+
+// ---------- 用户决定 7：截图说明写今天／昨天／前天 → 照它；没写才用图上的日期 ----------
+test('截图说明的今天／昨天／前天优先于图上的日期', () => {
+  const r = (caption) => draftOf(botCheckExtraction(ai({ date: '2026-11-20' }), photoCtx(caption))).occurredOn;
+  assert.equal(r('昨天 午餐'), '2026-11-25');
+  assert.equal(r('前天'), '2026-11-24');
+  assert.equal(r('今天 晚餐'), TODAY);
+  assert.equal(r('午餐'), '2026-11-20');
+  assert.equal(r(''), '2026-11-20');
+});

@@ -134,8 +134,9 @@ for (const [label, mod] of await loadBoth('tg-admin')) {
     // setWebhook 排第一（审核 S1：恢复功能优先，外观失败也不影响 webhook）
     assert.deepEqual(c.map((x) => x.url), ['setWebhook', 'setChatMenuButton', 'setMyShortDescription', 'setMyDescription', 'setMyCommands']
       .map((m) => `https://api.telegram.org/bot${BOT}/${m}`));
+    // 用户决定 2：设定时丢掉积压讯息（暂停期间传的不会在恢复时补记）
     assert.deepEqual(c[0].body, { url: `${BASE}/functions/v1/telegram-bot`, secret_token: SECRET,
-      allowed_updates: ['message', 'callback_query'], max_connections: 4 });
+      allowed_updates: ['message', 'callback_query'], max_connections: 4, drop_pending_updates: true });
     assert.deepEqual(c[1].body, { menu_button: { type: 'web_app', text: MENU_TEXT, web_app: { url: 'https://jizhang.adteoh.com/' } } });
     assert.deepEqual(c[2].body, { short_description: SHORT });
     assert.deepEqual(c[3].body, { description: DESC });

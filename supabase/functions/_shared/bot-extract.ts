@@ -158,6 +158,8 @@ export function botCheckExtraction(
   let occurredOn = ctx.today;
   if (ctx.source === 'text') {
     occurredOn = botTextDate(ctx.text, ctx.today);
+  } else if (/今天|昨天|前天/.test(ctx.caption)) {
+    occurredOn = botTextDate(ctx.caption, ctx.today);   // 说明文字写了就照它（用户决定 7）
   } else {
     const d = r.date as string;
     if (botValidDay(d) && d <= ctx.today && d >= botAddDays(ctx.today, -BOT_PHOTO_DAYS)) occurredOn = d;

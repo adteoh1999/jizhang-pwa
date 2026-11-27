@@ -345,6 +345,32 @@ begin
   exception when others then fails := array_append(fails, ('15:' || sqlerrm));
   end;
 
+  -- 17.（用户决定 1）相簿里两张一样的大额截图：第二张也比对「还没按的问句」→ asked/similar（similar 是 null）；
+  --     不同天、不同收支、超过 24 小时的问句、别人的问句都不算；按掉（discard）后再传 → 回到 big
+  total := total + 1;
+  begin
+    perform svc.svc_bot_claim(9000000100, tb);
+    j := svc.svc_bot_record(9000000100, tb, 'expense', 250000, 'shopping', d - 3, '', true);
+    perform svc.svc_bot_claim(9000000101, tb);
+    j2 := svc.svc_bot_record(9000000101, tb, 'expense', 250000, 'shopping', d - 3, '', true);
+    ok := j->>'reason' = 'big' and j2->>'status' = 'asked' and j2->>'reason' = 'similar'
+      and coalesce(j2->'similar', 'null'::jsonb) = 'null'::jsonb and j2->'pending'->>'id' <> j->'pending'->>'id';
+    perform svc.svc_bot_claim(9000000102, tb);
+    ok := ok and svc.svc_bot_record(9000000102, tb, 'expense', 250000, 'shopping', d - 4, '', true)->>'reason' = 'big';
+    perform svc.svc_bot_claim(9000000103, tb);
+    ok := ok and svc.svc_bot_record(9000000103, tb, 'income', 250000, 'side', d - 3, '', true)->>'reason' = 'big';
+    perform svc.svc_bot_claim(9000000104, ta);
+    ok := ok and svc.svc_bot_record(9000000104, ta, 'expense', 250000, 'shopping', d - 3, '', true)->>'reason' = 'big';
+    perform svc.svc_bot_discard(tb, (j->'pending'->>'id')::uuid);
+    perform svc.svc_bot_discard(tb, (j2->'pending'->>'id')::uuid);
+    insert into private.bot_pending (id, user_id, telegram_id, reason, kind, amount_minor, category_id, occurred_on, created_at)
+    values (gen_random_uuid(), ub, tb, 'big', 'expense', 250000, 'shopping', d - 3, now() - interval '25 hours');
+    perform svc.svc_bot_claim(9000000105, tb);
+    ok := ok and svc.svc_bot_record(9000000105, tb, 'expense', 250000, 'shopping', d - 3, '', true)->>'reason' = 'big';
+    if ok then pass := pass + 1; else fails := array_append(fails, ('17 问句没算进相似:' || coalesce(j::text, 'null') || ' ' || coalesce(j2::text, 'null'))); end if;
+  exception when others then fails := array_append(fails, ('17:' || sqlerrm));
+  end;
+
   -- 16.（放最后，会改 ta 的连接）领取后换了连接的账号 → record 回 gone、没写账（M4）
   total := total + 1;
   begin

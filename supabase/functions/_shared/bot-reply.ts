@@ -67,8 +67,10 @@ export function botSimilarText(
   return `${when}已经有一笔差不多的：${catName} ${botFormatRM(similar.amount_minor)}${botNotePart(similar.note)}。还要记这一笔吗？`;
 }
 
-export function botBigText(pending: { amount_minor: number }, catName: string): string {
-  return `截图上的金额是 ${botFormatRM(pending.amount_minor)}（${catName}），要记吗？`;
+// 不是今天的账就带日期（用户决定 6，2026-11-27）
+export function botBigText(pending: { amount_minor: number; occurred_on: string }, catName: string, today: string): string {
+  const day = pending.occurred_on !== today ? ` · ${botMonthDay(pending.occurred_on)}` : '';
+  return `截图上的金额是 ${botFormatRM(pending.amount_minor)}（${catName}${day}），要记吗？`;
 }
 
 export function botCategoryPrompt(truncated: boolean): string {
