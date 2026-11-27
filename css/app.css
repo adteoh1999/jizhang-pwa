@@ -63,18 +63,19 @@
   --card-ink: #FFFFFF;
   --card-ink-2: rgba(255, 255, 255, 0.72);        /* 卡上次要字、眼睛 */
   --card-ink-dec: rgba(255, 255, 255, 0.72);      /* 金额小数 */
-  --card-income: #BBD8FF;                         /* 卡上收入：浅蓝（深蓝在深绿上看不清） */
   --card-track: rgba(255, 255, 255, 0.14);
-  --card-fill: #C4E6D6;                           /* 比例线：薄荷 */
+  /* 比例线渐变（v3.4.1）：填充条往左藏、露出尾端 → 尾端是最亮的薄荷；超支换琥珀。卡片深浅相同 */
+  --meter-from: #5FC497; --meter-to: #D9F2E5;
+  --meter-over-from: #FFE3A8; --meter-over-to: #FFB347;
   --card-line: rgba(255, 255, 255, 0.14);         /* 卡内分隔线 */
   --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 1px rgba(6, 35, 26, 0.2),
     0 14px 24px -12px rgba(6, 35, 26, 0.45), 0 34px 56px -30px rgba(6, 35, 26, 0.6);
   --card-glow: rgba(9, 131, 84, 0.16);            /* 卡后一团淡深绿 */
   /* 中性白面板（走势图卡、欢迎页账单小卡）的柔和投影 */
   --panel-shadow: 0 10px 24px -16px rgba(10, 12, 18, 0.25);
-  /* 统计页分类条：轨道、单色条（B 改版不再用分类色与渐层） */
+  /* 统计页分类条：轨道、绿色渐变（v3.4.1；露出尾端 → 尾端是对比最高的深绿） */
   --stats-track: rgba(10, 12, 18, 0.07);
-  --bar: #2F3431;
+  --bar-from: #6CC29A; --bar-to: #076B44;
   /* B 改版中性元件：单色分类图示、iOS 原生分段控件滑块、首页「记一笔」次要按钮、深绿字（只放纯白底上，4.79） */
   --icon-ink: #2F3431;
   --icon-line: rgba(10, 12, 18, 0.1);
@@ -123,12 +124,13 @@
     --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
     --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
     --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
-    --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
-    --card-track: rgba(255, 255, 255, 0.14); --card-fill: #C4E6D6; --card-line: rgba(255, 255, 255, 0.14);
+    --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72);
+    --card-track: rgba(255, 255, 255, 0.14); --card-line: rgba(255, 255, 255, 0.14);
+    --meter-from: #5FC497; --meter-to: #D9F2E5; --meter-over-from: #FFE3A8; --meter-over-to: #FFB347;
     --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
     --card-glow: rgba(9, 131, 84, 0.22);
     --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
-    --stats-track: rgba(255, 255, 255, 0.1); --bar: rgba(242, 245, 243, 0.82);
+    --stats-track: rgba(255, 255, 255, 0.1); --bar-from: #2FA26E; --bar-to: #B4E6CC;
     --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
     --seg-thumb: #5E6662; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
@@ -155,12 +157,13 @@
   --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
   --card-1: #0F4A35; --card-2: #0A3526; --card-3: #062219;
   --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
-  --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72); --card-income: #BBD8FF;
-  --card-track: rgba(255, 255, 255, 0.14); --card-fill: #C4E6D6; --card-line: rgba(255, 255, 255, 0.14);
+  --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72);
+  --card-track: rgba(255, 255, 255, 0.14); --card-line: rgba(255, 255, 255, 0.14);
+  --meter-from: #5FC497; --meter-to: #D9F2E5; --meter-over-from: #FFE3A8; --meter-over-to: #FFB347;
   --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
   --card-glow: rgba(9, 131, 84, 0.22);
   --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
-  --stats-track: rgba(255, 255, 255, 0.1); --bar: rgba(242, 245, 243, 0.82);
+  --stats-track: rgba(255, 255, 255, 0.1); --bar-from: #2FA26E; --bar-to: #B4E6CC;
   --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
   --seg-thumb: #5E6662; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
@@ -1168,13 +1171,12 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   opacity: 0;
   pointer-events: none;
 }
-.home-card > .home-float.is-income { color: var(--card-income); }
 /* 窄屏：一般金额（到 RM 999,999.99）也缩一级，收入、支出才能并排；百万以上会上下堆叠（flex-wrap） */
 @media (max-width: 359px) {
   .home-flow-v { font-size: 0.8824rem; }
 }
 
-/* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、同色 */
+/* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、换琥珀渐变（.is-over，home.js 依 cardView 的 over 加） */
 .home-meter { display: grid; margin-top: 12px; }
 .home-meter-bar {
   position: relative;
@@ -1184,13 +1186,14 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   overflow: hidden;
 }
 /* 比例线「滑入」（v2.3）：填充条固定 100% 宽，用 translateX 往左藏（只走合成，圆角不被压扁）。
-   只留右侧圆角（左侧由轨道的圆角裁切）；::before 往左延伸同色，弹过头时左边不露缝 */
+   只留右侧圆角（左侧由轨道的圆角裁切）；::before 往左延伸起点色，弹过头时左边不露缝。
+   v3.4.1 渐变铺在整条 100% 上，跟着平移 → 露出的是尾端（短条几乎是尾端色） */
 .home-meter-fill {
   position: absolute;
   inset: 0;
   width: 100%;
   border-radius: 0 1.5px 1.5px 0;
-  background: var(--card-fill);
+  background: linear-gradient(90deg, var(--meter-from), var(--meter-to));
   transform: translateX(-100%);
 }
 .home-meter-fill::before {
@@ -1200,8 +1203,10 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   bottom: 0;
   right: 100%;
   width: 100%;
-  background: inherit;
+  background: var(--meter-from);
 }
+.home-meter-bar.is-over .home-meter-fill { background: linear-gradient(90deg, var(--meter-over-from), var(--meter-over-to)); }
+.home-meter-bar.is-over .home-meter-fill::before { background: var(--meter-over-from); }
 /* 比例文字：平常只给读屏（B 改版卡片要干净）；超支时 home.js 加 .is-shown 才显示「支出已超过收入」（用户 2026-11-27） */
 .home-meter-note {
   position: absolute;
@@ -1451,8 +1456,6 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   white-space: nowrap;
 }
 .stats-sum-v small { font: 600 min(0.6471rem, 11px)/1 var(--font-family); letter-spacing: 0; color: var(--card-ink-2); }
-.stats-sum-v.is-income { color: var(--card-income); }
-.stats-sum-v.is-income small { color: inherit; }
 /* 金额上万（数字连负号超过 8 字元，JS 加 is-long）或窄屏：改成三行，名称在左、金额在右 */
 .stats-summary.is-long { grid-template-columns: 1fr; padding: 4px 18px; }
 .stats-summary.is-long .stats-sum-item {
@@ -1620,13 +1623,13 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   overflow: hidden;
 }
 /* v2.3 分类条「滑入」：固定 100% 宽，translateX 往左藏（只走合成）。左端由轨道圆角裁切 → 两端都圆。
-   B 改版：单色 --bar（不再用分类色与渐层）。 */
+   v3.4.1：绿色渐变铺在整条上、跟着平移，露出尾端（短条几乎是尾端深绿）。 */
 .stats-bar-fill {
   position: absolute;
   inset: 0;
   width: 100%;
   border-radius: 0 3px 3px 0;
-  background: var(--bar);
+  background: linear-gradient(90deg, var(--bar-from), var(--bar-to));
 }
 /* 往左延伸补弹过头的缝 */
 .stats-bar-fill::before {
@@ -1636,7 +1639,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   bottom: 0;
   right: 100%;
   width: 100%;
-  background: var(--bar);
+  background: var(--bar-from);
 }
 .stats-body { display: flex; flex-direction: column; flex: 1 0 auto; }   /* 换月份时整块滑动 */
 /* 百分比：纯灰字（B 改版不再用分类色胶囊） */
@@ -1994,7 +1997,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .wl-flow-k svg { display: none; }
 .wl-flow-v { font: 600 16px/1.29 var(--font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wl-bar { margin-top: 12px; height: 3px; border-radius: 1.5px; background: var(--card-track); overflow: hidden; }
-.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--card-fill); }
+.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--meter-to); }
 .wl-tx {
   display: flex;
   align-items: center;
@@ -2141,4 +2144,8 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   .home-row-icon, .cat-tile-icon, .wl-tx-ic { box-shadow: inset 0 0 0 1px var(--ink-2); }
   .home-add, .trend-card, .inset-group { box-shadow: 0 0 0 1px var(--ink-2); }
   .home-card, .stats-summary, .wl-card { box-shadow: var(--card-shadow), 0 0 0 1px var(--card-ink-2); }
+  /* v3.4.1 渐变条：起点较淡，增加对比度时改纯尾端色（fill 与 ::before 一起改，回弹接缝才不会两色） */
+  .home-meter-fill, .home-meter-fill::before { background: var(--meter-to); }
+  .home-meter-bar.is-over .home-meter-fill, .home-meter-bar.is-over .home-meter-fill::before { background: var(--meter-over-to); }
+  .stats-bar-fill, .stats-bar-fill::before { background: var(--bar-to); }
 }

@@ -33,8 +33,8 @@ const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 const ratio = (x, y) => { const [a, b] = [lum(x), lum(y)]; return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
 
 const CARD_SEL = ['.home-card', '.stats-summary', '.wl-card'];
-const NEW_TOKENS = ['--card-1', '--card-2', '--card-3', '--card-ink', '--card-ink-2', '--card-ink-dec', '--card-income',
-  '--card-track', '--card-fill', '--card-line', '--card-sheen-mint', '--card-sheen-white', '--card-glow', '--card-shadow', '--panel-shadow'];
+const NEW_TOKENS = ['--card-1', '--card-2', '--card-3', '--card-ink', '--card-ink-2', '--card-ink-dec',
+  '--card-track', '--card-line', '--card-sheen-mint', '--card-sheen-white', '--card-glow', '--card-shadow', '--panel-shadow'];
 const GONE_TOKENS = ['--orb-1', '--orb-2', '--orb-3', '--orb-4', '--card-glass-1', '--card-glass-2',
   '--card-rim-1', '--card-rim-2', '--card-rim-3', '--card-rim-4', '--stats-glow-1', '--stats-glow-2', '--stats-card-shadow',
   '--chip-bg', '--chip-edge', '--chip-shadow'];
@@ -51,8 +51,6 @@ test('深绿卡 token：新的都在三块、旧的光球／玻璃／小卡 toke
   assert.equal(light['--card-3'], '#062219');
   assert.equal(attrDark['--card-1'], '#0F4A35');
   assert.equal(light['--card-ink'], '#FFFFFF');
-  assert.equal(light['--card-income'], '#BBD8FF');
-  assert.equal(light['--card-fill'], '#C4E6D6');
 });
 
 // ---------- 共用外观 ----------
@@ -79,7 +77,7 @@ test('反向扫描：卡片家族的规则只用 --card-* 的字色，不混进�
 // ---------- 对比度：卡底叠上两层光泽的最亮处 ----------
 for (const theme of ['light', 'dark']) {
   for (const stop of ['--card-1', '--card-2', '--card-3']) {
-    for (const fg of ['--card-ink', '--card-ink-2', '--card-ink-dec', '--card-income']) {
+    for (const fg of ['--card-ink', '--card-ink-2', '--card-ink-dec']) {
       test(`${theme} ${fg} 压在 ${stop}＋光泽 ≥ 4.5`, () => {
         let bg = color(theme, stop).rgb;
         for (const sheen of ['--card-sheen-white', '--card-sheen-mint']) { const s = color(theme, sheen); bg = over(bg, s.rgb, s.a); }
@@ -153,7 +151,7 @@ test('统计页：玻璃卡拆掉——摘要卡走深绿卡、走势图卡是�
   for (const r of rules().filter((x) => /\.stats-sum-item \+ \.stats-sum-item/.test(x.sel))) {
     assert.match(r.body, /var\(--card-line\)/, r.sel);
   }
-  assert.match(css, /\.stats-sum-v\.is-income \{[^}]*color:\s*var\(--card-income\)/);
+  // v3.4.1：收入改白，收入专用色规则已拿掉（tests/meter-gradient.test.js）
 });
 
 // ---------- 欢迎页小卡 ----------

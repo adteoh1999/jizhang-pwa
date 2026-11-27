@@ -146,18 +146,19 @@ test('cardView 隐藏：数字、负号、缩级都不留，读屏读「已隐�
   const over = cardView({ balance: -500, income: 100, expense: 600 }, true);
   assert.deepEqual(none.meter, big.meter);
   assert.deepEqual(over.meter, big.meter);
-  assert.deepEqual(big.meter, { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false, noteShown: false });
+  assert.deepEqual(big.meter, { barHidden: false, pct: 0, label: '花费比例已隐藏', note: '已花掉收入的 \u2022\u2022%', noteRead: false, noteShown: false, over: false });
 });
 
 test('cardView 显示：比例线与原本相同（线条读出时文字不重复读）', () => {
   assert.deepEqual(cardView({ balance: 3200, income: 10000, expense: 6800 }, false).meter,
-    { barHidden: false, pct: 68, label: '已花掉收入的 68%', note: '已花掉收入的 68%', noteRead: false, noteShown: false });
+    { barHidden: false, pct: 68, label: '已花掉收入的 68%', note: '已花掉收入的 68%', noteRead: false, noteShown: false, over: false });
   assert.deepEqual(cardView({ balance: 0, income: 0, expense: 0 }, false).meter,
-    { barHidden: true, pct: 0, label: '本月还没有收入', note: '本月还没有收入', noteRead: true, noteShown: false });
+    { barHidden: true, pct: 0, label: '本月还没有收入', note: '本月还没有收入', noteRead: true, noteShown: false, over: false });
   const over = cardView({ balance: -500, income: 100, expense: 600 }, false).meter;
   assert.equal(over.note, '支出已超过收入');
   // B 改版（用户 2026-11-27）：比例文字平常不显示，只有超支时在卡片上显示
   assert.equal(over.noteShown, true);
+  assert.equal(over.over, true);   // v3.4.1：超支时比例线换琥珀色
 });
 
 test('eyeButtonState：标签说「按了会怎样」', () => {

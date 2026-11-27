@@ -31,6 +31,7 @@ export function mountStats(root, store) {
 
   // ---------- 摘要：晨雾玻璃卡，一行三格（金额上万或窄屏改三行） ----------
   // 看得到的金额拆成「符号＋小 RM＋数字」（aria-hidden），读屏读 .sr-only 的完整金额
+  // is-income 目前没有样式（v3.4.1 深绿卡上收入改白），留着当语意标记
   const incomeEl = h('span', { class: 'stats-sum-v is-income', 'aria-hidden': 'true' });
   const expenseEl = h('span', { class: 'stats-sum-v', 'aria-hidden': 'true' });
   const balanceEl = h('span', { class: 'stats-sum-v', 'aria-hidden': 'true' });

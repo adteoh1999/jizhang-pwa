@@ -15,9 +15,9 @@ test('彩色分类系统拿掉：没有 [data-icon="…"] 配色规则，也没�
   assert.ok(!/--cat-(bg|fg|ink)/.test(css), '还有 --cat-* token');
 });
 
-test('图示 token：--icon-ink、--icon-line、--seg-thumb、--bar、--accent-text、--btn2-bg、--btn2-edge 在三块都有', () => {
+test('图示 token：--icon-ink、--icon-line、--seg-thumb、--bar-from／--bar-to、--accent-text、--btn2-bg、--btn2-edge 在三块都有', () => {
   for (const t of [light, mediaDark, attrDark]) {
-    for (const n of ['--icon-ink', '--icon-line', '--seg-thumb', '--seg-shadow', '--bar', '--accent-text', '--btn2-bg', '--btn2-edge']) assert.ok(t[n], `missing ${n}`);
+    for (const n of ['--icon-ink', '--icon-line', '--seg-thumb', '--seg-shadow', '--bar-from', '--bar-to', '--accent-text', '--btn2-bg', '--btn2-edge']) assert.ok(t[n], `missing ${n}`);
   }
   assert.equal(light['--accent-text'], '#098354');
   assert.equal(attrDark['--accent-text'], '#4FC08D');
@@ -86,10 +86,8 @@ test('「储存」深绿字，且写在 :disabled 之前（同优先级，禁用
   assert.match(bodyOf('.modal-sheet-action.is-bold'), /color:\s*var\(--accent-text\)/);
 });
 
-test('统计分类条：单色 --bar、6px；百分比是纯灰字（没有胶囊底）', () => {
+test('统计分类条：6px（v3.4.1 起是绿色渐变，见 meter-gradient 测试）；百分比是纯灰字（没有胶囊底）', () => {
   assert.match(blockAfter(css, '\n.stats-bar {'), /height:\s*6px/);
-  assert.match(blockAfter(css, '\n.stats-bar-fill {'), /background:\s*var\(--bar\)/);
-  assert.match(blockAfter(css, '\n.stats-bar-fill::before {'), /background:\s*var\(--bar\)/);
   const pct = blockAfter(css, '\n.stats-row-pct {');
   assert.ok(!/background/.test(pct), '百分比没有底色');
   assert.match(pct, /color:\s*var\(--ink-2\)/);

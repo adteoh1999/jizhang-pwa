@@ -43,7 +43,7 @@ test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from 
 
 test('category rows JS: data-icon on the row, bar width shared with slideX, RM split + sr-only（单色化后 data-icon 留着无样式）', () => {
   assert.match(statsJs, /slideX\(r\.ratio, 6\)/);
-  // B 改版：分类条单色，不再需要 --bar-w（渐层宽度）
+  // 不再需要 --bar-w：v3.4.1 渐变铺在整条上、露出尾端，不用 JS 量看得到的宽度
   assert.doesNotMatch(statsJs, /--bar-w/);
   assert.match(statsJs, /class: 'stats-row', 'data-icon': iconAttr/);
   assert.match(statsJs, /class: 'stats-row-pct'/);
