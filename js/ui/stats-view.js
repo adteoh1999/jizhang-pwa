@@ -9,7 +9,7 @@ import { summarizeMonth, byCategory, formatPercent, cumulativeByDay, summaryIsLo
 import { formatRM, rmParts } from '../money.js';
 import { todayLocal, monthOf, shiftMonth, formatMonthTitle } from '../dates.js';
 import {
-  animate, fade, cancelAnims, reducedMotion, clipSupported, slideX, barWidth, DUR, EASE_OUT,
+  animate, fade, cancelAnims, reducedMotion, clipSupported, slideX, DUR, EASE_OUT,
 } from './motion.js';
 
 export function mountStats(root, store) {
@@ -39,7 +39,7 @@ export function mountStats(root, store) {
   const balanceSr = h('span', { class: 'sr-only' });
   const cell = (label, el, sr) => h('div', { class: 'stats-sum-item' },
     h('span', { class: 'stats-sum-k' }, label), el, sr);
-  const summary = h('section', { class: 'glass-card stats-summary' },
+  const summary = h('section', { class: 'stats-summary' },
     cell('收入', incomeEl, incomeSr), cell('支出', expenseEl, expenseSr), cell('结余', balanceEl, balanceSr));
   function setMoney(el, sr, minor, sign) {
     const p = rmParts(minor, { sign });
@@ -100,10 +100,9 @@ export function mountStats(root, store) {
       const iconAttr = rowIconAttr(cat); // null → 灰色（已删除 / 未分类）
       const bar = h('span', { class: 'stats-bar-fill' });
       bar.style.transform = slideX(r.ratio, 6);   // 滑入做法；有值时最少露出 6px
-      bar.style.setProperty('--bar-w', barWidth(r.ratio, 6));   // 渐层只铺在看得到的那段（与 slideX 同一个宽度）
       bar.dataset.to = bar.style.transform;
       const amt = rmParts(r.total, { sign: 'none' });
-      // data-icon 挂在列上：图标、条、百分比胶囊都继承分类色（null → 灰色后备）
+      // data-icon 挂在列上（B 改版后单色、无样式作用；保留给日后恢复分类色）
       return h('li', { class: 'stats-row', 'data-icon': iconAttr },
         h('span', { class: `home-row-icon${iconAttr ? '' : ' is-muted'}`, 'data-icon': iconAttr },
           icon(cat ? cat.icon : 'other', 22)),

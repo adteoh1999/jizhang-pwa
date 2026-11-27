@@ -51,7 +51,7 @@
   /* 登录页（2d）：输入框底、错误字（直接压在晨雾上，--red-text 只有 4.07，另设较深的红） */
   --field: rgba(255, 255, 255, 0.72);
   --login-error: #B4000F;
-  --income: #1663C7;               /* 收入蓝（不跟深绿撞色；玻璃卡上 ≥4.9:1） */
+  --income: #1663C7;               /* 收入蓝（不跟深绿撞色；白底 5.47:1） */
   --red: rgb(255, 56, 60);          /* systemRed */
   /* B 深绿卡（首页结余卡、统计摘要卡、欢迎页示意卡）：浅深相同的深绿；卡上字一律用 --card-*（tests/green-card.test.js）。
      对比度以「卡底＋两层光泽最亮处」计算，调光泽或字色都要先跑测试 */
@@ -130,7 +130,7 @@
     --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
     --stats-track: rgba(255, 255, 255, 0.1); --bar: rgba(242, 245, 243, 0.82);
     --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
-    --seg-thumb: #2C3330; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --seg-thumb: #5E6662; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
     --tab-island: rgba(16, 44, 34, 0.86); --tab-pill: #C4E6D6; --tab-on: #062219; --tab-off: rgba(232, 242, 236, 0.66);
     --tab-shadow: inset 0 0 0 1px rgba(196, 230, 214, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 36px -14px rgba(0, 0, 0, 0.8);
@@ -162,7 +162,7 @@
   --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
   --stats-track: rgba(255, 255, 255, 0.1); --bar: rgba(242, 245, 243, 0.82);
   --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
-  --seg-thumb: #2C3330; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --seg-thumb: #5E6662; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
   --tab-island: rgba(16, 44, 34, 0.86); --tab-pill: #C4E6D6; --tab-on: #062219; --tab-off: rgba(232, 242, 236, 0.66);
   --tab-shadow: inset 0 0 0 1px rgba(196, 230, 214, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 36px -14px rgba(0, 0, 0, 0.8);
@@ -660,7 +660,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 
 /* ---------- 10b. 资料库已更新（不可关闭的阻挡画面） ---------- */
-/* 阻挡画面：晨雾底（不透明，盖住后面不可操作的内容）+ 黑色胶囊按钮 */
+/* 阻挡画面：整页背景（不透明，盖住后面不可操作的内容）+ 深绿主按钮 */
 .overlay-blocking { z-index: 300; opacity: 1; }   /* 底色：整页晨雾渐变（与 .sky 共用，见 §3 .sky 规则），不透明 */
 .overlay-blocking .alert-buttons { box-shadow: none; padding: 0 16px 16px; }
 .overlay-blocking .alert-button:focus-visible { outline-offset: 2px; } /* 黑色药丸四周有留白：焦点框画在外面才看得到 */
@@ -708,7 +708,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    - [hig-components-dialogs / sheets.md] 可调整的 sheet 要有 grabber、支援下拉关闭；
      取消在左上、完成（储存）在右上。
    - sheet 底色 / 卡片色：走主题 token（--drawer 抽屉色 / --sky-* 天空底），不再用 iOS 分组灰。
-   - 分段控件：--seg-track 底，选中块为黑色胶囊（--btn-bg / --btn-fg，深色反相）。
+   - 分段控件：iOS 原生样式——--seg-track 灰轨道、--seg-thumb 滑块（B 改版 2026-11-27，不用深绿）。
    ===================================================================== */
 
 .overlay-modal {
@@ -789,8 +789,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
    ===================================================================== */
 .entry { display: flex; flex-direction: column; gap: 20px; padding-top: 4px; }
 
-/* 支出 / 收入 分段控件：黑色胶囊（与标签栏同语言），共用于统计页、记一笔、分类管理。
-   轨道 = 玻璃 + 玻璃边；选中 = --btn-bg / --btn-fg 的胶囊底块（transform 滑动，只走合成）。高 44pt。 */
+/* 支出 / 收入 分段控件：iOS 原生样式（灰轨道＋滑块，B 改版），共用于统计页、记一笔、分类管理。
+   选中＝滑块（transform 滑动，只走合成）。高 44pt。 */
 .segmented {
   position: relative;
   display: grid;
@@ -914,11 +914,11 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font: var(--font-caption);
   color: var(--ink-2);
 }
-/* 选中：圆标外一圈 2px ink 外框，中间留 2px 抽屉色间隙（彩色圆标上才看得清）。
-   注意：间隙色假设图格放在 --drawer 上（记一笔面板的分类格就是）；换底色要同步改。 */
+/* 选中：实心深绿方块、白字形（B 改版）。已删除／新增格是灰实心底；已删除且选中照样深绿（见下）。 */
 .cat-tile[aria-pressed="true"] .cat-tile-icon { background: var(--btn-bg); color: var(--btn-fg); box-shadow: none; }   /* 选中：实心深绿（这页的深绿重点） */
 .cat-tile[aria-pressed="true"] .cat-tile-name { color: var(--ink); font-weight: 600; }
-.cat-tile:active .cat-tile-icon { background: var(--press-bg); }
+.cat-tile:not([aria-pressed="true"]):active .cat-tile-icon { background: var(--press-bg); }   /* 选中的格不能换浅底（白字形会消失） */
+.cat-tile[aria-pressed="true"]:active .cat-tile-icon { opacity: 0.7; }
 .cat-tile:focus-visible { outline-offset: 0; }
 .cat-tile-badge {
   margin-top: -4px;
@@ -930,6 +930,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   line-height: 15px;
 }
 .cat-tile.is-deleted .cat-tile-icon, .cat-tile-add .cat-tile-icon { color: var(--ink-2); background: var(--fill); }
+/* 编辑旧记录：分类已被删除但仍是这笔的分类 → 照样显示实心深绿（要在上一条之后） */
+.cat-tile.is-deleted[aria-pressed="true"] .cat-tile-icon { background: var(--btn-bg); color: var(--btn-fg); }
 .cat-tile-plus { font-size: 22px; line-height: 1; }
 
 /* 日期、备注：inset grouped 列表 */
@@ -1408,9 +1410,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 
 /* =====================================================================
    15. Stats 统计页 — js/ui/stats-view.js、js/ui/trend-chart.js
-   - 顺序：月份切换（后面挂淡蓝光晕）→ 摘要玻璃卡（一行三格）→ 黑色胶囊分段（玻璃轨道）→ 累计走势图卡 → 分类抽屉。
+   - 顺序：月份切换 → 摘要深绿卡（一行三格）→ 分段控件 → 累计走势图白面板 → 分类抽屉。
    - [dataviz] 走势图单色 ink；比例条用分类色，但每列都有名称 + 金额 + 百分比文字，条本身 aria-hidden。
-   - 效能（v2.4）：玻璃卡、光晕、分类条渐层全是静态渐层与阴影（无 backdrop-filter、无新动画）；分类列不加阴影；拖动只改标记与标签属性。
+   - 效能：深绿卡、白面板、单色分类条全是静态底色与阴影（无 backdrop-filter、无新动画）；分类列不加阴影；拖动只改标记与标签属性。
    ===================================================================== */
 .stats-month {
   display: flex;
@@ -1908,7 +1910,6 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 @media (prefers-contrast: more) {
   .entry-card:not(.cat-card), .entry-amount-row, .segmented { border: 1px solid var(--ink-2); }
   .segmented::before { box-shadow: inset 0 0 0 1px var(--ink-2); }
-  .home-row-icon, .cat-tile-icon, .wl-tx-ic { box-shadow: inset 0 0 0 1px var(--ink-2); }
   .stepper-button, .invite-action.is-secondary { border: 1px solid var(--ink-2); }
 }
 
@@ -2132,4 +2133,12 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 }
 @media (prefers-reduced-motion: reduce) {
   .login-body { transition: none; }
+}
+
+/* 增加对比度（B 改版，审核 M-2／M-3）：放在档案最后，才压得过前面同优先级的基础规则。
+   图示框、白色面板（近白背景上）加实线边；深绿卡在深色背景上加一圈浅边。 */
+@media (prefers-contrast: more) {
+  .home-row-icon, .cat-tile-icon, .wl-tx-ic { box-shadow: inset 0 0 0 1px var(--ink-2); }
+  .home-add, .trend-card, .inset-group { box-shadow: 0 0 0 1px var(--ink-2); }
+  .home-card, .stats-summary, .wl-card { box-shadow: var(--card-shadow), 0 0 0 1px var(--card-ink-2); }
 }

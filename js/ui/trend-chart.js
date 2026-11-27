@@ -60,7 +60,7 @@ export function mountTrendChart(container, { onChangeText } = {}) {
   const box = h('div', { class: 'trend-box' }, reveal, svg, tip);
   const axis = h('div', { class: 'trend-axis', 'aria-hidden': 'true' });
   const empty = h('p', { class: 'trend-empty', hidden: true });
-  const element = h('section', { class: 'glass-card trend-card' },
+  const element = h('section', { class: 'trend-card' },
     h('div', { class: 'trend-head' }, titleEl, totalEl), box, axis, empty);
   container.append(element);
 

@@ -65,8 +65,8 @@ export const ICON_LABELS = Object.freeze({
   coffee: '咖啡', phone: '手机',
 });
 
-/** 分类圆标颜色的键：只有 CATEGORY_ICON_CHOICES 内的名称有配色，其余（未知名称）一律退回 'other'。 */
-// 注意：非分类用的字形名称（如 'house'）刻意映射到 'other' 的配色，与 icon() 的字形解析不同。
+/** 分类的 data-icon 键：只有 CATEGORY_ICON_CHOICES 内的名称有效，其余（未知名称）一律退回 'other'。
+ *  B 改版（2026-11-27）后分类图示单色、data-icon 没有样式作用；保留这个键，日后想恢复分类色只要改 CSS。 */
 export function iconKey(name) {
   return CATEGORY_ICON_CHOICES.includes(name) ? name : 'other';
 }

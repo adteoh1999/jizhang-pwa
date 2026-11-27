@@ -55,6 +55,15 @@ test('每个没有后备值的 var(--x) 都有定义（CSS 宣告或 JS setPrope
 test('没有宣告了却没人用的变数', () => {
   const used = new Set([...css.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]));
   const jsSrc = jsFiles('js/').map((f) => readFileSync(new URL(f, root), 'utf8')).join('\n');
-  const unused = [...declaredInCss(css)].filter((n) => !used.has(n) && !jsSrc.includes(n));
+  // 带边界比对：'--bar' 不能因为 JS 里有 '--bar-w' 就算有人用（审核 M-4）
+  const inJs = (n) => new RegExp(`${n.replace(/[-]/g, '\\-')}(?![\\w-])`).test(jsSrc);
+  const unused = [...declaredInCss(css)].filter((n) => !used.has(n) && !inJs(n));
   assert.deepEqual(unused, []);
+});
+
+test('「没人用」检查的边界比对：--bar 不会被 --bar-w 冒充（自我检查）', () => {
+  const jsSrc = "el.style.setProperty('--bar-w', 1)";
+  const inJs = (n) => new RegExp(`${n.replace(/[-]/g, '\\-')}(?![\\w-])`).test(jsSrc);
+  assert.equal(inJs('--bar'), false);
+  assert.equal(inJs('--bar-w'), true);
 });

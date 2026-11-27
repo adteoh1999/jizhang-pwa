@@ -43,8 +43,8 @@ test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from 
 
 test('category rows JS: data-icon on the row, bar width shared with slideX, RM split + sr-only（单色化后 data-icon 留着无样式）', () => {
   assert.match(statsJs, /slideX\(r\.ratio, 6\)/);
-  assert.match(statsJs, /barWidth\(r\.ratio, 6\)/);
-  assert.match(statsJs, /'--bar-w'/);
+  // B 改版：分类条单色，不再需要 --bar-w（渐层宽度）
+  assert.doesNotMatch(statsJs, /--bar-w/);
   assert.match(statsJs, /class: 'stats-row', 'data-icon': iconAttr/);
   assert.match(statsJs, /class: 'stats-row-pct'/);
   assert.match(statsJs, /class: 'stats-row-amount', 'aria-hidden': 'true'[^\n]*\n\s*h\('span', \{ class: 'sr-only' \}, formatRM\(/);
