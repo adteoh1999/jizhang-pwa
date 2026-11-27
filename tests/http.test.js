@@ -124,3 +124,13 @@ test('rpc：emptyOk:false 时 2xx 空内容 → 抛固定讯息；内容是 null
   // 默认不变：空内容 → null（其他函数还在用）
   assert.equal(await rpc(empty, 'https://p', 'K', 'svc_x', {}), null);
 });
+
+// ---------- 3d 最终审核 S4：rpc 失败带 HTTP 状态码（4xx = 请求没被执行） ----------
+test('rpc：非 2xx → Error 带 httpStatus；连线错误、逾时没有 httpStatus', async () => {
+  for (const st of [404, 400, 500, 503]) {
+    const f = async () => new Response('{"code":"PGRST202"}', { status: st });
+    await assert.rejects(rpc(f, 'https://p', 'K', 'svc_x', {}), (e) => { assert.equal(e.httpStatus, st); return true; });
+  }
+  await assert.rejects(rpc(async () => { throw new TypeError('x'); }, 'https://p', 'K', 'svc_x', {}),
+    (e) => { assert.equal(e.httpStatus, undefined); return true; });
+});

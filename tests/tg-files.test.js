@@ -254,3 +254,80 @@ test('tgStripMeta：格式和档头对不上、其他格式 → null', () => {
   assert.equal(tgStripMeta(cat(PSIG, IHDR, IDAT, IEND), 'image/jpeg'), null);
   assert.equal(tgStripMeta(cat(SOI, APP0, SOS, EOI), 'image/gif'), null);
 });
+
+// ---------- 最终审核（fable-reviewer）补测 ----------
+import { tgImageSize } from '../supabase/functions/_shared/telegram.ts';
+test('审核 M1：WebP 区块长度是负数（高位 1）→ null，而且很快结束（不会无限循环）', () => {
+  for (const len of [[0xf8, 0xff, 0xff, 0xff], [0, 0, 0, 0x80], [0xff, 0xff, 0xff, 0xff]]) {
+    const body = cat(ascii('WEBP'), ascii('VP8 '), len, new Uint8Array(16));
+    const b = cat(ascii('RIFF'), u32le(body.length), body);
+    const t = Date.now();
+    assert.equal(tgStripMeta(b, 'image/webp'), null);
+    assert.ok(Date.now() - t < 200);
+  }
+  const huge = cat(ascii('RIFF'), [0xf8, 0xff, 0xff, 0xff], ascii('WEBP'));
+  assert.equal(tgStripMeta(huge, 'image/webp'), null);
+});
+test('审核 S1：JPEG 结尾（EOI）之后的东西丢掉（动态照片影片等）；扫描之间的 APP／注解也拿掉；影像资料的 FF00、RST 照留', () => {
+  const tail = ascii('ftypmp42 GPS video');
+  const second = cat(jseg(0xc4, new Uint8Array([1, 2, 3])), jseg(0xe1, ascii('Exif\0\0GPS')), COM,
+    jseg(0xda, new Uint8Array([1, 1, 0, 0, 63, 0])), [8, 0xff, 0x00, 9]);
+  const dirty = cat(SOI, APP0, DQT, SOS, second, EOI, tail);
+  const out = tgStripMeta(dirty, 'image/jpeg');
+  assert.deepEqual([...out], [...cat(SOI, APP0, DQT, SOS, jseg(0xc4, new Uint8Array([1, 2, 3])),
+    jseg(0xda, new Uint8Array([1, 1, 0, 0, 63, 0])), [8, 0xff, 0x00, 9], EOI)]);
+  assert.ok(!hasText(out, 'GPS') && !hasText(out, 'ftyp') && !hasText(out, 'secret'));
+});
+test('审核 S1：JPEG 没有 EOI（被截断）→ 影像资料抄到档尾；EOI 前填充 FF 也认得', () => {
+  const cut = cat(SOI, APP0, DQT, SOS);
+  assert.deepEqual([...tgStripMeta(cut, 'image/jpeg')], [...cut]);
+  const fill = cat(SOI, APP0, DQT, SOS, [0xff], EOI, ascii('x'));
+  assert.deepEqual([...tgStripMeta(fill, 'image/jpeg')], [...cat(SOI, APP0, DQT, SOS, EOI)]);
+});
+test('审核 S2：PNG 只留看图需要的区块（没列名的私有块、iDOT、caBX 都拿掉）', () => {
+  const keep = ['PLTE', 'tRNS', 'gAMA', 'cHRM', 'sRGB', 'sBIT', 'bKGD', 'pHYs', 'cICP'].map((t) => pchunk(t, new Uint8Array([1])));
+  const dirty = cat(PSIG, IHDR, ...keep, ICCP, pchunk('iDOT', ascii('x')), pchunk('caBX', ascii('GPS')), pchunk('prVt', ascii('GPS')),
+    IDAT, IEND);
+  assert.deepEqual([...tgStripMeta(dirty, 'image/png')], [...cat(PSIG, IHDR, ...keep, ICCP, IDAT, IEND)]);
+});
+test('审核 S2：WebP 只留 VP8／VP8L／VP8X／ALPH／ICCP／ANIM／ANMF', () => {
+  const img = wchunk('VP8L', new Uint8Array([0x2f, 1, 2, 3, 4]));
+  const keep = ['ICCP', 'ANIM', 'ANMF'].map((t) => wchunk(t, new Uint8Array([1, 2])));
+  const dirty = riff(img, ...keep, wchunk('ABCD', ascii('GPS')), wchunk('UNKN', ascii('GPS')));
+  assert.deepEqual([...tgStripMeta(dirty, 'image/webp')], [...riff(img, ...keep)]);
+});
+
+// S3：读宽高（Anthropic 单张上限 8000x8000 px）
+const sof = (h, w) => jseg(0xc0, new Uint8Array([8, h >> 8, h & 255, w >> 8, w & 255, 1, 1, 0x11, 0]));
+test('审核 S3：tgImageSize 读 JPEG（SOFn）、PNG（IHDR）、WebP（VP8X／VP8／VP8L）的宽高', () => {
+  assert.deepEqual(tgImageSize(cat(SOI, APP0, DQT, jseg(0xc4, new Uint8Array(3)), sof(9000, 1170), SOS, EOI), 'image/jpeg'), { w: 1170, h: 9000 });
+  assert.deepEqual(tgImageSize(cat(SOI, APP0, jseg(0xc2, new Uint8Array([8, 0, 20, 0, 30, 1, 1, 0x11, 0])), SOS, EOI), 'image/jpeg'), { w: 30, h: 20 });
+  const ihdr = pchunk('IHDR', new Uint8Array([...u32be(1170), ...u32be(12000), 8, 6, 0, 0, 0]));
+  assert.deepEqual(tgImageSize(cat(PSIG, ihdr, IDAT, IEND), 'image/png'), { w: 1170, h: 12000 });
+  const vp8x = wchunk('VP8X', new Uint8Array([0, 0, 0, 0, 0x91, 0x04, 0, 0x3f, 0x1f, 0]));   // 1170 × 8000
+  assert.deepEqual(tgImageSize(riff(vp8x, wchunk('VP8 ', new Uint8Array(10))), 'image/webp'), { w: 1170, h: 8000 });
+  const vp8 = wchunk('VP8 ', new Uint8Array([0, 0, 0, 0x9d, 0x01, 0x2a, 0x92, 0x04, 0x41, 0x1f]));   // 1170 × 8001（取 14 位）
+  assert.deepEqual(tgImageSize(riff(vp8), 'image/webp'), { w: 1170, h: 8001 });
+  // VP8L：0x2f＋14 位（宽−1）＋14 位（高−1）
+  const bits = (1169) | (8999 << 14);
+  const vp8l = wchunk('VP8L', new Uint8Array([0x2f, bits & 255, (bits >> 8) & 255, (bits >> 16) & 255, (bits >>> 24) & 255]));
+  assert.deepEqual(tgImageSize(riff(vp8l), 'image/webp'), { w: 1170, h: 9000 });
+});
+test('审核 S3：tgImageSize 找不到宽高（没有 SOF、IHDR 太短、VP8 起始码不对、格式不符）→ null', () => {
+  assert.equal(tgImageSize(cat(SOI, APP0, DQT, SOS, EOI), 'image/jpeg'), null);
+  assert.equal(tgImageSize(cat(PSIG, pchunk('IHDR', new Uint8Array(3)), IEND), 'image/png'), null);
+  assert.equal(tgImageSize(riff(wchunk('VP8 ', new Uint8Array([0, 0, 0, 1, 2, 3, 0, 0, 0, 0]))), 'image/webp'), null);
+  assert.equal(tgImageSize(cat(PSIG, IHDR, IEND), 'image/jpeg'), null);
+});
+test('审核：5 MB JPEG 拆结构＋读宽高在 300 毫秒内（Edge Function 每次只有 2 秒 CPU）', () => {
+  const data = new Uint8Array(5 * MB).map((_, i) => (i * 131 + 7) & 0xfe);   // 不含 FF 的影像资料
+  const big = cat(SOI, APP0, EXIF, DQT, jseg(0xc0, new Uint8Array([8, 0x09, 0xe4, 0x04, 0x92, 1, 1, 0x11, 0])),
+    jseg(0xda, new Uint8Array([1, 1, 0, 0, 63, 0])), data, EOI);
+  const t = performance.now();
+  const out = tgStripMeta(big, 'image/jpeg');
+  const size = tgImageSize(out, 'image/jpeg');
+  const ms = performance.now() - t;
+  assert.equal(out.length, big.length - EXIF.length);
+  assert.deepEqual(size, { w: 1170, h: 2532 });
+  assert.ok(ms < 300, `花了 ${Math.round(ms)} 毫秒`);
+});

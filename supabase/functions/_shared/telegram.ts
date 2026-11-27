@@ -251,10 +251,12 @@ export function tgBase64(b: Uint8Array): string {
 // ---------- 用户决定 8：送 AI 前去掉图片里的拍摄资料（GPS、相机、注解等） ----------
 // 只拆档案结构、不重新压缩（影像资料原样保留）。结构坏掉一律回 null（当成「图片读不了」，不把原档送出去）。
 //   JPEG：留 APP0（JFIF）、APP2（ICC 色彩）、APP14（Adobe 色彩转换）与所有非 APP 区段；其他 APPn（EXIF／XMP 在 APP1、
-//         IPTC 在 APP13）和 COM 注解拿掉。SOS 之后（影像资料）原样照抄。
-//   PNG ：拿掉 eXIf、tEXt、zTXt、iTXt、tIME；IEND 之后的东西丢掉。
-//   WebP：拿掉 EXIF、XMP 区块，VP8X 的 EXIF／XMP 旗标跟着清掉，RIFF 大小重算。
-const TG_PNG_DROP = new Set(['eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME']);
+//         IPTC 在 APP13）和 COM 注解拿掉。扫描之间的区段照同样规则；EOI 之后（动态照片影片、第二张图等）全部丢掉；
+//         没有 EOI（被截断）就把影像资料抄到档尾。
+//   PNG ：白名单，只留看图需要的区块；IEND 之后的东西丢掉。
+//   WebP：白名单（VP8／VP8L／VP8X／ALPH／ICCP／ANIM／ANMF），VP8X 的 EXIF／XMP 旗标清掉，RIFF 大小重算。
+const TG_PNG_KEEP = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND', 'tRNS', 'gAMA', 'cHRM', 'sRGB', 'iCCP', 'sBIT', 'bKGD', 'pHYs', 'cICP']);
+const TG_WEBP_KEEP = new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ICCP', 'ANIM', 'ANMF']);
 
 export function tgStripMeta(b: Uint8Array, mediaType: string): Uint8Array | null {
   if (!(b instanceof Uint8Array) || tgSniffImage(b) !== mediaType) return null;
@@ -273,72 +275,152 @@ function tgJoin(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-function tgStripJpeg(b: Uint8Array): Uint8Array | null {
-  const parts: Uint8Array[] = [b.subarray(0, 2)];
+const tgU32be = (b: Uint8Array, i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+const tgU32le = (b: Uint8Array, i: number) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+
+// 逐段走 JPEG；每段回 { m, at（marker 前那个 FF 的位置）, i（长度栏位）, end }。SOS 之后的影像资料跳到下一个真正的 marker。
+// onSeg 回 false 就停。结构坏掉回 false；正常走完（EOI 或档尾）回 true。
+function tgWalkJpeg(
+  b: Uint8Array,
+  onSeg: (m: number, at: number, i: number, end: number) => boolean | void,
+  onData: (from: number, to: number) => void,
+): boolean {
   let i = 2;
+  let sawSos = false;
   for (;;) {
-    if (i >= b.length || b[i] !== 0xff) return null;
+    if (i >= b.length || b[i] !== 0xff) return false;
     while (i < b.length && b[i] === 0xff) i++;          // 填充用的 FF
-    if (i >= b.length) return null;
+    if (i >= b.length) return false;
     const m = b[i];
+    const at = i - 1;
     i++;
-    if (m === 0xd8 || m === 0xd9 || m === 0x00) return null;   // SOS 之前不该出现
-    if ((m >= 0xd0 && m <= 0xd7) || m === 0x01) {               // 没有长度的 marker
-      parts.push(new Uint8Array([0xff, m]));
+    if (m === 0xd9) {
+      if (!sawSos) return false;
+      onSeg(m, at, i, i);
+      return true;
+    }
+    if (m === 0xd8 || m === 0x00) return false;
+    if ((m >= 0xd0 && m <= 0xd7) || m === 0x01) {         // 没有长度的 marker
+      if (onSeg(m, at, i, i) === false) return true;
       continue;
     }
-    if (i + 2 > b.length) return null;
+    if (i + 2 > b.length) return false;
     const len = (b[i] << 8) | b[i + 1];
-    if (len < 2 || i + len > b.length) return null;
+    if (len < 2 || i + len > b.length) return false;
     const end = i + len;
-    if (m === 0xda) {                                           // SOS：后面全是影像资料，照抄
-      parts.push(new Uint8Array([0xff, m]), b.subarray(i));
-      return tgJoin(parts);
+    if (onSeg(m, at, i, end) === false) return true;
+    i = end;
+    if (m === 0xda) {
+      sawSos = true;
+      // 影像资料：一直到下一个不是 FF00、不是 RST、不是填充 FF 的 marker
+      let j = i;
+      while (j + 1 < b.length && !(b[j] === 0xff && b[j + 1] !== 0x00 && b[j + 1] !== 0xff && !(b[j + 1] >= 0xd0 && b[j + 1] <= 0xd7))) j++;
+      if (j + 1 >= b.length) {                            // 没有 EOI（被截断）：抄到档尾
+        onData(i, b.length);
+        return true;
+      }
+      let k = j;
+      while (k > i && b[k - 1] === 0xff) k--;            // 影像资料里的 FF 后面一定跟 00；marker 前多出来的 FF 是填充
+      onData(i, k);
+      i = j;
     }
+  }
+}
+
+function tgStripJpeg(b: Uint8Array): Uint8Array | null {
+  const parts: Uint8Array[] = [b.subarray(0, 2)];
+  const ok = tgWalkJpeg(b, (m, at, _i, end) => {
     const isApp = m >= 0xe0 && m <= 0xef;
     const keep = isApp ? (m === 0xe0 || m === 0xe2 || m === 0xee) : m !== 0xfe;
-    if (keep) parts.push(new Uint8Array([0xff, m]), b.subarray(i, end));
-    i = end;
-  }
+    if (keep) parts.push(b.subarray(at, end));
+  }, (from, to) => { parts.push(b.subarray(from, to)); });
+  return ok ? tgJoin(parts) : null;
 }
 
 function tgStripPng(b: Uint8Array): Uint8Array | null {
   const parts: Uint8Array[] = [b.subarray(0, 8)];
   let i = 8;
   while (i + 12 <= b.length) {
-    const len = ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3];
-    const end = i + 12 + len;
+    const end = i + 12 + tgU32be(b, i);
     if (end > b.length) return null;
     const type = String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]);
-    if (!TG_PNG_DROP.has(type)) parts.push(b.subarray(i, end));
+    if (TG_PNG_KEEP.has(type)) parts.push(b.subarray(i, end));
     if (type === 'IEND') return tgJoin(parts);
     i = end;
   }
   return null;
 }
 
-function tgStripWebp(b: Uint8Array): Uint8Array | null {
-  const riffEnd = 8 + (b[4] | (b[5] << 8) | (b[6] << 16) | ((b[7] << 24) >>> 0));
-  if (riffEnd > b.length || riffEnd < 12) return null;
-  const parts: Uint8Array[] = [];
+// 走 WebP 的区块（长度一律当无号数）；坏掉回 false
+function tgWalkWebp(b: Uint8Array, onChunk: (cc: string, i: number, end: number) => void): boolean {
+  if (b.length < 12) return false;
+  const riffEnd = 8 + tgU32le(b, 4);
+  if (riffEnd > b.length || riffEnd < 12) return false;
   let i = 12;
   while (i < riffEnd) {
-    if (i + 8 > riffEnd) return null;
-    const size = b[i + 4] | (b[i + 5] << 8) | (b[i + 6] << 16) | ((b[i + 7] << 24) >>> 0);
+    if (i + 8 > riffEnd) return false;
+    const size = tgU32le(b, i + 4);
     const end = i + 8 + size + (size % 2);
-    if (end > riffEnd) return null;
-    const cc = String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]);
-    if (cc === 'VP8X' && size >= 1) {
-      const c = b.slice(i, end);
-      c[8] &= ~0x0c;                                            // 清掉 EXIF（0x08）、XMP（0x04）旗标
-      parts.push(c);
-    } else if (cc !== 'EXIF' && cc !== 'XMP ') {
-      parts.push(b.subarray(i, end));
-    }
+    if (end > riffEnd) return false;
+    onChunk(String.fromCharCode(b[i], b[i + 1], b[i + 2], b[i + 3]), i, end);
     i = end;
   }
+  return true;
+}
+
+function tgStripWebp(b: Uint8Array): Uint8Array | null {
+  const parts: Uint8Array[] = [];
+  const ok = tgWalkWebp(b, (cc, i, end) => {
+    if (!TG_WEBP_KEEP.has(cc)) return;
+    if (cc === 'VP8X' && end - i >= 9) {
+      const c = b.slice(i, end);
+      c[8] &= ~0x0c;                                      // 清掉 EXIF（0x08）、XMP（0x04）旗标
+      parts.push(c);
+    } else {
+      parts.push(b.subarray(i, end));
+    }
+  });
+  if (!ok) return null;
   const body = tgJoin(parts);
   const n = body.byteLength + 4;
   return tgJoin([new Uint8Array([0x52, 0x49, 0x46, 0x46, n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255,
     0x57, 0x45, 0x42, 0x50]), body]);
+}
+
+// 读图的宽高（审核 S3：Anthropic 单张上限 8000x8000 px，超过会回 400）。读不到回 null。
+//   JPEG：第一个 SOFn（C0–CF，C4／C8／CC 除外）；PNG：IHDR；WebP：VP8X 画布、VP8 关键帧标头、VP8L 标头。
+export function tgImageSize(b: Uint8Array, mediaType: string): { w: number; h: number } | null {
+  if (!(b instanceof Uint8Array) || tgSniffImage(b) !== mediaType) return null;
+  let out: { w: number; h: number } | null = null;
+  if (mediaType === 'image/jpeg') {
+    tgWalkJpeg(b, (m, _at, i, end) => {
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+        if (end - i >= 7) out = { h: (b[i + 3] << 8) | b[i + 4], w: (b[i + 5] << 8) | b[i + 6] };
+        return false;
+      }
+      if (m === 0xda) return false;
+    }, () => {});
+  } else if (mediaType === 'image/png') {
+    if (b.length >= 24 && tgU32be(b, 8) >= 8 && String.fromCharCode(b[12], b[13], b[14], b[15]) === 'IHDR') {
+      out = { w: tgU32be(b, 16), h: tgU32be(b, 20) };
+    }
+  } else if (mediaType === 'image/webp') {
+    let first = true;
+    tgWalkWebp(b, (cc, i, end) => {
+      if (!first) return;
+      first = false;
+      const d = i + 8;
+      const n = end - d;
+      if (cc === 'VP8X' && n >= 10) {
+        out = { w: 1 + (b[d + 4] | (b[d + 5] << 8) | (b[d + 6] << 16)), h: 1 + (b[d + 7] | (b[d + 8] << 8) | (b[d + 9] << 16)) };
+      } else if (cc === 'VP8 ' && n >= 10 && b[d + 3] === 0x9d && b[d + 4] === 0x01 && b[d + 5] === 0x2a) {
+        out = { w: (b[d + 6] | (b[d + 7] << 8)) & 0x3fff, h: (b[d + 8] | (b[d + 9] << 8)) & 0x3fff };
+      } else if (cc === 'VP8L' && n >= 5 && b[d] === 0x2f) {
+        const bits = tgU32le(b, d + 1);
+        out = { w: (bits & 0x3fff) + 1, h: ((bits >>> 14) & 0x3fff) + 1 };
+      }
+    });
+  }
+  const r = out as { w: number; h: number } | null;
+  return r && r.w > 0 && r.h > 0 ? r : null;
 }

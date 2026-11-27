@@ -13,7 +13,7 @@
 //   - 日志只记「步骤＋状态码／错误种类」，绝不记讯息文字、截图、AI 回应、file_path、网址、telegram_id。
 // 打包规则：这个档自己的顶层名字一律 tb／TB_ 开头（BOT_ 是 bot-reply.ts 的）。
 import { secretKey, rpc } from '../_shared/http.ts';
-import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, tgImageDoc, tgDownload, tgSniffImage, tgStripMeta, tgBase64 } from '../_shared/telegram.ts';
+import { tgBotTokenOk, tgBotCallResult, tgSecretOk, tgSecretEqual, tgPickPhoto, tgImageDoc, tgDownload, tgSniffImage, tgStripMeta, tgImageSize, tgBase64 } from '../_shared/telegram.ts';
 import { botMergeCategories } from '../_shared/bot-categories.ts';
 import { botToday, botCheckExtraction } from '../_shared/bot-extract.ts';
 import { aiKeyOk, aiBuildRequest, aiExtract } from '../_shared/ai-extract.ts';
@@ -30,6 +30,8 @@ const TB_AI_USER_MAX = 30;
 const TB_AI_SITE_MAX = 200;
 const TB_TEXT_MAX = 500;
 const TB_IMAGE_MAX = 5 * 1024 * 1024;
+// Anthropic 单张图上限 8000x8000 px（https://platform.claude.com/docs/en/build-with-claude/vision，2026-11-27 查证）
+const TB_IMAGE_EDGE = 8000;
 const TB_BIG_MINOR = 100000;          // 截图 ≥ RM 1,000 先问（D2）
 const TB_BUDGET_MS = 35000;
 const TB_RPC_MS = 2000;
@@ -308,9 +310,11 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     const raw = await tgDownload(ctx.deps.fetch, ctx.bot, fileId, TB_IMAGE_MAX, tbMs(ctx, TB_DOWNLOAD_MS));
     const mediaType = raw ? tgSniffImage(raw) : null;
     const bytes = raw && mediaType ? tgStripMeta(raw, mediaType) : null;   // 去掉 GPS 等拍摄资料（用户决定 8）
-    if (!bytes || !mediaType) {
+    const size = bytes && mediaType ? tgImageSize(bytes, mediaType) : null;
+    // 超过 8000 px 先挡（不然 Anthropic 回 400 → 用户一直看到「稍后再试」，审核 S3）
+    if (!bytes || !mediaType || !size || Math.max(size.w, size.h) > TB_IMAGE_EDGE) {
       await typing;
-      tbLog('下载截图', !raw ? '失败' : !mediaType ? '不是图片' : '结构坏掉');
+      tbLog('下载截图', !raw ? '失败' : !mediaType ? '不是图片' : !bytes ? '结构坏掉' : !size ? '没有宽高' : '太大');
       return await tbEnd(ctx, BOT_IMAGE_BAD);
     }
     photo = { bytes, mediaType };
@@ -387,9 +391,11 @@ async function tbMessage(ctx: TbCtx, msg: any): Promise<Response> {
     }, TB_RPC_WRITE_MS);
   } catch (e) {
     tbLog('record', tbErr(e));
-    // 有 Postgres 错误代码 = 资料库明确拒绝、整笔已撤回 → 说记不了、不重送（用户决定 3）；其他（逾时等）不确定 → 503 重送
-    const pg = e && typeof e === 'object' ? (e as { pgCode?: unknown }).pgCode : undefined;
-    if (typeof pg === 'string') return await tbEnd(ctx, BOT_DOWN);
+    // 有 Postgres 错误代码（资料库明确拒绝、整笔已撤回）或 HTTP 4xx（请求没被执行，例如函数还没建好）→ 说记不了、不重送
+    // （用户决定 3、审核 S4）；其他（逾时、连线错、没代码的 5xx）不确定有没有写进去 → 503 重送
+    const er = (e && typeof e === 'object' ? e : {}) as { pgCode?: unknown; httpStatus?: unknown };
+    const st = typeof er.httpStatus === 'number' ? er.httpStatus : 0;
+    if (typeof er.pgCode === 'string' || (st >= 400 && st < 500)) return await tbEnd(ctx, BOT_DOWN);
     return tbStatus(503);
   }
   if (!out || out.status === 'gone') {

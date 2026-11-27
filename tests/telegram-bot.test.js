@@ -21,7 +21,9 @@ const DATE = Date.UTC(2026, 10, 26, 2, 0, 0) / 1000;   // 马来西亚 2026-11-2
 const TODAY = '2026-11-26';
 const FROM = { id: TID, is_bot: false, first_name: 'Zelda', last_name: 'Quux', username: 'zq_secret_user' };
 // 结构完整的小 JPEG（SOI、APP0、SOS＋资料、EOI）：送 AI 前会拆结构去拍摄资料（用户决定 8）
-const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0x4a, 0x46, 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9]);
+// SOF0：高 2532、宽 1170（审核 S3：要读得到宽高）
+const SOF0 = [0xff, 0xc0, 0, 11, 8, 0x09, 0xe4, 0x04, 0x92, 1, 1, 0x11, 0];
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0x4a, 0x46, ...SOF0, 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9]);
 const PHOTO = [{ file_id: 'AgACsecretFileId', file_unique_id: 'u', width: 1170, height: 2532, file_size: 300000 }];
 const FILE_PATH = 'photos/file_secret_9.jpg';
 
@@ -588,7 +590,7 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     return { status: res.status, logs };
   };
   const GPS_JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0x4a, 0x46,
-    0xff, 0xe1, 0, 12, ...new TextEncoder().encode('Exif\0\0GPS1'), 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9]);
+    0xff, 0xe1, 0, 12, ...new TextEncoder().encode('Exif\0\0GPS1'), ...SOF0, 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9]);
 
   test(`${label}：决定 8：图片档带 GPS → 送 AI 的图已去掉拍摄资料`, async () => {
     const f = routes({ file: () => new Response(GPS_JPEG) });
@@ -665,5 +667,46 @@ for (const [label, mod] of await loadBoth('telegram-bot')) {
     f = routes({ ai: () => aiReply(aiOut({ date: '2026-11-20' })) });
     await run(update({ photo: PHOTO, caption: '午餐' }), f);
     assert.equal(rpcBody(f, 'svc_bot_record')[0].p_occurred_on, '2026-11-20');
+  });
+}
+
+// ---------- 最终审核（fable-reviewer）补测 ----------
+for (const [label, mod] of await loadBoth('telegram-bot')) {
+  const run = async (body, f) => {
+    const { r: res, logs } = await quiet(() => mod.handleTelegramBot(req(body), { env: (k) => ENV_OBJ[k], fetch: f }));
+    assertCleanLogs(logs);
+    return { status: res.status, logs };
+  };
+  const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+  const png = (w, h) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...u32(w), ...u32(h), 8, 6, 0, 0, 0, 1, 2, 3, 4,
+    0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+
+  test(`${label}：审核 S3：图片档超过 8000 px（长截图）→ 图片读不了、没扣次数、没叫 AI；8000 整照送`, async () => {
+    const doc = { document: { file_id: 'DocFileId1', mime_type: 'image/png', file_size: 100 } };
+    let f = routes({ file: () => new Response(png(1170, 8001)) });
+    await run(update(doc), f);
+    assert.equal(sent(f)[0].text, R.BOT_IMAGE_BAD);
+    assert.equal(rpcBody(f, 'svc_bot_ai_reserve').length, 0);
+    assert.equal(aiCalls(f).length, 0);
+    f = routes({ file: () => new Response(png(8000, 1170)) });
+    await run(update(doc), f);
+    assert.equal(aiCalls(f).length, 1);
+  });
+
+  test(`${label}：审核 S3：读不到宽高（JPEG 没有 SOF）→ 图片读不了`, async () => {
+    const f = routes({ file: () => new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0x4a, 0x46, 0xff, 0xda, 0, 2, 1, 2, 0xff, 0xd9])) });
+    await run(update({ photo: PHOTO }), f);
+    assert.equal(sent(f)[0].text, R.BOT_IMAGE_BAD);
+    assert.equal(aiCalls(f).length, 0);
+  });
+
+  test(`${label}：审核 S4：记账回 4xx（没有 5 码代码，例如函数还没建好 PGRST202、429）→ 确定没写入：现在记不了、finish、200`, async () => {
+    for (const [st, body] of [[404, { code: 'PGRST202' }], [429, {}], [401, {}]]) {
+      const f = routes({ svc_bot_record: () => jsonRes(st, body) });
+      assert.equal((await run(update({ text: '早餐 6.9' }), f)).status, 200, String(st));
+      assert.equal(sent(f)[0].text, R.BOT_DOWN, String(st));
+      assert.equal(rpcBody(f, 'svc_bot_finish').length, 1, String(st));
+    }
   });
 }

@@ -363,9 +363,10 @@ begin
     ok := ok and svc.svc_bot_record(9000000104, ta, 'expense', 250000, 'shopping', d - 3, '', true)->>'reason' = 'big';
     perform svc.svc_bot_discard(tb, (j->'pending'->>'id')::uuid);
     perform svc.svc_bot_discard(tb, (j2->'pending'->>'id')::uuid);
+    -- 先 claim 再插 25 小时前的问句（claim 会顺手清掉超过 24 小时的，插在前面就测不到 record 自己的时间条件；最终审核 N2）
+    perform svc.svc_bot_claim(9000000105, tb);
     insert into private.bot_pending (id, user_id, telegram_id, reason, kind, amount_minor, category_id, occurred_on, created_at)
     values (gen_random_uuid(), ub, tb, 'big', 'expense', 250000, 'shopping', d - 3, now() - interval '25 hours');
-    perform svc.svc_bot_claim(9000000105, tb);
     ok := ok and svc.svc_bot_record(9000000105, tb, 'expense', 250000, 'shopping', d - 3, '', true)->>'reason' = 'big';
     if ok then pass := pass + 1; else fails := array_append(fails, ('17 问句没算进相似:' || coalesce(j::text, 'null') || ' ' || coalesce(j2::text, 'null'))); end if;
   exception when others then fails := array_append(fails, ('17:' || sqlerrm));
