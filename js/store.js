@@ -2,6 +2,7 @@
 import { uuid as defaultUuid } from './uuid.js';
 import {
   defaultCategories, buildTransaction, buildCategory, markDeleted, markRestored, ValidationError, DEFAULT_EPOCH,
+  normalizeKeyword, checkKeyword, buildKeyword,
 } from './model.js';
 import { compareTx } from './stats.js';
 import { toCSV, parseCSV, planImport } from './csv.js';
@@ -9,7 +10,7 @@ import { normalizeTs, isUuid } from './timefmt.js';
 import { shouldTakeRemote } from './merge.js';
 import { UPLOAD_COLUMNS } from './rest.js';
 
-const TABLES = ['transactions', 'categories'];
+const TABLES = ['transactions', 'categories', 'category_keywords']; // 3e 加关键词（本地 id＝keyword）
 // 设备设定（不属于任何账号）：清空本机账本时保留
 export const INSTALL_HINT_KEY = 'installHintDismissed';
 const DEVICE_META = [INSTALL_HINT_KEY];
@@ -18,6 +19,7 @@ const withoutSyncError = (r) => { const { sync_error: _drop, ...rest } = r; retu
 export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) {
   const txs = new Map(); // 含已删除
   const cats = new Map(); // 含已删除
+  const kws = new Map(); // 关键词（含已删除），key＝id＝keyword
   const listeners = new Set();
   const localListeners = new Set(); // 只有用户的写入才通知（同步用来排程上传）
   const ledgerListeners = new Set(); // 账本被别的分页换掉（换账号清除）时通知画面
@@ -67,6 +69,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   const mapOf = (table) => {
     if (table === 'transactions') return txs;
     if (table === 'categories') return cats;
+    if (table === 'category_keywords') return kws;
     throw new Error(`未知的表：${table}`);
   };
 
@@ -88,10 +91,11 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     }
     for (const s of changes.clear || []) mapOf(s).clear();
     const rm = changes.remove || {};
-    for (const id of rm.transactions || []) txs.delete(id);
-    for (const id of rm.categories || []) cats.delete(id);
-    for (const t of changes.transactions || []) txs.set(t.id, { ...t });
-    for (const c of changes.categories || []) cats.set(c.id, { ...c });
+    for (const t of TABLES) {
+      const map = mapOf(t);
+      for (const id of rm[t] || []) map.delete(id);
+      for (const r of changes[t] || []) map.set(r.id, { ...r });
+    }
     if (!silent) notify();
     if (local) notifyLocal();
   }
@@ -99,11 +103,12 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
   const api = {
     init() {
       return enqueue(async () => {
-        const [t, c, lid] = await Promise.all([db.getAll('transactions'), db.getAll('categories'), db.getMeta('ledgerId')]);
-        txs.clear(); cats.clear();
+        const [t, c, k, lid] = await Promise.all([db.getAll('transactions'), db.getAll('categories'), db.getAll('category_keywords'), db.getMeta('ledgerId')]);
+        txs.clear(); cats.clear(); kws.clear();
         ledgerId = lid ?? null;
         for (const r of t) txs.set(r.id, r);
         for (const r of c) cats.set(r.id, r);
+        for (const r of k) kws.set(r.id, r);
         if (cats.size === 0) await commit({ categories: defaultCategories() });
       });
     },
@@ -114,11 +119,12 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
      */
     reloadFromDb() {
       return enqueue(async () => {
-        const [t, c, lid] = await Promise.all([db.getAll('transactions'), db.getAll('categories'), db.getMeta('ledgerId')]);
+        const [t, c, k, lid] = await Promise.all([db.getAll('transactions'), db.getAll('categories'), db.getAll('category_keywords'), db.getMeta('ledgerId')]);
         if ((lid ?? null) !== ledgerId) { ledgerChanged(); return 'ledger-changed'; }
-        txs.clear(); cats.clear();
+        txs.clear(); cats.clear(); kws.clear();
         for (const r of t) txs.set(r.id, r);
         for (const r of c) cats.set(r.id, r);
+        for (const r of k) kws.set(r.id, r);
         notify();
         return 'ok';
       });
@@ -189,6 +195,43 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       });
     },
 
+    // ---------- 关键词（3e）：只给 Telegram bot 用；本地 id＝keyword ----------
+    /** 没删除的关键词，按关键词字串排序，复制品。 */
+    keywords() {
+      return [...kws.values()].filter((k) => !k.deleted)
+        .sort((a, b) => (a.keyword < b.keyword ? -1 : a.keyword > b.keyword ? 1 : 0)).map(copy);
+    },
+    /**
+     * 新增或修改关键词。previous：编辑中的旧关键词（新增时不给）。
+     * 关键词改了 → 同一次写入：旧的标删除＋新的写入（主键就是关键词）。新关键词以前删过 → 复活那一列。
+     * 检查不过 → ValidationError('keyword-<empty|long|bad|dup|limit>')；分类不在或已删除 → ValidationError('category')。
+     */
+    saveKeyword({ keyword, categoryId, previous = null }) {
+      return enqueue(async () => {
+        const active = [...kws.values()].filter((k) => !k.deleted);
+        const prev = previous == null ? null : normalizeKeyword(previous);
+        const self = prev !== null && kws.has(prev) && !kws.get(prev).deleted ? prev : null;
+        const bad = checkKeyword(keyword, { active, selfKeyword: self });
+        if (bad) throw new ValidationError(`keyword-${bad}`);
+        const cat = cats.get(categoryId);
+        if (!cat || cat.deleted) throw new ValidationError('category');
+        const k = normalizeKeyword(keyword);
+        const rec = buildKeyword({ keyword: k, categoryId }, kws.get(k) || null, ctx());
+        const out = [rec];
+        if (self !== null && self !== k) out.push(markDeleted(kws.get(self), now()));
+        await commit({ category_keywords: out }, { local: true });
+        return copy(rec);
+      });
+    },
+    deleteKeyword(keyword) {
+      return enqueue(async () => {
+        const k = kws.get(normalizeKeyword(keyword));
+        if (!k) throw new Error('找不到这个关键词');
+        if (k.deleted) return;
+        await commit({ category_keywords: [markDeleted(k, now())] }, { local: true });
+      });
+    },
+
     getMeta: (key) => db.getMeta(key),
     /**
      * 写一个 meta 键。owner（同步引擎用，2f-2 审核小事）：写入前核对 owner_user_id 与账本代号，
@@ -223,11 +266,12 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       return {
         txs: [...txs.values()].filter((t) => t.sync_error).sort(compareTx).map(copy),
         cats: [...cats.values()].filter((c) => c.sync_error).map(copy),
+        kws: [...kws.values()].filter((k) => k.sync_error).map(copy),
       };
     },
     /** 这台设备有没有「属于某个人」的资料：任何账目列（含已删除），或自建 / 改过的分类（默认分类不算）。 */
     hasOwnedData() {
-      if (txs.size > 0) return true;
+      if (txs.size > 0 || kws.size > 0) return true;
       for (const c of cats.values()) if (c.updated_at !== DEFAULT_EPOCH) return true;
       return false;
     },
@@ -340,6 +384,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
         let skipped = 0;
         for (const r of rows) {
           const rec = Object.fromEntries(cols.map((c) => [c, r[c]]));
+          // 关键词表没有 id 栏：id＝服务器的 keyword 原字串（不再正规化：服务器收了就照收，免得这台看不到也删不掉）
+          if (table === 'category_keywords') rec.id = typeof rec.keyword === 'string' && rec.keyword !== '' ? rec.keyword : null;
           rec.updated_at = normalizeTs(r.updated_at);
           if ('created_at' in rec) rec.created_at = normalizeTs(r.created_at);
           if (rec.updated_at === null || rec.created_at === null || typeof rec.id !== 'string') { skipped++; continue; }
@@ -382,6 +428,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
             ledgerId: nextLedger,
             'cursor:transactions': null,
             'cursor:categories': null,
+            'cursor:category_keywords': null,
             fullSyncAt: null,
             syncPromptDismissed: null,
           },
@@ -419,6 +466,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       let any = false;
       for (const t of txs.values()) if (un(t)) { any = true; if (!t.deleted) txCount++; }
       for (const c of cats.values()) if (un(c) && c.updated_at !== DEFAULT_EPOCH) any = true;
+      for (const k of kws.values()) if (un(k)) any = true;
       return { any, txCount };
     },
 
@@ -431,7 +479,7 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
     /** 通知画面重画（同步一轮结束时有拉回变化才叫一次）。 */
     notifyChanged() { notify(); },
 
-    /** pending：待上传（两表合计，含删除）；errors：有 sync_error。tx*：只数账目（设置页显示用）。 */
+    /** pending：待上传（三表合计，含删除）；errors：有 sync_error。tx*：只数账目（设置页显示用）。 */
     syncCounts() {
       const count = (map) => {
         let p = 0, e = 0;
@@ -443,7 +491,8 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
       };
       const [tp, te] = count(txs);
       const [cp, ce] = count(cats);
-      return { pending: tp + cp, errors: te + ce, txPending: tp, txErrors: te };
+      const [kp, ke] = count(kws);
+      return { pending: tp + cp + kp, errors: te + ce + ke, txPending: tp, txErrors: te };
     },
 
     /**
@@ -467,9 +516,11 @@ export function createStore({ db, now = () => new Date(), uuid = defaultUuid }) 
           if (id !== t.id || t.dirty !== 1) outTx.push({ ...t, id, dirty: 1 });
         }
         const outCat = [...cats.values()].filter((c) => c.dirty !== 1).map((c) => ({ ...c, dirty: 1 }));
+        const outKw = [...kws.values()].filter((k) => k.dirty !== 1).map((k) => ({ ...k, dirty: 1 }));
         const changes = {};
         if (outTx.length) changes.transactions = outTx;
         if (outCat.length) changes.categories = outCat;
+        if (outKw.length) changes.category_keywords = outKw;
         if (removeTx.length) changes.remove = { transactions: removeTx };
         if (meta) changes.meta = meta;
         // 认领：账本还是这一本、而且还没有主人才写（别的分页刚清除换账号 → MetaMismatch，复审 3）
