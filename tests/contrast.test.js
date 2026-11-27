@@ -5,7 +5,7 @@ import { css, blockAfter, light, attrDark } from './helpers/css-tokens.js';
 // 不透明底：[前景 token, 背景 token, 最低值]
 const PAIRS = [
   ['--ink-2', '--drawer', 4.5], ['--income', '--drawer', 4.5],
-  ['--tab-off', '--drawer', 3], ['--btn-fg', '--btn-bg', 7], ['--red-text', '--drawer', 4.5],
+  ['--tab-off', '--drawer', 3], ['--btn-fg', '--btn-bg', 4.5]   /* 2026-11-27 用户同意：白字压 #098354＝4.79，门槛 7→4.5（WCAG AA） */, ['--red-text', '--drawer', 4.5],
   // 直接压在整页晨雾上的次要字（统计页、设置页）：渐变的四个色都要过
   ['--ink-2', '--sky-top', 4.5], ['--ink-2', '--sky-mid', 4.5],
   ['--ink-2', '--sky-low', 4.5], ['--ink-2', '--sky-bottom', 4.5],

@@ -122,8 +122,8 @@ test('category tokens: --bar-fade dark equals the drawer colour at .5; --stats-t
   for (const t of [light, mediaDark, attrDark]) {
     assert.ok(t['--bar-fade'] && t['--stats-track'], 'missing tokens');
   }
-  assert.equal(attrDark['--drawer'], '#1A1D23');
-  assert.equal(attrDark['--bar-fade'], 'rgba(26, 29, 35, 0.5)');
+  assert.equal(attrDark['--drawer'], '#171C1A');
+  assert.equal(attrDark['--bar-fade'], 'rgba(23, 28, 26, 0.5)');
 });
 
 test('category rows JS: data-icon on the row, bar width shared with slideX, RM split + sr-only', () => {

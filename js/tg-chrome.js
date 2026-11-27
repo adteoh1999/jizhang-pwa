@@ -6,7 +6,7 @@
 // 文件没写呼叫不支援的方法会怎样 → 先查版本，每个呼叫再各自包 try/catch。这里的函数都不会 throw。
 
 // 要等于 css/app.css 的 --sky-top（浅色 :root、两块深色；tests/tg-chrome 检查）
-export const TG_SKY_TOP = { light: '#CFE3EF', dark: '#132230' };
+export const TG_SKY_TOP = { light: '#F9F9F7', dark: '#0D1412' };
 const INSET_MAX = 200;
 const SIDES = ['top', 'right', 'bottom', 'left'];
 

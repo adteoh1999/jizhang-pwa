@@ -65,22 +65,25 @@ test('nav bar material and the opaque fallbacks equal sky-top', () => {
 });
 
 test('spec colors are used verbatim', () => {
-  assert.equal(light['--sky-top'], '#CFE3EF');
-  assert.equal(light['--sky-mid'], '#D4EAEE');
-  assert.equal(light['--sky-low'], '#D9F0E8');
-  assert.equal(light['--sky-bottom'], '#E4F6EE');
-  assert.equal(attrDark['--sky-top'], '#132230');
-  assert.equal(attrDark['--sky-mid'], '#11232A');
-  assert.equal(attrDark['--sky-low'], '#0F2222');
-  assert.equal(attrDark['--sky-bottom'], '#0B1A17');
+  assert.equal(light['--sky-top'], '#F9F9F7');
+  assert.equal(light['--sky-mid'], '#F5F8F5');
+  assert.equal(light['--sky-low'], '#EAF4EE');
+  assert.equal(light['--sky-bottom'], '#DDEFE6');
+  assert.equal(attrDark['--sky-top'], '#0D1412');
+  assert.equal(attrDark['--sky-mid'], '#0E1714');
+  assert.equal(attrDark['--sky-low'], '#0F1B17');
+  assert.equal(attrDark['--sky-bottom'], '#0E1F18');
   assert.equal(light['--ink'], '#0A0A0B');
-  assert.equal(attrDark['--ink'], '#F4F6F8');
+  assert.equal(attrDark['--ink'], '#F2F5F3');
   assert.equal(light['--drawer'], '#FFFFFF');
-  assert.equal(attrDark['--drawer'], '#1A1D23');
-  assert.equal(light['--income'], '#157A35');
-  assert.equal(attrDark['--income'], '#4CD07A');
+  assert.equal(attrDark['--drawer'], '#171C1A');
+  assert.equal(light['--income'], '#1663C7');
+  assert.equal(attrDark['--income'], '#6AAEFF');
   assert.equal(light['--ink-2'], 'rgba(10, 12, 18, 0.65)');
-  assert.equal(attrDark['--ink-2'], 'rgba(235, 240, 248, 0.66)');
+  assert.equal(attrDark['--ink-2'], 'rgba(232, 242, 236, 0.66)');
+  // 2026-11-27 三色：主按钮深绿、白字（用户指定 #098354）
+  assert.equal(light['--btn-bg'], '#098354');
+  assert.equal(attrDark['--btn-bg'], '#098354');
 });
 
 test('old names are kept as aliases of the new tokens', () => {

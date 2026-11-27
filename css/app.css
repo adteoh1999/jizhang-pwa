@@ -29,21 +29,24 @@
 :root {
   color-scheme: light;
 
-  /* 整页「晨雾」渐变：浅蓝 → 薄荷绿（0% / 30% / 65% / 100%） */
-  --sky-top: #CFE3EF;
-  --sky-mid: #D4EAEE;
-  --sky-low: #D9F0E8;
-  --sky-bottom: #E4F6EE;
+  /* 整页渐变：顶端白 #F9F9F7 → 往下带一点薄荷绿（0% / 30% / 65% / 100%） */
+  --sky-top: #F9F9F7;
+  --sky-mid: #F5F8F5;
+  --sky-low: #EAF4EE;
+  --sky-bottom: #DDEFE6;
   --ink: #0A0A0B;
   --ink-2: rgba(10, 12, 18, 0.65);
   --ink-3: rgba(10, 12, 18, 0.32);
   --glass: rgba(255, 255, 255, 0.52);
-  --glass-edge: rgba(255, 255, 255, 0.9);
-  --glass-shade: rgba(40, 60, 90, 0.10);
+  --glass-edge: rgba(20, 60, 45, 0.12);   /* 近白底上要用淡灰绿边，白边会消失 */
+  --group-edge: rgba(20, 60, 45, 0.07);   /* 设置页等白色分组卡的外框（底色近白，没框会消失） */
+  --glass-shade: rgba(20, 60, 45, 0.10);
   --drawer: #FFFFFF;
   --hairline: rgba(10, 12, 18, 0.08);
-  --btn-bg: #0A0A0B;
+  --btn-bg: #098354;               /* 深绿：主按钮、选中分页、选中块（白字 4.79:1） */
   --btn-fg: #FFFFFF;
+  --toast-bg: #0A0A0B;             /* 提示条、走势图数字泡泡：维持黑底（不是按钮，不用绿） */
+  --toast-fg: #FFFFFF;
   --on-red: #FFFFFF;                /* 红底上的字（滑动删除等），各主题都是白 */
   --red-text: #D70015;              /* 红字专用（底色为抽屉 / ink-tint 时 ≥4.5:1） */
   /* 登录页（2d）：输入框底、错误字（直接压在晨雾上，--red-text 只有 4.07，另设较深的红） */
@@ -52,34 +55,34 @@
   /* 欢迎页（3c-1）：示例账单小卡（实心、不模糊）的底、内框线、投影 */
   --chip-bg: rgba(255, 255, 255, 0.86);
   --chip-edge: rgba(255, 255, 255, 0.95);
-  --chip-shadow: 0 14px 30px -16px rgba(50, 60, 110, 0.38), 0 2px 6px -3px rgba(40, 50, 90, 0.14);
-  --income: #157A35;
+  --chip-shadow: 0 14px 30px -16px rgba(30, 80, 60, 0.32), 0 2px 6px -3px rgba(20, 60, 45, 0.14);
+  --income: #1663C7;               /* 收入蓝（不跟深绿撞色；玻璃卡上 ≥4.9:1） */
   --red: rgb(255, 56, 60);          /* systemRed */
   --track: rgba(10, 12, 18, 0.10);
   --glass-sheen: rgba(255, 255, 255, 0.18);
   /* 结余卡后面的光球（静态 radial-gradient）。深色版：光球透明度 ×0.5、卡片左上玻璃 .10、次要字 .95，
      是为了让压在光球上的字仍 ≥4.5:1（tests/contrast.test.js 锁住）。深色余量很小（约 4.6），
      调亮光球、玻璃或调暗次要字都必须先跑测试 */
-  --orb-1: rgba(110, 185, 255, 0.62);
-  --orb-2: rgba(100, 220, 180, 0.58);
-  --orb-3: rgba(90, 205, 215, 0.5);
-  --orb-4: rgba(150, 200, 250, 0.45);
+  --orb-1: rgba(140, 212, 178, 0.80);
+  --orb-2: rgba(170, 222, 198, 1);
+  --orb-3: rgba(9, 131, 84, 0.30);
+  --orb-4: rgba(160, 218, 192, 0.85);
   /* 结余卡玻璃：半透明底、渐层反光边（左上亮 → 右下暗）、内阴影＋投影 */
   --card-glass-1: rgba(255, 255, 255, 0.78);
   --card-glass-2: rgba(255, 255, 255, 0.48);
   --card-rim-1: rgba(255, 255, 255, 1);
   --card-rim-2: rgba(255, 255, 255, 0.35);
   --card-rim-3: rgba(255, 255, 255, 0.08);
-  --card-rim-4: rgba(80, 90, 140, 0.4);
-  --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(60, 70, 120, 0.3),
-    0 24px 44px -20px rgba(70, 60, 140, 0.42), 0 4px 12px -6px rgba(40, 50, 90, 0.16);
+  --card-rim-4: rgba(40, 100, 75, 0.35);
+  --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(30, 80, 60, 0.26),
+    0 24px 44px -20px rgba(20, 90, 60, 0.34), 0 4px 12px -6px rgba(20, 60, 45, 0.16);
   --card-ink-2: rgba(10, 12, 18, 0.65);   /* 卡片上的次要字（深色版较亮，压在光球上仍 ≥4.5:1） */
   /* 统计页玻璃卡（v2.4）：同结余卡玻璃，投影收小（两张卡上下只隔一个分段控件） */
-  --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(60, 70, 120, 0.3),
-    0 18px 36px -20px rgba(70, 60, 140, 0.36), 0 4px 12px -6px rgba(40, 50, 90, 0.14);
+  --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -12px 24px -16px rgba(30, 80, 60, 0.26),
+    0 18px 36px -20px rgba(20, 90, 60, 0.30), 0 4px 12px -6px rgba(20, 60, 45, 0.14);
   /* 统计页摘要卡后面的淡蓝光晕（静态 radial-gradient）。浓度上限：文字压在最浓处仍 ≥4.5:1（tests/contrast.test.js） */
-  --stats-glow-1: rgba(110, 185, 255, 0.15);
-  --stats-glow-2: rgba(150, 200, 250, 0.1);
+  --stats-glow-1: rgba(196, 230, 214, 0.55);
+  --stats-glow-2: rgba(160, 220, 190, 0.3);
   /* 统计页分类条：轨道、渐层淡端（浅色往白淡；深色往抽屉色淡，＝ --drawer 的 .5，测试锁住） */
   --stats-track: rgba(10, 12, 18, 0.07);
   --bar-fade: rgba(255, 255, 255, 0.55);
@@ -91,7 +94,7 @@
   --ink-sel: rgba(10, 12, 18, 0.16);
   --press-bg: #F1F1F3;
   --separator: rgba(10, 12, 18, 0.14);
-  --bar-material: rgba(207, 227, 239, 0.94);   /* ≈ sky-top：子页面导航条与状态栏同色 */
+  --bar-material: rgba(249, 249, 247, 0.94);   /* ≈ sky-top：子页面导航条与状态栏同色 */
   --alert-material: rgba(242, 242, 242, 0.86);
   --sheet-material: rgba(242, 242, 242, 0.86);
   --sheet-cancel-bg: #FFFFFF;
@@ -110,31 +113,31 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --sky-top: #132230; --sky-mid: #11232A; --sky-low: #0F2222; --sky-bottom: #0B1A17;
-    --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
-    --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
-    --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
-    --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
-    --income: #4CD07A; --red: rgb(255, 66, 69);
+    --sky-top: #0D1412; --sky-mid: #0E1714; --sky-low: #0F1B17; --sky-bottom: #0E1F18;
+    --ink: #F2F5F3; --ink-2: rgba(232, 242, 236, 0.66); --ink-3: rgba(232, 242, 236, 0.34);
+    --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --group-edge: transparent; --glass-shade: rgba(0, 0, 0, 0.35);
+    --drawer: #171C1A; --hairline: rgba(255, 255, 255, 0.08);
+    --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
+    --income: #6AAEFF; --red: rgb(255, 66, 69);
     --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
-    --chip-bg: rgba(30, 34, 42, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
+    --chip-bg: rgba(28, 35, 32, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
     --track: rgba(255, 255, 255, 0.14);
     --glass-sheen: rgba(255, 255, 255, 0.18);
-    --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
-    --orb-3: rgba(90, 205, 215, 0.25); --orb-4: rgba(150, 200, 250, 0.225);
+    --orb-1: rgba(120, 200, 165, 0.22); --orb-2: rgba(9, 131, 84, 0.34);
+    --orb-3: rgba(80, 180, 140, 0.20); --orb-4: rgba(196, 230, 214, 0.12);
     --card-glass-1: rgba(255, 255, 255, 0.1); --card-glass-2: rgba(255, 255, 255, 0.05);
     --card-rim-1: rgba(255, 255, 255, 0.55); --card-rim-2: rgba(255, 255, 255, 0.12);
     --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
     --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
-    --card-ink-2: rgba(235, 240, 248, 0.95);
-    --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(26, 29, 35, 0.5);
-    --stats-glow-1: rgba(110, 185, 255, 0.06); --stats-glow-2: rgba(150, 200, 250, 0.04);
+    --card-ink-2: rgba(232, 242, 236, 0.95);
+    --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(23, 28, 26, 0.5);
+    --stats-glow-1: rgba(80, 180, 140, 0.08); --stats-glow-2: rgba(196, 230, 214, 0.04);
     --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
-    --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
+    --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
     --fill: rgba(120, 120, 128, 0.36);
-    --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
-    --press-bg: #242830; --separator: rgba(255, 255, 255, 0.16);
-    --bar-material: rgba(19, 34, 48, 0.94);
+    --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
+    --press-bg: #222926; --separator: rgba(255, 255, 255, 0.16);
+    --bar-material: rgba(13, 20, 18, 0.94);
     --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
     --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
     --seg-track: rgba(118, 118, 128, 0.24);
@@ -143,31 +146,31 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --sky-top: #132230; --sky-mid: #11232A; --sky-low: #0F2222; --sky-bottom: #0B1A17;
-  --ink: #F4F6F8; --ink-2: rgba(235, 240, 248, 0.66); --ink-3: rgba(235, 240, 248, 0.34);
-  --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --glass-shade: rgba(0, 0, 0, 0.35);
-  --drawer: #1A1D23; --hairline: rgba(255, 255, 255, 0.08);
-  --btn-bg: #F4F6F8; --btn-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
-  --income: #4CD07A; --red: rgb(255, 66, 69);
+  --sky-top: #0D1412; --sky-mid: #0E1714; --sky-low: #0F1B17; --sky-bottom: #0E1F18;
+  --ink: #F2F5F3; --ink-2: rgba(232, 242, 236, 0.66); --ink-3: rgba(232, 242, 236, 0.34);
+  --glass: rgba(255, 255, 255, 0.07); --glass-edge: rgba(255, 255, 255, 0.16); --group-edge: transparent; --glass-shade: rgba(0, 0, 0, 0.35);
+  --drawer: #171C1A; --hairline: rgba(255, 255, 255, 0.08);
+  --btn-bg: #098354; --btn-fg: #FFFFFF; --toast-bg: #F2F5F3; --toast-fg: #0A0A0B; --on-red: #FFFFFF; --red-text: #FF6B6F;
+  --income: #6AAEFF; --red: rgb(255, 66, 69);
   --field: rgba(255, 255, 255, 0.07); --login-error: #FF6B6F;
-  --chip-bg: rgba(30, 34, 42, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
+  --chip-bg: rgba(28, 35, 32, 0.92); --chip-edge: rgba(255, 255, 255, 0.08); --chip-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.7), 0 2px 6px -3px rgba(0, 0, 0, 0.5);
   --track: rgba(255, 255, 255, 0.14);
   --glass-sheen: rgba(255, 255, 255, 0.18);
-  --orb-1: rgba(110, 185, 255, 0.31); --orb-2: rgba(100, 220, 180, 0.29);
-  --orb-3: rgba(90, 205, 215, 0.25); --orb-4: rgba(150, 200, 250, 0.225);
+  --orb-1: rgba(120, 200, 165, 0.22); --orb-2: rgba(9, 131, 84, 0.34);
+  --orb-3: rgba(80, 180, 140, 0.20); --orb-4: rgba(196, 230, 214, 0.12);
   --card-glass-1: rgba(255, 255, 255, 0.1); --card-glass-2: rgba(255, 255, 255, 0.05);
   --card-rim-1: rgba(255, 255, 255, 0.55); --card-rim-2: rgba(255, 255, 255, 0.12);
   --card-rim-3: rgba(255, 255, 255, 0.03); --card-rim-4: rgba(0, 0, 0, 0.5);
   --card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 26px 48px -18px rgba(0, 0, 0, 0.7), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
-  --card-ink-2: rgba(235, 240, 248, 0.95);
-  --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(26, 29, 35, 0.5);
-  --stats-glow-1: rgba(110, 185, 255, 0.06); --stats-glow-2: rgba(150, 200, 250, 0.04);
+  --card-ink-2: rgba(232, 242, 236, 0.95);
+  --stats-track: rgba(255, 255, 255, 0.1); --bar-fade: rgba(23, 28, 26, 0.5);
+  --stats-glow-1: rgba(80, 180, 140, 0.08); --stats-glow-2: rgba(196, 230, 214, 0.04);
   --stats-card-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.22), inset 0 -12px 24px -16px rgba(0, 0, 0, 0.6), 0 20px 40px -18px rgba(0, 0, 0, 0.62), 0 4px 12px -6px rgba(0, 0, 0, 0.5);
-  --tab-glass: rgba(30, 34, 42, 0.72); --tab-off: rgba(235, 240, 248, 0.6);
+  --tab-glass: rgba(28, 35, 32, 0.72); --tab-off: rgba(232, 242, 236, 0.6);
   --fill: rgba(120, 120, 128, 0.36);
-  --ink-tint: rgba(244, 246, 248, 0.10); --ink-sel: rgba(244, 246, 248, 0.20);
-  --press-bg: #242830; --separator: rgba(255, 255, 255, 0.16);
-  --bar-material: rgba(19, 34, 48, 0.94);
+  --ink-tint: rgba(242, 245, 243, 0.10); --ink-sel: rgba(242, 245, 243, 0.20);
+  --press-bg: #222926; --separator: rgba(255, 255, 255, 0.16);
+  --bar-material: rgba(13, 20, 18, 0.94);
   --alert-material: rgba(44, 44, 46, 0.86); --sheet-material: rgba(44, 44, 46, 0.86);
   --sheet-cancel-bg: #2C2C2E; --dim: rgba(0, 0, 0, 0.48);
   --seg-track: rgba(118, 118, 128, 0.24);
@@ -287,11 +290,11 @@ button:disabled { cursor: default; }
 }
 /* 增加对比度 / 降低透明度：各种材质改不透明（结余卡的光球与玻璃在 §15 另外处理） */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
-  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #CFE3EF; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
-  :root[data-theme="dark"] { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #132230; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
+  :root { --glass: #FFFFFF; --tab-glass: #FFFFFF; --bar-material: #F9F9F7; --alert-material: #F7F7F7; --sheet-material: #F7F7F7; }
+  :root[data-theme="dark"] { --glass: #171C1A; --tab-glass: #171C1A; --bar-material: #0D1412; --alert-material: #171C1A; --sheet-material: #171C1A; }
 }
 @media (prefers-contrast: more) and (prefers-color-scheme: dark), (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --glass: #1A1D23; --tab-glass: #1A1D23; --bar-material: #132230; --alert-material: #1A1D23; --sheet-material: #1A1D23; }
+  :root:not([data-theme="light"]) { --glass: #171C1A; --tab-glass: #171C1A; --bar-material: #0D1412; --alert-material: #171C1A; --sheet-material: #171C1A; }
 }
 
 h1, h2, p { margin: 0; }
@@ -621,8 +624,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   gap: 12px;
   padding: 6px 6px 6px 16px;
   border-radius: 14px;
-  background: var(--btn-bg);
-  color: var(--btn-fg);
+  background: var(--toast-bg);
+  color: var(--toast-fg);
   font: var(--font-subhead);
   box-shadow: 0 6px 24px var(--glass-shade);
   opacity: 0;
@@ -641,7 +644,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   font-weight: 600;
   position: relative;
 }
-.toast-action:focus-visible { outline-color: var(--btn-fg); }
+.toast-action:focus-visible { outline-color: var(--toast-fg); }
 .toast-action::after { /* 视觉 36px，点击区扩到 44px */
   content: "";
   position: absolute;
@@ -905,7 +908,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 }
 /* 选中：圆标外一圈 2px ink 外框，中间留 2px 抽屉色间隙（彩色圆标上才看得清）。
    注意：间隙色假设图格放在 --drawer 上（记一笔面板的分类格就是）；换底色要同步改。 */
-.cat-tile[aria-pressed="true"] .cat-tile-icon { box-shadow: 0 0 0 2px var(--drawer), 0 0 0 4px var(--ink); }
+.cat-tile[aria-pressed="true"] .cat-tile-icon { box-shadow: 0 0 0 2px var(--drawer), 0 0 0 4px var(--btn-bg); }
 .cat-tile[aria-pressed="true"] .cat-tile-name { color: var(--ink); font-weight: 600; }
 .cat-tile:active .cat-tile-icon { filter: brightness(0.92); }
 .cat-tile:focus-visible { outline-offset: 0; }
@@ -1583,8 +1586,8 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   left: 0;
   padding: 6px 10px;
   border-radius: 12px;
-  background: var(--btn-bg);
-  color: var(--btn-fg);
+  background: var(--toast-bg);
+  color: var(--toast-fg);
   font: var(--font-caption);
   font-weight: 600;
   line-height: 1;
@@ -1728,6 +1731,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   padding: 0;
   border-radius: var(--radius-card);
   background: var(--bg-grouped-secondary);
+  box-shadow: 0 0 0 1px var(--group-edge);
   overflow: hidden;
   isolation: isolate;
 }
@@ -2061,9 +2065,9 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   background: var(--btn-bg);
   color: var(--btn-fg);
   font: 800 19px/1 var(--font-family);
-  box-shadow: 0 6px 14px -8px rgba(10, 12, 18, 0.5);
+  box-shadow: 0 6px 14px -8px rgba(9, 80, 52, 0.55);
 }
-.wl-badge::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: #5ED3A6; }
+.wl-badge::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: #C4E6D6; }
 .wl-name { font: 700 0.9412rem/1.2 var(--font-family); letter-spacing: 0.08em; }
 .wl-hero {
   flex: 1 1 auto;

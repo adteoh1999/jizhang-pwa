@@ -103,8 +103,8 @@ test('主题：装上就设 data-theme 与 Telegram 顶栏／底色（8.0）', (
   const s = setup({ colorScheme: 'dark' });
   assert.equal(s.ok, true);
   assert.equal(s.root.dataset.theme, 'dark');
-  assert.deepEqual(names(s.calls, 'bg'), [['bg', '#132230']]);
-  assert.deepEqual(names(s.calls, 'header'), [['header', '#132230']]);
+  assert.deepEqual(names(s.calls, 'bg'), [['bg', '#0D1412']]);
+  assert.deepEqual(names(s.calls, 'header'), [['header', '#0D1412']]);
   assert.equal(names(s.calls, 'bottom').length, 0, '底部条颜色这批不设（审核 S12）');
 });
 
@@ -116,8 +116,8 @@ test('主题：themeChanged 换了深浅才重设；深浅没变不重设', () =
   s.wa.colorScheme = 'dark';
   s.emit('themeChanged');
   assert.equal(s.root.dataset.theme, 'dark');
-  assert.deepEqual(names(s.calls, 'bg').at(-1), ['bg', '#132230']);
-  assert.deepEqual(names(s.calls, 'header').at(-1), ['header', '#132230']);
+  assert.deepEqual(names(s.calls, 'bg').at(-1), ['bg', '#0D1412']);
+  assert.deepEqual(names(s.calls, 'header').at(-1), ['header', '#0D1412']);
 });
 
 test('主题：版本 6.0 只设 data-theme；6.1–6.9 只设底色；7.0 起顶栏也设', () => {
@@ -126,11 +126,11 @@ test('主题：版本 6.0 只设 data-theme；6.1–6.9 只设底色；7.0 起�
   assert.equal(names(a.calls, 'bg').length + names(a.calls, 'header').length, 0);
   _resetTgChrome();
   const b = setup({ version: '6.9' });
-  assert.deepEqual(names(b.calls, 'bg'), [['bg', '#CFE3EF']]);
+  assert.deepEqual(names(b.calls, 'bg'), [['bg', '#F9F9F7']]);
   assert.equal(names(b.calls, 'header').length, 0, '6.9 以前顶栏只能用主题色：不设');
   _resetTgChrome();
   const c = setup({ version: '7.0' });
-  assert.deepEqual(names(c.calls, 'header'), [['header', '#CFE3EF']]);
+  assert.deepEqual(names(c.calls, 'header'), [['header', '#F9F9F7']]);
 });
 
 // ---------- 竖向滑动 ----------
