@@ -13,10 +13,20 @@ function esc(v) {
   return s;
 }
 
+// 3f 防公式：Excel／Numbers 会把 = + - @ Tab CR LF 开头的格子当公式。导出时前面加一个 '（可逆：
+// 原本就是若干个 ' 接公式字元的也再加一个），导入时同样条件去掉一个。只套用户打的字（备注、分类名）。
+const FORMULA_LEAD = /^'*[=+\-@\t\r\n]/;
+export function csvGuard(s) {
+  return FORMULA_LEAD.test(s) ? `'${s}` : s;
+}
+export function csvUnguard(s) {
+  return s.startsWith("'") && FORMULA_LEAD.test(s) ? s.slice(1) : s;
+}
+
 export function toCSV(txs, categoriesById) {
   const rows = txs.filter((t) => !t.deleted).sort(compareTx).map((t) => [
     t.id, t.occurred_on, t.kind, minorToDecimalString(t.amount_minor),
-    categoriesById.get(t.category_id)?.name ?? '未分类', t.note, t.updated_at,
+    csvGuard(categoriesById.get(t.category_id)?.name ?? '未分类'), csvGuard(t.note), t.updated_at,
   ]);
   return '\ufeff' + [CSV_HEADER, ...rows].map((r) => r.map(esc).join(',')).join('\r\n') + '\r\n';
 }
@@ -105,7 +115,8 @@ export function planImport(rows, { existingTxs, categories, now, uuid }) {
     if (existing && !existing.deleted
       && !(timeValue(cell(r, 'updated_at').trim()) > timeValue(existing.updated_at))) { skip(); continue; }
 
-    const catName = cell(r, 'category').trim() || '未分类';
+    // 先 trim → 再去掉导出时加的 '（3f）→ 才查分类、验长度
+    const catName = csvUnguard(cell(r, 'category').trim()) || '未分类';
     const key = `${kind}\n${catName}`;
     let cat = catByKey.get(key);
     let pendingCat = null;
@@ -123,7 +134,7 @@ export function planImport(rows, { existingTxs, categories, now, uuid }) {
     try {
       tx = buildTransaction({
         id: id || undefined, kind, amountMinor: amount, categoryId: cat.id,
-        occurredOn: date, note: cell(r, 'note'),
+        occurredOn: date, note: csvUnguard(cell(r, 'note').trim()),
       }, existing || null, { now, uuid });
     } catch (e) {
       if (e instanceof ValidationError) { skip(); continue; }

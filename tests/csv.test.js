@@ -208,3 +208,66 @@ test('多列非 uuid 的 id（即使相同）都各自换新、都导入', () =>
   assert.equal(plan.imported, 2);
   assert.notEqual(plan.txs[0].id, plan.txs[1].id);
 });
+
+// ---------- 3f：导出防公式（备注、分类名），导入还原 ----------
+import { csvGuard, csvUnguard } from '../js/csv.js';
+import { NOTE_MAX } from '../js/model.js';
+
+test('3f csvGuard：= + - @ Tab CR LF 开头 → 前面加一个 \'；其他不动', () => {
+  for (const s of ['=SUM(A1)', '+60 12', '-5 折扣', '@x', '\tx', '\rx', '\nx']) assert.equal(csvGuard(s), `'${s}`, JSON.stringify(s));
+  for (const s of ['午餐', '', '5-1', 'a=b', "'午餐"]) assert.equal(csvGuard(s), s, JSON.stringify(s));
+  // 可逆：原本就是 ' 接公式字元 → 再加一个
+  assert.equal(csvGuard("'=x"), "''=x");
+  assert.equal(csvGuard("''+x"), "'''+x");
+});
+
+test('3f csvUnguard：\' 接公式字元才去掉一个 \'；其他不动', () => {
+  assert.equal(csvUnguard("'=SUM(A1)"), '=SUM(A1)');
+  assert.equal(csvUnguard("''=x"), "'=x");
+  assert.equal(csvUnguard("'午餐"), "'午餐");
+  assert.equal(csvUnguard('=x'), '=x');
+  assert.equal(csvUnguard(''), '');
+  for (const s of ['=1+1', '-5', "'=x", "''@y", '午餐', "'午餐"]) assert.equal(csvUnguard(csvGuard(s)), s, JSON.stringify(s));
+});
+
+test('3f toCSV：备注与分类名套防公式；id／日期／收支／金额／updated_at 不套', () => {
+  const plus = { id: 'c-plus', kind: 'income', name: '+加班', sort: 9, deleted: false };
+  const m = new Map([...byId, ['c-plus', plus]]);
+  const csv = toCSV([T({ note: '=1+1', kind: 'income', category_id: 'c-plus' })], m);
+  const row = parseCSV(csv)[1];
+  assert.equal(row[4], "'+加班");
+  assert.equal(row[5], "'=1+1");
+  assert.equal(row[0], U1);
+  assert.equal(row[1], '2026-11-20');
+  assert.equal(row[2], 'income');
+  assert.equal(row[3], '12.50');
+  assert.equal(row[6], '2026-11-20T01:00:00.000Z');
+});
+
+test('3f 来回：备注 =1+1、分类 +加班（已存在）→ 原字、不新建分类', () => {
+  const plus = { id: 'c-plus', kind: 'income', name: '+加班', sort: 9, deleted: false };
+  const m = new Map([...byId, ['c-plus', plus]]);
+  const csv = toCSV([T({ note: '=1+1', kind: 'income', category_id: 'c-plus' })], m);
+  const plan = planImport(parseCSV(csv), ctx({ categories: [...cats, plus] }));
+  assert.equal(plan.txs[0].note, '=1+1');
+  assert.equal(plan.txs[0].category_id, 'c-plus');
+  assert.equal(plan.newCategories.length, 0);
+});
+
+test('3f 来回：分类 +加班 不存在 → 新建的名字是 +加班（没有 \'）', () => {
+  const plus = { id: 'c-plus', kind: 'income', name: '+加班', sort: 9, deleted: false };
+  const csv = toCSV([T({ kind: 'income', category_id: 'c-plus' })], new Map([...byId, ['c-plus', plus]]));
+  const plan = planImport(parseCSV(csv), ctx());
+  assert.equal(plan.newCategories.length, 1);
+  assert.equal(plan.newCategories[0].name, '+加班');
+});
+
+test('3f 来回：满 NOTE_MAX 且以 = 开头的备注不被略过；原本就是 \'= 开头的备注不变', () => {
+  const long = '=' + 'x'.repeat(NOTE_MAX - 1);
+  const csv = toCSV([T({ note: long })], byId);
+  const plan = planImport(parseCSV(csv), ctx());
+  assert.equal(plan.skipped, 0);
+  assert.equal(plan.txs[0].note, long);
+  const plan2 = planImport(parseCSV(toCSV([T({ note: "'=x" })], byId)), ctx());
+  assert.equal(plan2.txs[0].note, "'=x");
+});
