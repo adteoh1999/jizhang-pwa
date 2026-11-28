@@ -96,7 +96,7 @@ test('走势图拆层：线与渐层在 aria-hidden 的揭开层；统计页分�
   assert.match(tc, /playReveal/);
   const sv = readFileSync(new URL('../js/ui/stats-view.js', import.meta.url), 'utf8');
   assert.ok(!/bar\.style\.width/.test(sv), '分类条不能再改 width');
-  assert.match(sv, /slideX\(r\.ratio, 6\)/);
+  assert.match(sv, /slideX\(r\.ratio, 8\)/);   // v3.7 最短露出 8px（条 8px 高）
   assert.match(sv, /class: 'stats-body'/);
   assert.match(sv, /chart\.playReveal\(\)/);
 });

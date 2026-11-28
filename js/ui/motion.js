@@ -90,7 +90,7 @@ export function slideX(ratio, minPx = 0) {
   return `translateX(${((r - 1) * 100).toFixed(2)}%)`;
 }
 
-/** 比例条看得到的宽度（与 slideX 同一个百分比）。（v3.4.1 起渐变铺在整条上、露出尾端，统计页不再用它铺渐层） */
+/** 比例条看得到的宽度（与 slideX 同一个百分比）。v3.7 统计分类条用它设 --bar-w，渐变铺在看得到的长度上（每条金头绿尾） */
 export function barWidth(ratio, minPx = 0) {
   const r = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   if (r <= 0) return '0%';

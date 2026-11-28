@@ -95,9 +95,18 @@ test('超支：.home-meter-bar.is-over 换琥珀渐变，::before 也换成琥�
   assert.match(blockAfter(css, '\n.home-meter-bar.is-over .home-meter-fill::before {'), /background:\s*var\(--meter-over-from\)/);
 });
 
-test('统计分类条：--bar-from→--bar-to 渐变，::before 用纯起点色', () => {
-  assert.match(blockAfter(css, '\n.stats-bar-fill {'), /background:\s*linear-gradient\(90deg, var\(--bar-from\), var\(--bar-to\)\)/);
+// v3.7（用户 2026-11-28 选 B）：渐变贴着填充条右缘、宽度＝看得到的长度（--bar-w，stats-view.js 设）→ 每条都是金头绿尾。
+// 填充条左边藏起来的部分（底色层）与 ::before 都是纯 --bar-from：回弹时不露缝、不闪色。没有 --bar-w 时退回整条渐变。
+test('统计分类条：渐变铺在看得到的长度上（金头 → 绿尾），底色层与 ::before 都是纯起点色', () => {
+  const fill = blockAfter(css, '\n.stats-bar-fill {');
+  assert.match(fill, /background:\s*linear-gradient\(90deg, var\(--bar-from\), var\(--bar-to\) \d+%\) right \/ var\(--bar-w, 100%\) 100% no-repeat, var\(--bar-from\);/);
   assert.match(blockAfter(css, '\n.stats-bar-fill::before {'), /background:\s*var\(--bar-from\)/);
+});
+
+test('统计分类条：每条尾端至少 20% 是纯 --bar-to（长度由对比够的尾端决定；停靠点从 CSS 读）', () => {
+  const m = blockAfter(css, '\n.stats-bar-fill {').match(/var\(--bar-to\) (\d+)%\)/);
+  assert.ok(m, '找不到 --bar-to 停靠点');
+  assert.ok(Number(m[1]) <= 80, `停靠点 ${m[1]}% > 80%`);
 });
 
 test('欢迎页示意卡的假比例线（17%、没有 translate）用纯尾端色，跟真卡短条一样', () => {
@@ -132,9 +141,9 @@ test('增加对比度：三种填充条（含 ::before、含超支）都改纯�
   }
 });
 
-test('增加对比度：比例线、补缝段、欢迎页假比例线的上缘亮光关掉（box-shadow: none）', () => {
+test('增加对比度：比例线、补缝段、欢迎页假比例线、分类条的上缘亮光关掉（box-shadow: none）', () => {
   const blocks = contrastBlocks();
-  for (const sel of ['.home-meter-fill', '.home-meter-fill::before', '.wl-bar i']) {
+  for (const sel of ['.home-meter-fill', '.home-meter-fill::before', '.wl-bar i', '.stats-bar-fill', '.stats-bar-fill::before']) {
     assert.ok(contrastRule(blocks, sel, /box-shadow:\s*none/), `${sel} 高对比没有亮光`);
   }
 });

@@ -1631,21 +1631,24 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   position: relative;
   display: block;
   flex: 1;
-  height: 6px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 4px;
   background: var(--stats-track);
   overflow: hidden;
 }
 /* v2.3 分类条「滑入」：固定 100% 宽，translateX 往左藏（只走合成）。左端由轨道圆角裁切 → 两端都圆。
-   v3.4.1：绿色渐变铺在整条上、跟着平移，露出尾端（短条几乎是尾端深绿）。 */
+   v3.7（用户 2026-11-28 选）：每条「金头 → 绿尾」——渐变贴着右缘、宽度＝看得到的长度（--bar-w，stats-view.js 设），
+   尾端 30% 是纯 --bar-to（对比够，决定长度）。左边藏起来的部分是纯 --bar-from，回弹时接得上。
+   上缘一道淡亮光（静态 inset 阴影）。没有 --bar-w 时退回整条渐变。 */
 .stats-bar-fill {
   position: absolute;
   inset: 0;
   width: 100%;
-  border-radius: 0 3px 3px 0;
-  background: linear-gradient(90deg, var(--bar-from), var(--bar-to));
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, var(--bar-from), var(--bar-to) 70%) right / var(--bar-w, 100%) 100% no-repeat, var(--bar-from);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-/* 往左延伸补弹过头的缝 */
+/* 往左延伸补弹过头的缝（跟填充条左端同色、同亮光） */
 .stats-bar-fill::before {
   content: "";
   position: absolute;
@@ -1654,6 +1657,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   right: 100%;
   width: 100%;
   background: var(--bar-from);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .stats-body { display: flex; flex-direction: column; flex: 1 0 auto; }   /* 换月份时整块滑动 */
 /* 百分比：纯灰字（B 改版不再用分类色胶囊） */
@@ -2226,5 +2230,5 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
      v3.7：比例线用较亮的金 --card-gold（对比比 --gold 高）；上缘亮光关掉 */
   .home-meter-fill, .home-meter-fill::before, .wl-bar i { background: var(--card-gold); box-shadow: none; }
   .home-meter-bar.is-over .home-meter-fill, .home-meter-bar.is-over .home-meter-fill::before { background: var(--meter-over-to); }
-  .stats-bar-fill, .stats-bar-fill::before { background: var(--bar-to); }
+  .stats-bar-fill, .stats-bar-fill::before { background: var(--bar-to); box-shadow: none; }
 }

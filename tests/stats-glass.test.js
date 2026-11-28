@@ -42,9 +42,15 @@ test('summary JS: split RM for the eye, full amount for VoiceOver, is-long from 
 });
 
 test('category rows JS: data-icon on the row, bar width shared with slideX, RM split + sr-only（单色化后 data-icon 留着无样式）', () => {
-  assert.match(statsJs, /slideX\(r\.ratio, 6\)/);
-  // 不再需要 --bar-w：v3.4.1 渐变铺在整条上、露出尾端，不用 JS 量看得到的宽度
-  assert.doesNotMatch(statsJs, /--bar-w/);
+  // v3.7：最短露出 8px（条 8px 高 → 最短条是正圆）；--bar-w＝看得到的长度，渐变铺在上面（每条金头绿尾）。
+  // 两者都在建列的地方（换月份／资料更新重画时新列也有），而且用同一个最短值
+  const a = statsJs.indexOf('list.replaceChildren(...rows.map((r) => {');
+  assert.ok(a >= 0, '建列处');
+  const b = statsJs.indexOf('}));', a);
+  assert.ok(b > a, '建列结尾');
+  const rowsMap = statsJs.slice(a, b);
+  assert.match(rowsMap, /bar\.style\.transform = slideX\(r\.ratio, 8\);/);
+  assert.match(rowsMap, /bar\.style\.setProperty\('--bar-w', barWidth\(r\.ratio, 8\)\);/);
   assert.match(statsJs, /class: 'stats-row', 'data-icon': iconAttr/);
   assert.match(statsJs, /class: 'stats-row-pct'/);
   assert.match(statsJs, /class: 'stats-row-amount', 'aria-hidden': 'true'[^\n]*\n\s*h\('span', \{ class: 'sr-only' \}, formatRM\(/);

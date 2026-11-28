@@ -86,8 +86,14 @@ test('「储存」深绿字，且写在 :disabled 之前（同优先级，禁用
   assert.match(bodyOf('.modal-sheet-action.is-bold'), /color:\s*var\(--accent-text\)/);
 });
 
-test('统计分类条：6px（v3.4.1 起是绿色渐变，见 meter-gradient 测试）；百分比是纯灰字（没有胶囊底）', () => {
-  assert.match(blockAfter(css, '\n.stats-bar {'), /height:\s*6px/);
+test('统计分类条：8px、全圆角（v3.7 每条金头绿尾，见 meter-gradient 测试）；百分比是纯灰字（没有胶囊底）', () => {
+  const bar = blockAfter(css, '\n.stats-bar {');
+  assert.match(bar, /height:\s*8px/);
+  assert.match(bar, /border-radius:\s*4px/);
+  const fill = blockAfter(css, '\n.stats-bar-fill {');
+  assert.match(fill, /border-radius:\s*0 4px 4px 0/);
+  assert.match(fill, /box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.22\)/);
+  assert.match(blockAfter(css, '\n.stats-bar-fill::before {'), /box-shadow:\s*inset 0 1px 0 rgba\(255, 255, 255, 0\.22\)/);
   const pct = blockAfter(css, '\n.stats-row-pct {');
   assert.ok(!/background/.test(pct), '百分比没有底色');
   assert.match(pct, /color:\s*var\(--ink-2\)/);
