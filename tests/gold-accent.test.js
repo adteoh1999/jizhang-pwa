@@ -104,3 +104,38 @@ test('欢迎页假比例线跟真卡一样：6px、全圆角、同样的亮光',
   assert.match(bar, /border-radius:\s*3px/);
   assert.ok(blockAfter(css, '\n.wl-bar i {').includes(`box-shadow: ${SHEEN}`));
 });
+
+// ---------- 金色只放在指定的地方（面积越小越有印象；白底不放金字） ----------
+const TOKEN_SEL = [':root', ':root:not([data-theme="light"])', ':root[data-theme="dark"]'];
+const ALLOW = {
+  '--gold': [], '--gold-deep': [],   // 只在 token 里被别的 token 引用
+  '--card-gold': ['.home-card-label', '.stats-sum-item:last-child .stats-sum-k', '.wl-card-label',
+    '.home-meter-fill', '.home-meter-fill::before', '.wl-bar i'],   // 后三个只在增加对比度时
+  '--card-gold-edge': ['.home-card::before', '.stats-summary::before', '.wl-card::before'],
+  '--chart-dot': ['.trend-mdot', '.trend-single'],
+  '--meter-to': ['.home-meter-fill', '.wl-bar i'],
+  '--bar-from': ['.stats-bar-fill', '.stats-bar-fill::before'],
+};
+const notToken = () => rules().filter((r) => !TOKEN_SEL.includes(r.sel));
+
+test('金色 token 只出现在指定的选择器（不管是 color、background、fill 还是 border）', () => {
+  const bad = [];
+  for (const r of notToken()) {
+    for (const [tok, allow] of Object.entries(ALLOW)) {
+      if (!new RegExp(`var\\(${tok}\\)`).test(r.body)) continue;   // 以「)」结尾：--gold 不会吃到 --gold-deep
+      for (const s of selList(r.sel)) if (!allow.includes(s)) bad.push(`${s} 用了 ${tok}`);
+    }
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('金色字面值只在 token 块（规则里一律用 token）', () => {
+  const bad = notToken().filter((r) => /#D9B45A|#EACF85|#A98327|#D7B157|217,\s*180,\s*90/i.test(r.body)).map((r) => r.sel);
+  assert.deepEqual(bad, []);
+});
+
+test('白底上不放金字：字色（color）用到金色的只有深绿卡上三个「结余」标签', () => {
+  const re = /(^|[\s;])color:\s*var\(--(gold|gold-deep|card-gold|card-gold-edge|chart-dot|meter-to|bar-from)\)/;
+  const sels = notToken().filter((r) => re.test(r.body)).flatMap((r) => selList(r.sel)).sort();
+  assert.deepEqual(sels, ['.home-card-label', '.stats-sum-item:last-child .stats-sum-k', '.wl-card-label'].sort());
+});
