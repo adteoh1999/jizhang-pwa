@@ -64,18 +64,26 @@
   --card-ink-2: rgba(255, 255, 255, 0.72);        /* 卡上次要字、眼睛 */
   --card-ink-dec: rgba(255, 255, 255, 0.72);      /* 金额小数 */
   --card-track: rgba(255, 255, 255, 0.14);
-  /* 比例线渐变（v3.4.1）：填充条往左藏、露出尾端 → 尾端是最亮的薄荷；超支换琥珀。卡片深浅相同 */
-  --meter-from: #5FC497; --meter-to: #D9F2E5;
-  --meter-over-from: #FFE3A8; --meter-over-to: #FFB347;
+  /* v3.7 金色强调色（用户 2026-11-28 选 B 经典金）：面积越小越有印象，只放 5 个小地方（tests/gold-accent.test.js 白名单）。
+     白底上不放金字。深绿卡浅深相同，所以金色 token 浅深也相同。 */
+  --gold: #D9B45A;                                /* 深色底上的金线、金点（深绿卡、深色模式） */
+  --gold-deep: #A98327;                           /* 白底上的金点（对白 3.52 ≥3） */
+  --card-gold: #EACF85;                           /* 深绿卡上的金字（含两层光泽最亮处 4.78 ≥4.5） */
+  --card-gold-edge: rgba(217, 180, 90, 0.6);      /* 卡片 1px 反光边的右下端（= --gold 半透明） */
+  /* 比例线渐变：填充条往左藏、露出尾端 → 尾端是金（深绿卡上的金色亮点）；超支换玫瑰红（跟金色、色盲都分得清）。卡片深浅相同 */
+  --meter-from: #86D2AB; --meter-to: var(--gold);
+  --meter-over-from: #FFC2CF; --meter-over-to: #FF8AA5;
   --card-line: rgba(255, 255, 255, 0.14);         /* 卡内分隔线 */
   --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 1px 1px rgba(6, 35, 26, 0.2),
     0 14px 24px -12px rgba(6, 35, 26, 0.45), 0 34px 56px -30px rgba(6, 35, 26, 0.6);
   --card-glow: rgba(9, 131, 84, 0.16);            /* 卡后一团淡深绿 */
   /* 中性白面板（走势图卡、欢迎页账单小卡）的柔和投影 */
   --panel-shadow: 0 10px 24px -16px rgba(10, 12, 18, 0.25);
-  /* 统计页分类条：轨道、绿色渐变（v3.4.1；露出尾端 → 尾端是对比最高的深绿） */
+  /* 统计页分类条：轨道、每条「金头 → 绿尾」（v3.7；尾端深绿对白 6.57 决定长度）。
+     开头用 #D7B157 而不是 --gold：#D9B45A 对白 1.98，差一点到「每条开头 ≥2」的自订下限，肉眼看不出差别 */
   --stats-track: rgba(10, 12, 18, 0.07);
-  --bar-from: #6CC29A; --bar-to: #076B44;
+  --bar-from: #D7B157; --bar-to: #076B44;
+  --chart-dot: var(--gold-deep);                  /* 走势图圆点（滑杆标记） */
   /* B 改版中性元件：单色分类图示、iOS 原生分段控件滑块、首页「记一笔」次要按钮、深绿字（只放纯白底上，4.79） */
   --icon-ink: #2F3431;
   --icon-line: rgba(10, 12, 18, 0.1);
@@ -126,11 +134,12 @@
     --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
     --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72);
     --card-track: rgba(255, 255, 255, 0.14); --card-line: rgba(255, 255, 255, 0.14);
-    --meter-from: #5FC497; --meter-to: #D9F2E5; --meter-over-from: #FFE3A8; --meter-over-to: #FFB347;
+    --gold: #D9B45A; --gold-deep: #A98327; --card-gold: #EACF85; --card-gold-edge: rgba(217, 180, 90, 0.6);
+    --meter-from: #86D2AB; --meter-to: var(--gold); --meter-over-from: #FFC2CF; --meter-over-to: #FF8AA5;
     --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
     --card-glow: rgba(9, 131, 84, 0.22);
     --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
-    --stats-track: rgba(255, 255, 255, 0.1); --bar-from: #2FA26E; --bar-to: #B4E6CC;
+    --stats-track: rgba(255, 255, 255, 0.1); --bar-from: var(--gold); --bar-to: #8FD8B4; --chart-dot: var(--gold);
     --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
     --seg-thumb: #5E6662; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
@@ -159,11 +168,12 @@
   --card-sheen-mint: rgba(196, 230, 214, 0.10); --card-sheen-white: rgba(255, 255, 255, 0.04);
   --card-ink: #FFFFFF; --card-ink-2: rgba(255, 255, 255, 0.72); --card-ink-dec: rgba(255, 255, 255, 0.72);
   --card-track: rgba(255, 255, 255, 0.14); --card-line: rgba(255, 255, 255, 0.14);
-  --meter-from: #5FC497; --meter-to: #D9F2E5; --meter-over-from: #FFE3A8; --meter-over-to: #FFB347;
+  --gold: #D9B45A; --gold-deep: #A98327; --card-gold: #EACF85; --card-gold-edge: rgba(217, 180, 90, 0.6);
+  --meter-from: #86D2AB; --meter-to: var(--gold); --meter-over-from: #FFC2CF; --meter-over-to: #FF8AA5;
   --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(196, 230, 214, 0.1), 0 20px 40px -20px rgba(0, 0, 0, 0.8);
   --card-glow: rgba(9, 131, 84, 0.22);
   --panel-shadow: 0 10px 24px -16px rgba(0, 0, 0, 0.6);
-  --stats-track: rgba(255, 255, 255, 0.1); --bar-from: #2FA26E; --bar-to: #B4E6CC;
+  --stats-track: rgba(255, 255, 255, 0.1); --bar-from: var(--gold); --bar-to: #8FD8B4; --chart-dot: var(--gold);
   --icon-ink: rgba(242, 245, 243, 0.86); --icon-line: rgba(255, 255, 255, 0.12);
   --seg-thumb: #5E6662; --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   --btn2-bg: #1C2120; --btn2-edge: rgba(255, 255, 255, 0.08); --accent-text: #4FC08D;
@@ -1046,7 +1056,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
     padding: 1px;
     border-radius: inherit;
     pointer-events: none;
-    background: linear-gradient(140deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 62%, rgba(196, 230, 214, 0.26));
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 62%, var(--card-gold-edge));   /* v3.7 右下端是金 */
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
@@ -1092,7 +1102,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   color: var(--card-ink-2);   /* 次要控件：比金额轻一级 */
 }
 .home-card > .home-eye:focus-visible { outline-color: var(--card-ink); }   /* 全域焦点框是 --ink（黑），压在深绿上看不见 */
-.home-card-label { padding-right: 36px; font: 500 0.8235rem/1.3 var(--font-family); letter-spacing: 0.01em; color: var(--card-ink-2); }
+.home-card-label { padding-right: 36px; font: 500 0.8235rem/1.3 var(--font-family); letter-spacing: 0.04em; color: var(--card-gold); }   /* v3.7 金字 */
 .home-balance {
   margin-top: 10px;
   display: flex;
@@ -1449,6 +1459,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .stats-sum-item { min-width: 0; display: grid; align-content: start; gap: 5px; padding: 0 8px; }
 .stats-sum-item + .stats-sum-item { box-shadow: inset 1px 0 0 var(--card-line); }
 .stats-sum-k { font: var(--font-footnote); color: var(--card-ink-2); }
+.stats-sum-item:last-child .stats-sum-k { color: var(--card-gold); }   /* v3.7「结余」金字（最后一格＝结余，测试锁顺序） */
 .stats-sum-v {
   font: 600 min(0.8824rem, 15px)/1.2 var(--font-family);   /* 15/17 */
   font-variant-numeric: tabular-nums;
@@ -1535,9 +1546,9 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
 .trend-area { stroke: none; }
 .trend-stop0 { stop-color: var(--ink); stop-opacity: 0.12; }
 .trend-stop1 { stop-color: var(--ink); stop-opacity: 0; }
-.trend-single { fill: var(--ink); }
+.trend-single { fill: var(--chart-dot); }   /* v3.7 金点 */
 .trend-mline { stroke: var(--ink-3); stroke-width: 1; }
-.trend-mdot { fill: var(--btn-bg); stroke: var(--drawer); stroke-width: 2.5; }
+.trend-mdot { fill: var(--chart-dot); stroke: var(--drawer); stroke-width: 2.5; }   /* v3.7 线尾金点（浅色深一阶的金，白底 3.52） */
 .trend-tip {
   position: absolute;
   top: 0;
@@ -2047,7 +2058,7 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   transform: rotate(-4deg);
 }
 .wl-card > * { position: relative; }
-.wl-card-label { font: 400 15px/1.33 var(--font-family); color: var(--card-ink-2); }
+.wl-card-label { font: 400 15px/1.33 var(--font-family); color: var(--card-gold); }   /* v3.7 跟首页卡一样的金字 */
 .wl-amt { margin-top: 4px; display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wl-amt-cur { font: 600 15px/1 var(--font-family); letter-spacing: 0.02em; color: var(--card-ink-2); }
 .wl-amt-int { font: 600 44px/1.05 var(--font-family); letter-spacing: -0.045em; }

@@ -1,4 +1,5 @@
-// v3.4.1（用户 2026-11-27 真机看过后选定）：深绿卡上收入改白、比例线／分类条绿色渐变（G2）、超支琥珀（O1）。
+// v3.4.1（用户 2026-11-27 真机看过后选定）：深绿卡上收入改白、比例线／分类条渐变。
+// v3.7（2026-11-28）：比例线 薄荷 → 经典金、超支改玫瑰红、分类条每条金头绿尾（规格 docs/superpowers/specs/2026-11-28-gold-accent-design.md）。
 // 填充条固定 100% 宽、用 translateX 往左藏 → 渐变跟着元素走，露出的是「尾端」；尾端一律是对比最高的颜色。
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,8 +35,9 @@ const ratio = (x, y) => { const [a, b] = [lum(x), lum(y)]; return (Math.max(a, b
 /** 深绿卡某色站＋两层光泽（最亮处＝浅色前景最差的情况）。 */
 const cardAt = (theme, stop) => over(over(color(theme, stop).rgb, color(theme, '--card-sheen-white')), color(theme, '--card-sheen-mint'));
 
-const METER = { '--meter-from': '#5FC497', '--meter-to': '#D9F2E5', '--meter-over-from': '#FFE3A8', '--meter-over-to': '#FFB347' };
-const BAR = { light: { '--bar-from': '#6CC29A', '--bar-to': '#076B44' }, dark: { '--bar-from': '#2FA26E', '--bar-to': '#B4E6CC' } };
+// v3.7 金色强调色（用户 2026-11-28 选 B 经典金）：比例线 薄荷 → 金；超支玫瑰红；分类条 金 → 绿
+const METER = { '--meter-from': '#86D2AB', '--meter-to': 'var(--gold)', '--meter-over-from': '#FFC2CF', '--meter-over-to': '#FF8AA5' };
+const BAR = { light: { '--bar-from': '#D7B157', '--bar-to': '#076B44' }, dark: { '--bar-from': 'var(--gold)', '--bar-to': '#8FD8B4' } };
 
 // ---------- token ----------
 test('token：比例线／超支渐变三块都有且相同；分类条渐变浅深各一组；旧的 --card-income、--card-fill、--bar 拿掉', () => {
@@ -51,8 +53,10 @@ test('token：比例线／超支渐变三块都有且相同；分类条渐变浅
 // ---------- 对比度 ----------
 for (const theme of ['light', 'dark']) {
   for (const stop of ['--card-1', '--card-2', '--card-3']) {
-    test(`${theme} 比例线尾端 --meter-to 对「${stop}＋光泽＋轨道」≥ 3`, () => {
-      const bg = cardAt(theme, stop);
+    // v3.7：比例线是卡内最后一个元素、在卡片最下方；右上薄荷光泽纵向只到卡高 0.9×0.55＝49.5%，照不到那一排
+    // （前提由 tests/gold-accent.test.js 锁住）→ 只叠斜向白光泽。卡上「字」的测试仍用含两层光泽的最严模型。
+    test(`${theme} 比例线尾端 --meter-to 对「${stop}＋白光泽＋轨道」≥ 3（比例线那一排薄荷光照不到）`, () => {
+      const bg = over(color(theme, stop).rgb, color(theme, '--card-sheen-white'));
       const r = ratio(solid(theme, '--meter-to'), over(bg, color(theme, '--card-track')));
       assert.ok(r >= 3, `${r.toFixed(2)} < 3`);
     });
@@ -64,17 +68,14 @@ for (const theme of ['light', 'dark']) {
       });
     }
   }
-  // 统计分类条：尾端对抽屉与轨道 ≥3；渐变中点（CSS 预设逐通道线性插值）对抽屉 ≥3＝占比 ≤50% 的条每个像素都 ≥3；
-  // 起点对抽屉 ≥2 是自订下限：最长的条开头不能淡到看不见（看起来比实际短）
-  test(`${theme} 分类条：尾端对抽屉与轨道 ≥3、中点对抽屉 ≥3、起点对抽屉 ≥2`, () => {
+  // 统计分类条（v3.7 每条「金头 → 绿尾」）：长度由尾端决定，尾端对抽屉与轨道 ≥3（WCAG 非文字）；
+  // 开头（金）对抽屉 ≥2 是自订下限，不是 WCAG：每条开头不能淡到看不见（看起来比实际短）。
+  // 旧的「中点 ≥3／三通道同方向」拿掉：每条都有金头，不再成立（尾端纯色段由 gold-accent 测试锁停靠点）
+  test(`${theme} 分类条：尾端对抽屉与轨道 ≥3、开头（金）对抽屉 ≥2`, () => {
     const drawer = color(theme, '--drawer').rgb;
     const track = over(drawer, color(theme, '--stats-track'));
     const to = solid(theme, '--bar-to'), from = solid(theme, '--bar-from');
-    const mid = from.map((c, i) => (c + to[i]) / 2);
-    // 「中点 ≥3 ⇒ 中点到尾端都 ≥3」的前提：三个通道同方向变化（亮度单调），审核 M-3
-    const dir = from.map((c, i) => Math.sign(to[i] - c)).filter((d) => d !== 0);
-    assert.ok(dir.every((d) => d === dir[0]), `起点→尾端三通道要同方向：${from} → ${to}`);
-    for (const [label, fg, bg, min] of [['尾端/抽屉', to, drawer, 3], ['尾端/轨道', to, track, 3], ['中点/抽屉', mid, drawer, 3], ['起点/抽屉', from, drawer, 2]]) {
+    for (const [label, fg, bg, min] of [['尾端/抽屉', to, drawer, 3], ['尾端/轨道', to, track, 3], ['开头/抽屉', from, drawer, 2]]) {
       const r = ratio(fg, bg);
       assert.ok(r >= min, `${label} ${r.toFixed(2)} < ${min}`);
     }

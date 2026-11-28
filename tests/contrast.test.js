@@ -14,6 +14,8 @@ const PAIRS = [
   ['--login-error', '--sky-low', 4.5], ['--login-error', '--sky-bottom', 4.5],
   // B 改版（2026-11-27）中性元件：「储存」深绿字、单色分类图示、统计条尾端色（非文字 ≥3）
   ['--accent-text', '--drawer', 4.5], ['--icon-ink', '--drawer', 3], ['--bar-to', '--drawer', 3],
+  // v3.7 金色强调色：走势图圆点（滑杆标记，压在白／深抽屉上，非文字 ≥3）
+  ['--chart-dot', '--drawer', 3],
   // T1 墨绿小岛：选中深色字压薄荷胶囊
   ['--tab-on', '--tab-pill', 4.5],
 ];

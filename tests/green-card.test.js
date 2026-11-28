@@ -33,7 +33,7 @@ const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 const ratio = (x, y) => { const [a, b] = [lum(x), lum(y)]; return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); };
 
 const CARD_SEL = ['.home-card', '.stats-summary', '.wl-card'];
-const NEW_TOKENS = ['--card-1', '--card-2', '--card-3', '--card-ink', '--card-ink-2', '--card-ink-dec',
+const NEW_TOKENS = ['--card-1', '--card-2', '--card-3', '--card-ink', '--card-ink-2', '--card-ink-dec', '--card-gold', '--card-gold-edge',
   '--card-track', '--card-line', '--card-sheen-mint', '--card-sheen-white', '--card-glow', '--card-shadow', '--panel-shadow'];
 const GONE_TOKENS = ['--orb-1', '--orb-2', '--orb-3', '--orb-4', '--card-glass-1', '--card-glass-2',
   '--card-rim-1', '--card-rim-2', '--card-rim-3', '--card-rim-4', '--stats-glow-1', '--stats-glow-2', '--stats-card-shadow',
@@ -77,7 +77,7 @@ test('反向扫描：卡片家族的规则只用 --card-* 的字色，不混进�
 // ---------- 对比度：卡底叠上两层光泽的最亮处 ----------
 for (const theme of ['light', 'dark']) {
   for (const stop of ['--card-1', '--card-2', '--card-3']) {
-    for (const fg of ['--card-ink', '--card-ink-2', '--card-ink-dec']) {
+    for (const fg of ['--card-ink', '--card-ink-2', '--card-ink-dec', '--card-gold']) {   // v3.7：卡上结余金字也要 ≥4.5
       test(`${theme} ${fg} 压在 ${stop}＋光泽 ≥ 4.5`, () => {
         let bg = color(theme, stop).rgb;
         for (const sheen of ['--card-sheen-white', '--card-sheen-mint']) { const s = color(theme, sheen); bg = over(bg, s.rgb, s.a); }
