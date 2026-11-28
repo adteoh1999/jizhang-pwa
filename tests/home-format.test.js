@@ -158,7 +158,7 @@ test('cardView 显示：比例线与原本相同（线条读出时文字不重�
   assert.equal(over.note, '支出已超过收入');
   // B 改版（用户 2026-11-27）：比例文字平常不显示，只有超支时在卡片上显示
   assert.equal(over.noteShown, true);
-  assert.equal(over.over, true);   // v3.4.1：超支时比例线换琥珀色
+  assert.equal(over.over, true);   // v3.4.1 起：超支时比例线换超支色（v3.7 玫瑰红）
 });
 
 test('eyeButtonState：标签说「按了会怎样」', () => {

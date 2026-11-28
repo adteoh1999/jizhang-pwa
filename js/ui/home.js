@@ -74,7 +74,7 @@ function defaultStorage() {
  * 比例线也藏：线宽 0、文字一律「已花掉收入的 ••%」（「支出已超过收入」「还没有收入」本身就会透露结余正负）。
  * meter：barHidden 线条是否隐藏、pct 线宽、label 线条读屏文字、note 线下文字、noteRead 文字是否给读屏读、
  *   noteShown 文字是否显示在卡片上（B 改版：只有超支时显示「支出已超过收入」，用户 2026-11-27）、
- *   over 比例线是否换琥珀色（v3.4.1；永远等于 noteShown：琥珀色出现时一定有文字；隐藏金额时一律 false）。
+ *   over 比例线是否换超支色（v3.4.1 起；v3.7 是玫瑰红；永远等于 noteShown：超支色出现时一定有文字；隐藏金额时一律 false）。
  */
 export function cardView(s, hidden) {
   if (hidden) {

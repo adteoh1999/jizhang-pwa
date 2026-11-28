@@ -90,7 +90,7 @@ test('首页比例线：from→to 渐变；往左补缝的 ::before 用纯起点
   assert.ok(!/inherit/.test(before), '::before 不能 inherit');
 });
 
-test('超支：.home-meter-bar.is-over 换琥珀渐变，::before 也换成琥珀起点色（回弹时左端不闪绿）', () => {
+test('超支：.home-meter-bar.is-over 换玫瑰红渐变，::before 也换成玫瑰红起点色（回弹时左端不闪金）', () => {
   assert.match(blockAfter(css, '\n.home-meter-bar.is-over .home-meter-fill {'), /background:\s*linear-gradient\(90deg, var\(--meter-over-from\), var\(--meter-over-to\)\)/);
   assert.match(blockAfter(css, '\n.home-meter-bar.is-over .home-meter-fill::before {'), /background:\s*var\(--meter-over-from\)/);
 });
@@ -157,7 +157,7 @@ test('深绿卡上收入跟其他字一样白：统计摘要卡与飘字都没�
 });
 
 // ---------- 超支标记（JS） ----------
-test('cardView：over 只在显示金额且超支时为 true，而且永远等于 noteShown（琥珀色出现时一定有文字）', () => {
+test('cardView：over 只在显示金额且超支时为 true，而且永远等于 noteShown（玫瑰红出现时一定有文字）', () => {
   const cases = [
     [{ balance: -500, income: 100, expense: 600 }, false, true],
     [{ balance: 3200, income: 10000, expense: 6800 }, false, false],
