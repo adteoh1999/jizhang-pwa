@@ -60,3 +60,47 @@ test('走势图圆点（滑杆标记）与单点都用 --chart-dot；圆点白�
   assert.match(blockAfter(css, '\n.trend-mdot {'), /fill:\s*var\(--chart-dot\);\s*stroke:\s*var\(--drawer\)/);
   assert.match(blockAfter(css, '\n.trend-single {'), /fill:\s*var\(--chart-dot\)/);
 });
+
+// ---------- 首页比例线：6px、亮光；「薄荷光照不到比例线」的前提 ----------
+const homeJs = readFileSync(new URL('../js/ui/home.js', import.meta.url), 'utf8');
+const loginJs = readFileSync(new URL('../js/ui/login.js', import.meta.url), 'utf8');
+const SHEEN = 'inset 0 1px 0 rgba(255, 255, 255, 0.28)';
+
+test('前提：右上薄荷光泽纵向只照到卡高一半以内（纵向半径 × 透明停靠点 ≤ 0.5）', () => {
+  const card = rules().find((r) => ['.home-card', '.stats-summary', '.wl-card'].every((s) => selList(r.sel).includes(s)) && /var\(--card-1\)/.test(r.body));
+  assert.ok(card, '三卡共用的深绿规则');
+  const m = card.body.match(/radial-gradient\((\d+)% (\d+)% at 100% 0%, var\(--card-sheen-mint\), transparent (\d+)%\)/);
+  assert.ok(m, '薄荷光泽写法改了：请重新确认比例线那一排照不到（tests/meter-gradient 比例线尾端模型）');
+  assert.ok((Number(m[2]) / 100) * (Number(m[3]) / 100) <= 0.5, `纵向 ${m[2]}% × ${m[3]}%`);
+});
+
+test('前提：比例线是首页卡最后一个子元素、假比例线是欢迎页示意卡最后一个子元素（都在卡片下半部）', () => {
+  const a = homeJs.indexOf("const summary = h('section', { class: 'home-card'");
+  assert.ok(a >= 0, 'home-card 建立处');
+  const b = homeJs.indexOf('meterNote));', a);
+  assert.ok(b > a, 'home-card 结尾');
+  assert.ok(homeJs.slice(a, b + 'meterNote));'.length).endsWith("h('div', { class: 'home-meter' }, meterBar, meterNote));"));
+  const c = loginJs.indexOf("h('div', { class: 'wl-card' },");
+  assert.ok(c >= 0, 'wl-card 建立处');
+  const d = loginJs.indexOf("h('div', { class: 'wl-bar' }, h('i'))));", c);
+  assert.ok(d > c, 'wl-bar 在 wl-card 里且是最后一个（后面接着关掉 wl-card 与 wl-layer）');
+  assert.ok(!/class: 'wl-/.test(loginJs.slice(d + "h('div', { class: 'wl-bar' }".length, loginJs.indexOf(';', d))), 'wl-bar 后面没有别的卡内元素');
+});
+
+test('首页比例线：6px 高、全圆角、上距 14px；填充条与补缝段都有一道很淡的上缘亮光', () => {
+  assert.match(blockAfter(css, '\n.home-meter {'), /margin-top:\s*14px/);
+  const bar = blockAfter(css, '\n.home-meter-bar {');
+  assert.match(bar, /height:\s*6px/);
+  assert.match(bar, /border-radius:\s*3px/);
+  const fill = blockAfter(css, '\n.home-meter-fill {');
+  assert.match(fill, /border-radius:\s*0 3px 3px 0/);
+  assert.ok(fill.includes(`box-shadow: ${SHEEN}`), 'fill 亮光');
+  assert.ok(blockAfter(css, '\n.home-meter-fill::before {').includes(`box-shadow: ${SHEEN}`), '::before 亮光（回弹时补缝段也有）');
+});
+
+test('欢迎页假比例线跟真卡一样：6px、全圆角、同样的亮光', () => {
+  const bar = blockAfter(css, '\n.wl-bar {');
+  assert.match(bar, /height:\s*6px/);
+  assert.match(bar, /border-radius:\s*3px/);
+  assert.ok(blockAfter(css, '\n.wl-bar i {').includes(`box-shadow: ${SHEEN}`));
+});

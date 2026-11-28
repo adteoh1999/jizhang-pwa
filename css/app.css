@@ -1186,24 +1186,26 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   .home-flow-v { font-size: 0.8824rem; }
 }
 
-/* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、换琥珀渐变（.is-over，home.js 依 cardView 的 over 加） */
-.home-meter { display: grid; margin-top: 12px; }
+/* 比例线：线宽 = 支出占收入的百分比；超过收入 → 满格、换玫瑰红渐变（.is-over，home.js 依 cardView 的 over 加）
+   v3.7：6px 厚、全圆角，上缘一道很淡的亮光（静态 inset 阴影，只画一次；动的只有 transform） */
+.home-meter { display: grid; margin-top: 14px; }
 .home-meter-bar {
   position: relative;
-  height: 3px;
-  border-radius: 1.5px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--card-track);
   overflow: hidden;
 }
 /* 比例线「滑入」（v2.3）：填充条固定 100% 宽，用 translateX 往左藏（只走合成，圆角不被压扁）。
    只留右侧圆角（左侧由轨道的圆角裁切）；::before 往左延伸起点色，弹过头时左边不露缝。
-   v3.4.1 渐变铺在整条 100% 上，跟着平移 → 露出的是尾端（短条几乎是尾端色） */
+   渐变铺在整条 100% 上，跟着平移 → 露出的是尾端：v3.7 尾端是金（深绿卡上的金色亮点） */
 .home-meter-fill {
   position: absolute;
   inset: 0;
   width: 100%;
-  border-radius: 0 1.5px 1.5px 0;
+  border-radius: 0 3px 3px 0;
   background: linear-gradient(90deg, var(--meter-from), var(--meter-to));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
   transform: translateX(-100%);
 }
 .home-meter-fill::before {
@@ -1214,6 +1216,7 @@ body.has-toast .shell { --shell-pad-bottom: calc(var(--tabbar-total) + 24px + 12
   right: 100%;
   width: 100%;
   background: var(--meter-from);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 .home-meter-bar.is-over .home-meter-fill { background: linear-gradient(90deg, var(--meter-over-from), var(--meter-over-to)); }
 .home-meter-bar.is-over .home-meter-fill::before { background: var(--meter-over-from); }
@@ -2068,8 +2071,8 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
 .wl-flow-k { display: flex; align-items: center; gap: 4px; font: 400 13px/1.38 var(--font-family); color: var(--card-ink-2); }
 .wl-flow-k svg { display: none; }
 .wl-flow-v { font: 600 16px/1.29 var(--font-family); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.wl-bar { margin-top: 12px; height: 3px; border-radius: 1.5px; background: var(--card-track); overflow: hidden; }
-.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--meter-to); }
+.wl-bar { margin-top: 12px; height: 6px; border-radius: 3px; background: var(--card-track); overflow: hidden; }   /* v3.7 跟真卡一样 6px */
+.wl-bar i { display: block; width: 17%; height: 100%; border-radius: inherit; background: var(--meter-to); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28); }
 .wl-tx {
   display: flex;
   align-items: center;
@@ -2219,8 +2222,9 @@ button.update-action::after { content: ""; position: absolute; inset: -12px -8px
   .home-row-icon, .cat-tile-icon, .wl-tx-ic { box-shadow: inset 0 0 0 1px var(--ink-2); }
   .home-add, .trend-card, .inset-group { box-shadow: 0 0 0 1px var(--ink-2); }
   .home-card, .stats-summary, .wl-card { box-shadow: var(--card-shadow), 0 0 0 1px var(--card-ink-2); }
-  /* v3.4.1 渐变条：起点较淡，增加对比度时改纯尾端色（fill 与 ::before 一起改，回弹接缝才不会两色） */
-  .home-meter-fill, .home-meter-fill::before { background: var(--meter-to); }
+  /* 渐变条：起点较淡，增加对比度时改纯色（fill 与 ::before 一起改，回弹接缝才不会两色）。
+     v3.7：比例线用较亮的金 --card-gold（对比比 --gold 高）；上缘亮光关掉 */
+  .home-meter-fill, .home-meter-fill::before, .wl-bar i { background: var(--card-gold); box-shadow: none; }
   .home-meter-bar.is-over .home-meter-fill, .home-meter-bar.is-over .home-meter-fill::before { background: var(--meter-over-to); }
   .stats-bar-fill, .stats-bar-fill::before { background: var(--bar-to); }
 }

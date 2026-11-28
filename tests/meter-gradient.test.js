@@ -104,23 +104,38 @@ test('欢迎页示意卡的假比例线（17%、没有 translate）用纯尾端�
   assert.match(blockAfter(css, '\n.wl-bar i {'), /background:\s*var\(--meter-to\)/);
 });
 
-test('增加对比度：三种填充条（含 ::before、含超支）都改纯尾端色，规则排在基础规则之后', () => {
+const contrastBlocks = () => {
   const marker = '@media (prefers-contrast: more) {';
   const blocks = [];
   for (let i = css.indexOf(marker); i >= 0; i = css.indexOf(marker, i + 1)) blocks.push({ at: i, body: blockAfter(css, marker, i) });
+  return blocks;
+};
+const contrastRule = (blocks, sel, re) => blocks.find((b) => [...b.body.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .some((m) => m[1].split(',').map((s) => s.trim()).includes(sel) && re.test(m[2])));
+
+// v3.7：首页比例线（与欢迎页假比例线）在增加对比度时用较亮的金 --card-gold（对比比 --gold 高）
+test('增加对比度：三种填充条（含 ::before、含超支）都改纯色，规则排在基础规则之后', () => {
+  const blocks = contrastBlocks();
   const want = [
-    ['.home-meter-fill', '--meter-to', '\n.home-meter-fill {'],
-    ['.home-meter-fill::before', '--meter-to', '\n.home-meter-fill::before {'],
+    ['.home-meter-fill', '--card-gold', '\n.home-meter-fill {'],
+    ['.home-meter-fill::before', '--card-gold', '\n.home-meter-fill::before {'],
+    ['.wl-bar i', '--card-gold', '\n.wl-bar i {'],
     ['.home-meter-bar.is-over .home-meter-fill', '--meter-over-to', '\n.home-meter-bar.is-over .home-meter-fill {'],
     ['.home-meter-bar.is-over .home-meter-fill::before', '--meter-over-to', '\n.home-meter-bar.is-over .home-meter-fill::before {'],
     ['.stats-bar-fill', '--bar-to', '\n.stats-bar-fill {'],
     ['.stats-bar-fill::before', '--bar-to', '\n.stats-bar-fill::before {'],
   ];
   for (const [sel, tok, base] of want) {
-    const hit = blocks.find((b) => [...b.body.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .some((m) => m[1].split(',').map((s) => s.trim()).includes(sel) && new RegExp(`background:\\s*var\\(${tok}\\)`).test(m[2])));
+    const hit = contrastRule(blocks, sel, new RegExp(`background:\\s*var\\(${tok}\\)`));
     assert.ok(hit, `${sel} 高对比纯 ${tok}`);
     assert.ok(css.indexOf(base) >= 0 && hit.at > css.indexOf(base), `${sel} 的高对比规则要在基础规则之后`);
+  }
+});
+
+test('增加对比度：比例线、补缝段、欢迎页假比例线的上缘亮光关掉（box-shadow: none）', () => {
+  const blocks = contrastBlocks();
+  for (const sel of ['.home-meter-fill', '.home-meter-fill::before', '.wl-bar i']) {
+    assert.ok(contrastRule(blocks, sel, /box-shadow:\s*none/), `${sel} 高对比没有亮光`);
   }
 });
 
