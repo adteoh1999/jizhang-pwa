@@ -28,7 +28,7 @@ test('卡片金边 --card-gold-edge 跟 --gold 同一个金，只是半透明 0.
 });
 
 // ---------- 卡上金字、金边、走势图金点 ----------
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { css, blockAfter } from './helpers/css-tokens.js';
 
 const statsJs = readFileSync(new URL('../js/ui/stats-view.js', import.meta.url), 'utf8');
@@ -117,25 +117,49 @@ const ALLOW = {
   '--bar-from': ['.stats-bar-fill', '.stats-bar-fill::before'],
 };
 const notToken = () => rules().filter((r) => !TOKEN_SEL.includes(r.sel));
+/** var(--x) 或 var( --x , 后备值)：名称后面接空白、逗号或「)」才算（--gold 不会吃到 --gold-deep）。审核 I-1② */
+const usesVar = (tok) => new RegExp(`var\\(\\s*${tok}\\s*[,)]`);
+const GOLD_LITERAL = /#D9B45A|#EACF85|#A98327|#D7B157|217,\s*180,\s*90/i;
 
-test('金色 token 只出现在指定的选择器（不管是 color、background、fill 还是 border）', () => {
+test('金色 token 只出现在指定的选择器（不管是 color、background、fill 还是 border，含带后备值的写法）', () => {
   const bad = [];
   for (const r of notToken()) {
     for (const [tok, allow] of Object.entries(ALLOW)) {
-      if (!new RegExp(`var\\(${tok}\\)`).test(r.body)) continue;   // 以「)」结尾：--gold 不会吃到 --gold-deep
+      if (!usesVar(tok).test(r.body)) continue;
       for (const s of selList(r.sel)) if (!allow.includes(s)) bad.push(`${s} 用了 ${tok}`);
     }
   }
   assert.deepEqual(bad, []);
 });
 
+test('金色不能借别的 token 转手：token 块里引用金色（token 或色号）的只有指定那几个', () => {
+  // 审核 I-1①：例如在 :root 加「--btn-bg: var(--gold)」再拿去别处用，上面那条看不到
+  const OK = ['--gold', '--gold-deep', '--card-gold', '--card-gold-edge', '--meter-to', '--bar-from', '--chart-dot'];
+  const refsGold = (v) => Object.keys(ALLOW).some((tok) => usesVar(tok).test(v)) || GOLD_LITERAL.test(v);
+  const bad = [];
+  for (const [label, t] of [['浅', light], ['深 media', mediaDark], ['深 attr', attrDark]]) {
+    for (const [n, v] of Object.entries(t)) if (refsGold(v) && !OK.includes(n)) bad.push(`${label} ${n}: ${v}`);
+  }
+  assert.deepEqual(bad, []);
+});
+
+test('JS 与 index.html、manifest 里没有金色（色号或金色 token 名）：金色只在 app.css 的 token', () => {
+  // 审核 I-1③：行内样式、SVG fill 属性不在 CSS 扫描范围
+  const root = new URL('../', import.meta.url);
+  const files = readdirSync(new URL('js/', root), { recursive: true }).filter((f) => f.endsWith('.js')).map((f) => `js/${f}`)
+    .concat(['index.html', 'manifest.webmanifest']);
+  assert.ok(files.length > 20, `扫到的档案太少：${files.length}`);
+  const re = new RegExp(`${GOLD_LITERAL.source}|--gold\\b|--card-gold|--chart-dot`, 'i');
+  assert.deepEqual(files.filter((f) => re.test(readFileSync(new URL(f, root), 'utf8'))), []);
+});
+
 test('金色字面值只在 token 块（规则里一律用 token）', () => {
-  const bad = notToken().filter((r) => /#D9B45A|#EACF85|#A98327|#D7B157|217,\s*180,\s*90/i.test(r.body)).map((r) => r.sel);
+  const bad = notToken().filter((r) => GOLD_LITERAL.test(r.body)).map((r) => r.sel);
   assert.deepEqual(bad, []);
 });
 
 test('白底上不放金字：字色（color）用到金色的只有深绿卡上三个「结余」标签', () => {
-  const re = /(^|[\s;])color:\s*var\(--(gold|gold-deep|card-gold|card-gold-edge|chart-dot|meter-to|bar-from)\)/;
+  const re = /(^|[\s;])color:\s*var\(\s*--(gold|gold-deep|card-gold|card-gold-edge|chart-dot|meter-to|bar-from)\s*[,)]/;
   const sels = notToken().filter((r) => re.test(r.body)).flatMap((r) => selList(r.sel)).sort();
   assert.deepEqual(sels, ['.home-card-label', '.stats-sum-item:last-child .stats-sum-k', '.wl-card-label'].sort());
 });
